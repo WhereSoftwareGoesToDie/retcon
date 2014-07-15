@@ -150,8 +150,8 @@ application.
 Example:
 
 ````{.haskell}
-commentField `using` (textfriendlymerge (filter (isSpace) . map toLower)) .
-lastWriterWins
+nonConflictingMerge .
+commentField `using` (textfriendlymerge (filter (isSpace) . map toLower))
 ````
 
 ### Last writer wins
