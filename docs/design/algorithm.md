@@ -11,7 +11,7 @@ Document
 --------
 
 The inputs and outputs to the retcon algorithm are documents. Documents are,
-essentially, key/value tree structures (i.e. JSON).
+essentially, nested key/value tree structures (i.e. JSON).
 
 Documents can be empty (this will be important later) or contain an unordered
 sequence of key/value pairs.
@@ -20,9 +20,36 @@ sequence of key/value pairs.
 
 - Values may comprise strings or some documents.
 
-We might want to just say "documents are the JSON AST from [aeson][]"?
-
 [aeson]: http://hackage.haskell.org/package/aeson
+
+An alternative, equivalent, characterisation is of documents as maps with
+non-empty sequences of symbols as keys and strings as values. This
+characterisation makes the following work slightly more nicely, but they are
+pretty much equivalent up to handwaving.
+
+### Structure
+
+Documents as described above form a meet semi-lattice where the meet is defined
+as the document consisting of all keys on which the documents agree as to their
+values:
+
+$d_{1} \wedge d_{2} = \{(k,v)\| k \in keys(d_{1}) \cap keys(d_{2}),v=k(d_{1})=k(d_{2}) \}$
+
+This implies that $d_1 \leq d_2$ when $\forall k \in keys(d_1). k(d_1) = k(d_2)$.
+
+An alternative, and likely more natural, definition is to take all keys defined
+in both documents with the meet of the values as the value in the new document.
+
+$d_{1} \wedge d_{2} = \{ (k, k(d_{1}) \wedge k(d_{2})) \| k \in keys(d_{1}) \cap keys(d_{2})\}$
+
+With such a definition $d_1 \leq d_2$ when $\forall k \in keys(d_1). k(d_1)
+\leq k(d_2)$ (which is to say $\forall k \in keys(d_1). k(d_1) \wedge k(d_2)
+= k(d_1)$; i.e. values form a meet semi-lattice too). If we do take this route
+then values will all have additional structure based on the ordering (a monoid
+or meet semilattice, or residuated semilattice, or something, depending on what
+we do with them.
+
+The quickest, safest bet it probably to take the first option.
 
 Diff
 ----
@@ -41,7 +68,31 @@ It may be useful to extend this set of operations with more specific operations
 to support the semantics of specific document value types (e.g. "LIST-APPEND
 key value", "SET-INSERT key value").
 
-A diff, then, is just a sequence (list) of operations.
+A diff, then, is just a sequence (list) of operations. Both diffs and
+individual operations will carry labels, allowing them to be annotated with
+additional information for use in the merge strategy.
+
+### Structure
+
+Diffs under a particular merge strategy definitely have some sort of structure
+but, given the flexibility allowed to strategies, it's likely to be fairly
+weak.
+
+The merge operation should, in principle, have the following properties:
+
+- associative $(d_1 \oplus d_2) \oplus d_3 = d_1 \oplus (d_2 \oplus d_3)$
+
+- commutative $d_1 \oplus d_2 = d_2 \oplus d_1$
+
+- idempotent $(d_1 \oplus d_1) = d_1$
+
+It's probably fairly important to note that these properties should hold of the
+abstract strategy but might not necessarily on the *implementation*.
+Commutativity, in particular, might be a bit tricky when implementing
+a strategy like last-writer-wins (constructing a label for the "zero" diff
+passed into the fold), but it should hold in spirit.
+
+All that so say: those properties hold under erasure of the labels on diffs (but not the operations in them).
 
 Algorithm
 =========
@@ -75,12 +126,20 @@ let initial = case cached of
 
 let diffs = map (diff initial) inputs
 
-let diff = mergeDiffs mergePolicy diffs
+let (diff, leftovers) = mergeDiffs mergePolicy diffs
 
 setCache ident $ applyDiff diff initial
 
+reportLeftovers leftovers
+
 sequence_ $ map (sendUpstream . applyDiff diff) inputs
 ````
+
+In the above code `mergeDiffs` uses `mapAccumL` to apply the merge strategies
+to the list of diffs, constructing a merged diff and leaving any un-merged
+operations in the result value. The result list can be filtered of null diffs,
+leaving only the changes which were not handled by the strategy which should be
+reported to someone.
 
 Some theory
 -----------
@@ -133,10 +192,42 @@ mind, here's the first version of this algorithm:
 No doubt we'll be able to find a better algorithm or, more likely, better
 heuristics for this this when we start experimenting with real data.
 
+Whatever we choose here, it should just be the meet as described in the section
+on the structure of documents above.
+
+Generating diffs
+----------------
+
+Generating a diff between two documents will have the following properties:
+
+**TODO** Fix this (because everyone knows math is written in unspaced strings
+of symbols)!
+
+- $diff doc_1 doc_1 = \emptyset$
+
+- $diff doc_1 (apply doc_1 diff_1) = diff_1$
+
+- $diff doc_1 (apply doc_2 diff_1) = merge (diff doc_1 doc_2) diff_1$ (Double
+check this; it seems slightly off)
+
+Some more vague pseudo-Haskell:
+
+````{.haskell}
+
+diff :: Document -> Document -> Diff ()
+diff = diffWith $ const . const ()
+
+labelledDiff :: (Document -> Document -> l) -> Document -> Document -> Diff l
+labelledDiff label doc1 doc2 = Diff (label doc1 doc2) $
+    deletions doc1 doc2 ++
+    insertions doc1 doc2 ++
+    changes doc1 doc2
+````
+
 Merge policies
 --------------
 
-The linchpin of the retcon algorithm describes above is the merging of the
+The linchpin of the retcon algorithm described above is the merging of the
 diffs for each of the input documents. This function transforms a collection of
 diffs on individual input documents into a single diff which includes the
 compatible changes from all of those changes. Different deployments will have
@@ -144,15 +235,14 @@ different ideas about which changes are compatible and how to handle
 incompatible changes, so the particular strategy to be used is a configurable
 parameter.
 
-Merge policies can be composed to express the policy appropriate for a specific
-application.
+The merge policy will be built-up from simple building blocks (it is not
+straight `(.)`, but it's not too far off) resulting in a function suitable for
+an accumulating map. These functions should return something like `(acc, diff)`
+or `(acc, Maybe diff)` so that we can filter the diffs which were completely
+consumed during the merge.
 
-Example:
-
-````{.haskell}
-nonConflictingMerge .
-commentField `using` (textfriendlymerge (filter (isSpace) . map toLower))
-````
+This is a little more involved than I'd hoped but will allow us to report on
+changes the policy excludes (rather than silently passing them over).
 
 ### Last writer wins
 
