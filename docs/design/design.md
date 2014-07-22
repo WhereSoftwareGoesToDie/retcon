@@ -7,15 +7,15 @@ revised as we discover the limitations in it.
 
 # Introduction
 
-The retcon system attempts to synchronise data shared between multiple systems.
-It does this by attempting to identify data changes which happen in each
-external system, composing these changes to form a single set of changes and
-then applying them to each of the external systems.
+The retcon system attempts to synchronise data shared between multiple
+systems. It does this by attempting to identify data changes which
+happen in each external system, composing these changes to form a single
+set of changes and then applying them to each of the external systems.
 
-This is implemented in such a way that changes can be merged according to
-application specific policies, that changes can be tracked over time, and that
-users can perform manual intervention for changes that can't be handled
-automatically.
+This is implemented in such a way that changes can be merged according
+to application specific policies, that changes can be tracked over time,
+and that users can perform manual intervention for changes that can't be
+handled automatically.
 
 # System structure
 
@@ -91,9 +91,11 @@ A first approximation of the merge policy data type might be:
 ````{.haskell}
 data MergePolicy l = MergePolicy
     { extractLabel :: Document -> l
-    , mergeDiffs   :: Diff l -> Diff l -> (Diff l, Diff l)
+    , acceptDiff   :: Diff l -> Diff l -> (Diff l, Diff l)
     }
 ````
+
+Or maybe that should be `Diff l -> Operation l -> Bool`?
 
 To make it easy to construct a merge policy which expresses business
 rules, the `MergePolicy` type will come equiped with a default policy
@@ -101,14 +103,25 @@ and an append operation:
 
 ````{.haskell}
 defaultPolicy :: MergePolicy ()
+
+-- | Compose two 'MergePolicy's
 andThen :: MergePolicy a -> MergePolicy b -> MergePolicy (a,b)
+
+-- | Apply a 'MergePolicy' on a specific document key only.
 onField :: Key -> MergePolicy l -> MergePolicy l
 
-concatDiffs :: MergePolicy ()
+-- | Accept all changes from a specific source.
 trustSource :: Source -> MergePolicy Source
-mostRecentBy :: Key -> MergePolicy String
+
+-- | Ignore all changes to a specific field.
 dropField :: Key -> MergePolicy l
 
+-- | Accept conflicting changes from the document with the highest
+-- timestamp.
+mostRecentBy :: Key -> MergePolicy String
+
+-- | Trust the "accounts" source about the "paid" field, otherwise apply
+-- the most recent changes.
 trustAccountsThenMostRecentByTimestamp :: MergePolicy (Source, String)
 trustAccountsThenMostRecentByTimestamp = 
     onField "paid" (trustSource "accounts") `andThen`
@@ -120,8 +133,26 @@ existing core or third-party libraries (it would be a `Monoid` if not
 for the labels and might something from `lens`).
 
 We need a NOP for both the label extraction and diff merging operations
-in the `MergePolicy` type. The label extraction NOP is clearly `id` (so
-long as the first policy has *some* label; `const ()` is a good choice).
+in the `MergePolicy` type. The label extraction NOP is clearly `const
+()` (so long as the first policy has *some* label; `const ()` is a good
+choice). The merging NOP is probably means `(,)`.
+
+````{.haskell}
+noMergePolicy :: MergePolicy ()
+noMergePolicy = MergePolicy (const ()) (,)
+````
+
+Then the append operations is something like:
+
+````{.haskell}
+andThen :: MergePolicy l -> MergePolicy m -> MergePolicy (l, m)
+(MergePolicy e1 m1) `andThen` (MergePolicy e2 m2) = MergePolicy e3 m3
+  where
+    e3 doc = (e1 doc, e2 doc)
+    m3 (Diff l1 o1) (Diff l2 o2) =
+        let (acc, rest) = m1 (Diff o1) (Diff o2)
+        in m2 acc rest
+````
 
 # Data sources
 
