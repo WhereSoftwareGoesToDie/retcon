@@ -164,14 +164,31 @@ functionality automatically.
 The operations each data source supports are:
 
 ````{.haskell}
-getDocument :: (Monad m, RetconSource m) => ForeignKey -> m (Maybe Document)
+-- | Find the foreign key for a document, probably by performing a search
+-- of some sort.
+findDocument :: (Monad m, RetconSource m) => Document -> m (Maybe ForeignKey)
+
+-- | Retrieve a document from the foreign system.
+getDocument :: (Monad m, RetconSource m) => ForeignKey -> m Document
+
+-- | 
 setDocument :: (Monad m, RetconSource m) => ForeignKey -> Document -> m ()
 ````
 
 The `RetconSource` type class is similar in spirit to the typeclasses
 which accompany some monad transformers: it allows the underlying monad
 to be replaced while still allowing the retcon-specific operations to be
-used unchanges (like `MonadIO` with `liftIO`).
+used unchanged (like `MonadIO` with `liftIO`).
+
+These operations will need to have access to IO operations (probably through
+`MonadIO`); logging operations (probably via `MonadLogger`); and some specific
+operations to access the retcon database lookup and cache tables.
+
+Additional operations in this monad will include things like:
+
+````{.haskell}
+datasource :: (Monad m, RetconSource m) => m (Datasource)
+````
 
 # Entity
 
@@ -180,5 +197,34 @@ which together specify the system's operation on a particular type of
 data. Once constructed, an `Entity` can be passed to a handler (see
 below) which implements the I/O, user interface, etc.
 
+# Handlers
 
+The handlers are responsible for implementing the external interface to the
+system. Each handler takes an `Entity` as a parameter along with some
+implementation specific additional parameters.
+
+Handlers will use a simple database-backed task queue to decouple their
+interface from the processing which will take a while. Depending on the rate
+limiting for some of the data source systems, it may be necessary to do crazy
+things to coordinate access between different data sources which interact with
+the same external system.
+
+## Snaplet Handler
+
+Initially the only handler will be the Snap Framework snaplet which implements
+a basic RESTful web API and user interface.
+
+The basic interface will look something like:
+
+- `GET /v1/:entity_name/:id?page=:n` to view history.
+
+- `POST /v1/:entity_name/:id` to initiate a new update.
+
+- `GET /v1/:entity_name/:id/:n` to inspect a past change.
+
+- `POST /v1/:entity_name/:id/update` to manually apply one or more unmerged
+  changes.
+
+Putting the API version number into the path is terrible, but the other
+solutions are also terrible while this, at least, is also easy.
 
