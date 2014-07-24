@@ -269,6 +269,17 @@ be "copy all the fields").
 
 4. Send the updated documents back to their corresponding data sources.
 
+This will be implemented in two functions:
+
+- `runRetcon` performs the full process; and itself uses:
+
+- `applyRetconChanges` which, given a set of changes, performs the process from
+steps 3.5 to 4 above.
+
+This division will allow a handler to, e.g., give human users to ability to
+cherry-pick changes which could not be applied automatically and push them
+through.
+
 Each step in this process can record useful information in logs and in
 operational database tables. These details include:
 
