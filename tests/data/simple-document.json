@@ -1,0 +1,11 @@
+{
+	"name": "Thomas Sutton",
+	"age" : 30,
+	"address" : {
+		"company" : "Anchor Systems",
+		"street" : "Level 11 / 201 Elizabeth Street",
+		"locality" : "Sydney",
+		"postcode" : 2000,
+		"country" : "Australia"
+	}
+}
