@@ -44,4 +44,8 @@ test-suite             diff-test
   main-is:             DiffTest.hs
   build-depends:       base
                      , retcon
+                     , aeson
+                     , bytestring
+                     , directory
+                     , filepath
 
