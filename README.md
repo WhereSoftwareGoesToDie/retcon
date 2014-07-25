@@ -1,7 +1,7 @@
 Retcon
 ======
 
-A Haskell library for synchronising data sources whilst applying
-transformations to normalize data.
+A Haskell library and daemon for synchronising data sources. `retcon`
+operates by generating, merging, and applying diffs according.
 
 Use cases can be found in docs/design/use-cases.md
