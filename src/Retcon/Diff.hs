@@ -1,12 +1,36 @@
 {-# LANGUAGE DeriveFunctor #-}
+------------------------------------------------------------------------
+-- |
+-- Module      : Retcon.Diff
+-- Description : Represent, build and apply diffs over documents.
+-- Copyright   : Anchor Systems and others.
+-- License     : BSD3
+--
+-- Maintainer  : Thomas Sutton <me@thomas-sutton.id.au>
+-- Stability   : experimental
+-- Portability : portable
+--
+-- This module implements the 'Diff' and 'DiffOp' data styles which
+-- together model the changes between 'Document's. Both diffs and the
+-- operations which compose them can be labelled with arbitary values.
+------------------------------------------------------------------------
 module Retcon.Diff where
 
-import qualified Data.Text as T
 import           Data.Text (Text)
+import qualified Data.Text as T
 
-data Diff l = Diff l [Operation l]
+import Retcon.Document
+
+-- | A 'Diff' describes a collection of changes to a 'Document'.
+data Diff l = Diff
+  { diffLabel   :: l
+  , diffChanges :: [DiffOp l]
+  }
   deriving (Eq, Show, Functor)
-data Operation l
-  = InsOp l [Text] Text
-  | DelOp l [Text]
+
+-- | A 'DiffOp' describes a single change to be applied to a 'Document'.
+data DiffOp l
+  = InsertOp l [DocumentKey] Text -- ^ Set a field to a value.
+  | DeleteOp l [DocumentKey]      -- ^ Unset a field.
   deriving (Eq, Show, Functor)
+
