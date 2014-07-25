@@ -284,15 +284,18 @@ Each step in this process can record useful information in logs and in
 operational database tables. These details include:
 
 - A retcon key and the last known corresponding initial document stored in
-`retcon_{entity}`.
-
-- A record of the changes made (or not made) to each document (i.e. the merged
-`Diff` and any unmerged changes) stored in `retcon_{entity}_changes`.
+`retcon` with a compound primary key: `(entity_name, retcon_key)`.
 
 - A foreign key identifying a document in a data source, stored in
-`retcon_{entity}_{source}`.
+`retcon_keys` with compound primary key `(entity_name, retcon_key, data_source)`.
 
-- A record of the document in each data source after each change stored in `retcon_{entity}_{source}_history`.
+- A record of the changes made (or not made) to each document (i.e. the merged
+`Diff` and any unmerged changes) stored in `retcon_changes` with a compound
+primary key `(entity_name, retcon_key)`.
+
+- A record of the document in each data source after each change stored in
+`retcon_history` with a compound primary key `(entity_name, retcon_key,
+data_source, seq)`.
 
 # Handlers
 
