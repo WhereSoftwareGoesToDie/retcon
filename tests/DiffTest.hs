@@ -37,12 +37,15 @@ testLoad name = do
 
 main :: IO ()
 main = do
+  -- Try to load a document from JSON.
   test1 <- testLoad "01-diff-source.json"
   source <- case test1 of
     Just d  -> return d
     Nothing -> do
       putStrLn "Could not load 01-diff-source.json as document."
       exitFailure
+
+  -- Try to load another document from JSON.
   test2 <- testLoad "01-diff-target.json"
   target <- case test2 of
     Just d -> return d
@@ -50,9 +53,9 @@ main = do
       putStrLn "Could not load 01-diff-target.json as document."
       exitFailure
 
+  -- Try to diff the documents.
   let diff' = diff source target
   print diff'
   
   exitSuccess
-
 
