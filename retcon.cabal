@@ -34,3 +34,5 @@ test-suite             document-test
   main-is:             DocumentTest.hs
   build-depends:       base
                      , retcon
+                     , aeson
+                     , unordered-containers
