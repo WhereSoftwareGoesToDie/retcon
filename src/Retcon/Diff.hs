@@ -34,3 +34,17 @@ data DiffOp l
   | DeleteOp l [DocumentKey]      -- ^ Unset a field.
   deriving (Eq, Show, Functor)
 
+-- | Generate a 'Diff' from two documents, with a void label.
+diff :: Document -- ^ Source document.
+     -> Document -- ^ Target document.
+     -> Diff ()
+diff = diffWith (const ())
+
+-- | Generate a 'Diff' from two documents, using the supplied function
+-- to extract a label.
+diffWith :: (Document -> l) -- ^ Extract a label from target document
+         -> Document        -- ^ Source document.
+         -> Document        -- ^ Target document.
+         -> Diff l
+diffWith label from to = error "Unable to generate diffs"
+
