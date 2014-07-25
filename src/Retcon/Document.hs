@@ -20,11 +20,11 @@ module Retcon.Document where
 import           Control.Applicative
 import           Control.Monad
 import           Data.Aeson
-import qualified Data.HashMap.Lazy as H
-import           Data.Map          (Map)
-import qualified Data.Map          as M
-import           Data.Text         (Text)
-import qualified Data.Text         as T
+import qualified Data.HashMap.Lazy   as H
+import           Data.Map            (Map)
+import qualified Data.Map            as M
+import           Data.Text           (Text)
+import qualified Data.Text           as T
 
 type DocumentKey = Text
 

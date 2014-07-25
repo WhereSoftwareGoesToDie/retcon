@@ -1,8 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Main where
 
-import           Retcon.Diff
-import           System.Exit
+import Retcon.Diff
+import System.Exit
 
 testDiff :: Diff (Int, String)
 testDiff = Diff (1, "hello")

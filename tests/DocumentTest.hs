@@ -13,9 +13,9 @@ testData = Object $ H.fromList
     , ("age", Number 30)
     , ("address", Object $ H.fromList
         [ ("company", String "Anchor")
-	, ("street", String "Level 11 / 201 Elizabeth Street")
-	, ("locality", String "Sydney")
-	]
+        , ("street", String "Level 11 / 201 Elizabeth Street")
+        , ("locality", String "Sydney")
+        ]
       )
     ]
 
@@ -25,6 +25,6 @@ main = do
   putStrLn "Test document functionality"
   print doc
   case doc of
-  	Nothing -> exitFailure
-	Just _  -> exitSuccess
+        Nothing -> exitFailure
+        Just _  -> exitSuccess
 
