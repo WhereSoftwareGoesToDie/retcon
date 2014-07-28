@@ -1,5 +1,7 @@
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TupleSections     #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE OverloadedStrings    #-}
+{-# LANGUAGE TupleSections        #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 ------------------------------------------------------------------------
 -- |
 -- Module      : Retcon.Document
@@ -26,33 +28,36 @@ import qualified Data.Map            as M
 import           Data.Text           (Text)
 import qualified Data.Text           as T
 
+import Data.Tree.EdgeLabelled
+
+-- | A retcon 'Document' is an edge-labelled tree with 'Text' labels on
+-- both nodes and edges.
+type Document = Tree DocumentKey DocumentValue
 type DocumentKey = Text
-
--- | A nested key/value document.
-data Document = Document (Map DocumentKey DocValue)
-  deriving (Show, Eq, Ord)
-
--- | Values in documents are either atomic values or sub-documents.
-data DocValue
-  = Value Text
-  | Subdocument Document
-  deriving (Show, Eq, Ord)
+type DocumentValue = Text
 
 instance FromJSON Document where
-  parseJSON (Object v) = do
+  parseJSON (String str) = pure $ Node (Just str) M.empty
+  parseJSON (Number num) = pure $ Node (Just $ T.pack $ show num) M.empty
+  parseJSON (Bool True)  = pure $ Node (Just "TRUE") M.empty
+  parseJSON (Bool False) = pure $ Node (Just "FALSE") M.empty
+  parseJSON (Null)       = pure $ Node Nothing M.empty
+  parseJSON (Array arr)  = mzero
+  parseJSON (Object v)   = do
     let kvs = H.toList v
     kvs' <- mapM (\(k,v') -> return . (k,) =<< parseJSON v') kvs
-    return $ Document (M.fromList kvs')
-  parseJSON _          = mzero
+    return $ Node Nothing (M.fromList kvs')
 
-instance FromJSON DocValue where
-  parseJSON x@Object{} = Subdocument <$> parseJSON x
-  parseJSON Array{}    = mzero
-  parseJSON (String t) = return $ Value t
-  parseJSON (Number n) = return $ Value $ T.pack $ show n
-  parseJSON (Bool b)   = return (Value $ T.pack $ show b)
-  parseJSON Null       = return $ Value ""
+-- TODO This instance will discard information when it encounters a
+-- node with a label *and* children.
+instance ToJSON Document where
+  toJSON (Node Nothing  children)
+    = object $ map (\(k,v) -> k .= v) $ M.toAscList children
+  toJSON (Node (Just v) children)
+    | M.null children = toJSON v
+    | otherwise       = object $ map (\(k,v) -> k .= v) $ M.toAscList children
 
 -- | An empty document.
 emptyDocument :: Document
-emptyDocument = Document M.empty
+emptyDocument = emptyTree
+

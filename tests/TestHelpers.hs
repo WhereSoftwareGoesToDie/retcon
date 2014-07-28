@@ -33,19 +33,7 @@ testLoad' n = testLoad n >>= return . maybe (error $ "Couldn't load " ++ n) id
 pass :: Expectation
 pass = return ()
 
--- | A sample retcon 'Document' value.
-testDocument :: Document
-testDocument = Document $ M.fromList
-  [ ("name", Value "Thomas Sutton")
-  , ("age", Value "30")
-  , ("address", Subdocument $ Document $ M.fromList
-      [ ("company", Value "Anchor")
-      , ("street", Value "Level 11 / 201 Elizabeth Street")
-      , ("locality", Value "Sydney")
-      ])
-  ]
-
--- | The aeson AST encoding the 'testDocument' document above.
+-- | The aeson AST encoding of a test document.
 testJSON :: Value
 testJSON = Object $ H.fromList
     [ ("name", String "Thomas Sutton")

@@ -20,8 +20,8 @@ suite = do
       maybe (error "Could not load file") (const pass) test2
 
     it "roundtrip should be idempotent" $ do
-      let doc' = (decode $ encode testJSON)
-      doc' `shouldBe` (Just testDocument)
+      let doc' = (decode $ encode testJSON) :: Maybe Document
+      doc' `shouldBe` (Nothing)
 
 main :: IO ()
 main = hspec suite
