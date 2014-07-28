@@ -28,6 +28,10 @@ data Diff l = Diff
   }
   deriving (Eq, Show, Functor)
 
+-- | An empty 'Diff'.
+emptyDiff :: Diff ()
+emptyDiff = Diff () []
+
 -- | A 'DiffOp' describes a single change to be applied to a 'Document'.
 data DiffOp l
   = InsertOp l [DocumentKey] Text -- ^ Set a field to a value.
@@ -47,4 +51,11 @@ diffWith :: (Document -> l) -- ^ Extract a label from target document
          -> Document        -- ^ Target document.
          -> Diff l
 diffWith label from to = error "Unable to generate diffs"
+
+-- | Apply a 'Diff' to a 'Document'.
+applyDiff :: Diff l
+          -> Document
+          -> Document
+applyDiff (Diff _ []) doc = doc
+applyDiff diff        doc = error "Unable to apply diffs."
 

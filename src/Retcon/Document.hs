@@ -53,3 +53,6 @@ instance FromJSON DocValue where
   parseJSON (Bool b)   = return (Value $ T.pack $ show b)
   parseJSON Null       = return $ Value ""
 
+-- | An empty document.
+emptyDocument :: Document
+emptyDocument = Document M.empty
