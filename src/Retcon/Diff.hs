@@ -62,8 +62,19 @@ diffWith label from to =
 applyDiff :: Diff l
           -> Document
           -> Document
-applyDiff (Diff _ []) doc  = doc
-applyDiff _patch      _doc = error "Unable to apply diffs."
+applyDiff (Diff _ [])  doc = doc
+applyDiff (Diff _ ops) doc = foldl (flip applyOperation) doc ops 
+
+-- | Apply a diff operation to a document.
+applyOperation :: DiffOp l -> Document -> Document
+applyOperation (DeleteOp l n)   doc = deleteFromDoc n doc
+  where
+    deleteFromDoc []     vals = vals
+    deleteFromDoc (n:[]) vals = M.delete n vals
+    deleteFromDoc (n:ns) vals = M.update (deleteFromVal ns) n vals
+    deleteFromVal _      v@(Value t) = v
+    deleteFromVal []     v@(Subdocument (Document vals)) = v
+applyOperation (InsertOp l n v) doc@(Document vals) = error "Cannot apply insert operations"
 
 -- | Convert a 'Document' into a list of key/value pairs, sorted by key.
 toKVList :: Document
@@ -86,5 +97,18 @@ fromKVList _  = error "fromKVList undefined"
 diffKVList :: [([Text], Text)] -- ^ Source list.
            -> [([Text], Text)] -- ^ Target list.
            -> [DiffOp ()]
-diffKVList _ _ = error "diffKVList undefined"
+diffKVList [] ds = map (\(n,v) -> InsertOp () n v) ds
+diffKVList ss [] = map (\(n,_) -> DeleteOp () n  ) ss
+diffKVList ss@((sn,sv):sr) ds@((dn,dv):dr) =
+  case compare sn dn of
+    -- Destination has deleted key.
+    LT -> (DeleteOp () sn):(diffKVList sr ds)
+    -- Destination has inserted key.
+    GT -> (InsertOp () dn dv):(diffKVList ss dr)
+    -- Keys match, check values.
+    EQ -> case compare sv dv of
+      -- Values match, skip.
+      EQ -> diffKVList sr dr
+      -- Values differ, insert new value.
+      _  -> (InsertOp () dn dv):(diffKVList sr dr)
 
