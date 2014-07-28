@@ -13,12 +13,8 @@ suite :: Spec
 suite = do
   describe "generating a diff" $ do
     it "should work with canned documents 01-*.json" $ do
-      -- Load the source document.
-      source' <- testLoad "01-diff-source.json"
-      let source = maybe (error "Couldn't load 01-diff-source.json") id source'
-      -- Load the target document.
-      target' <- testLoad "01-diff-target.json"
-      let target = maybe (error "Couldn't load 01-diff-target.json") id target'
+      source <- testLoad' "01-diff-source.json"
+      target <- testLoad' "01-diff-target.json"
       -- Diff them.
       let patch = diff source target
           doc = applyDiff patch source

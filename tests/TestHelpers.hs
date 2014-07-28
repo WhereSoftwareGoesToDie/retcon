@@ -25,6 +25,10 @@ testLoad name = do
     input <- BS.readFile file
     return $ decode input
 
+-- | Load a 'Document' from a JSON file, raising an exception if it fails.
+testLoad' :: FilePath -> IO Document
+testLoad' n = testLoad n >>= return . maybe (error $ "Couldn't load " ++ n) id
+
 -- | Explicitly pass a test.
 pass :: Expectation
 pass = return ()
