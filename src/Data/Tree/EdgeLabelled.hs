@@ -41,7 +41,7 @@ fromList :: (Ord k)
 fromList [] = emptyTree
 fromList ks = foldl (worker) emptyTree ks
   where
-    worker (Node l kids) ([]  ,v) = Node (Just v) kids
+    worker (Node _ kids) ([]  ,v) = Node (Just v) kids
     worker (Node l kids) (k:ks,v) = Node l $ M.alter (update (ks,v)) k kids
     update vs       Nothing = update vs $ Just emptyTree
     update ([],v)   (Just (Node _ ch)) = Just $ Node (Just v) ch

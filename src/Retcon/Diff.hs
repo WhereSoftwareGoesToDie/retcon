@@ -16,10 +16,9 @@
 ------------------------------------------------------------------------
 module Retcon.Diff where
 
-import           Data.List
-import qualified Data.Map  as M
-import           Data.Text (Text)
+import Data.Text (Text)
 
+import Data.Tree.EdgeLabelled
 import Retcon.Document
 
 -- | A 'Diff' describes a collection of changes to a 'Document'.
@@ -51,11 +50,29 @@ diffWith :: (Document -> l) -- ^ Extract a label from target document
          -> Document        -- ^ Source document.
          -> Document        -- ^ Target document.
          -> Diff l
-diffWith label from to = error "diffWith: Not implemented"
+diffWith label from to =
+    let l   = label from
+        from' = toList from
+        to' = toList to
+        ops = diffLists from' to'
+    in Diff l $ fmap (fmap $ const l) ops
+
+-- | Build a list of diff operations from two tree association lists.
+diffLists :: [([DocumentKey],DocumentValue)]   -- ^ Source tree.
+          -> [([DocumentKey],DocumentValue)]   -- ^ Target tree.
+          -> [DiffOp ()]
+diffLists from [] = map (\(n,_) -> DeleteOp () n) from
+diffLists []   to = map (\(n,v) -> InsertOp () n v) to
+diffLists ss@((ns,vs):sr) ds@((nd,vd):dr) = case compare ns nd of
+    LT -> (DeleteOp () ns):(diffLists sr ds)
+    GT -> (InsertOp () nd vd):(diffLists ss dr)
+    EQ -> if (vs == vd)
+          then diffLists sr dr
+          else (InsertOp () nd vd):(diffLists sr dr)
 
 -- | Apply a 'Diff' to a 'Document'.
 applyDiff :: Diff l
           -> Document
           -> Document
-applyDiff (Diff _ ops) doc = error "applyDiff: Not implemented"
+applyDiff (Diff _ _ops) _doc = error "applyDiff: Not implemented"
 
