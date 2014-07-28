@@ -4,6 +4,7 @@ import           Data.Aeson
 import qualified Data.ByteString.Lazy as BS
 import           System.Directory
 import           System.FilePath
+import           Test.Hspec
 
 import Retcon.Diff
 import Retcon.Document
@@ -21,3 +22,6 @@ testLoad name = do
     input <- BS.readFile file
     return $ decode input
 
+-- | Explicitly pass a test.
+pass :: Expectation
+pass = return ()

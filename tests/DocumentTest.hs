@@ -41,29 +41,18 @@ testJSON = Object $ H.fromList
 suite :: Spec
 suite = do
   describe "JSON marhsalling" $ do
+    it "can load 01-diff-source.json" $ do
+      test1 <- testLoad "01-diff-source.json"
+      maybe (error "Could not load file") (const pass) test1
+
+    it "can load 01-diff-target.json" $ do
+      test2 <- testLoad "01-diff-target.json"
+      maybe (error "Could not load file") (const pass) test2
+
     it "roundtrip should be idempotent" $ do
       let doc' = (decode $ encode testJSON)
       doc' `shouldBe` (Just testDocument)
 
 main :: IO ()
 main = hspec suite
-
-lol = do
-  -- Try to load a document from JSON.
-  test1 <- testLoad "01-diff-source.json"
-  source <- case test1 of
-    Just d  -> return d
-    Nothing -> do
-      putStrLn "Could not load 01-diff-source.json as document."
-      exitFailure
-
-  -- Try to load another document from JSON.
-  test2 <- testLoad "01-diff-target.json"
-  target <- case test2 of
-    Just d -> return d
-    Nothing -> do
-      putStrLn "Could not load 01-diff-target.json as document."
-      exitFailure
-
-  exitSuccess
 
