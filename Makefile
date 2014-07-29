@@ -15,7 +15,7 @@ tags: $(SOURCES)
 STYLISH=$(shell which stylish-haskell 2>/dev/null)
 
 # Note that the config file *MUST* be the first dependency!
-format: .stylish-haskell.yml $(SOURCES)
+format: .stylish-haskell.yaml $(SOURCES)
 	@if [ ! -z "$(STYLISH)" ] ; then /bin/echo -e "FORMAT" ; fi
 	@$(STYLISH) -c $< -i $(filter-out $<,$^)
 
