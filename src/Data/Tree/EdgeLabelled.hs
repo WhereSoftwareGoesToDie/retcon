@@ -16,6 +16,10 @@ data Tree key value = Node
 emptyTree :: Tree a b
 emptyTree = Node Nothing M.empty
 
+-- | Predicate: a Tree is empty.
+emptyNode :: Tree k v -> Bool
+emptyNode (Node l kids) = isNothing l && M.null kids
+
 -- | Follow a path and return the value, if any, at the end.
 navigate :: (Ord k)
          => [k]

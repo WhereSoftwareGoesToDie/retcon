@@ -16,6 +16,8 @@
 ------------------------------------------------------------------------
 module Retcon.Diff where
 
+import qualified Data.Map as M
+import Data.Maybe
 import Data.Text (Text)
 
 import Data.Tree.EdgeLabelled
@@ -74,5 +76,30 @@ diffLists ss@((ns,vs):sr) ds@((nd,vd):dr) = case compare ns nd of
 applyDiff :: Diff l
           -> Document
           -> Document
-applyDiff (Diff _ _ops) _doc = error "applyDiff: Not implemented"
+applyDiff (Diff _ []) doc  = doc
+applyDiff (Diff _ ops) doc = foldl (flip evalDiffOp) doc ops
+
+-- | Apply a single 'DiffOp' to a 'Document'.
+evalDiffOp :: DiffOp l
+           -> Document
+           -> Document
+
+-- Delete the value at the current location.
+evalDiffOp (DeleteOp _ []) (Node _ kids)
+  = Node Nothing $ M.filter (not . emptyNode) kids
+
+-- Navigate to a location (so you can delete it's value).
+evalDiffOp (DeleteOp _ (k:ks)) (Node l kids)
+  = Node l $ M.filter (not . emptyNode) $ M.alter (Just . updateChild) k kids
+  where
+    updateChild = evalDiffOp (DeleteOp () ks) . maybe emptyDocument id
+
+-- Set the value at the current location.
+evalDiffOp (InsertOp _ []     v) (Node _ kids) = Node (Just v) kids
+
+-- Navigate to a location (so you can set it's value).
+evalDiffOp (InsertOp _ (k:ks) v) (Node l kids)
+  = Node l $ M.alter (Just . updateChild) k kids
+  where
+    updateChild = evalDiffOp (InsertOp () ks v) . maybe emptyDocument id
 
