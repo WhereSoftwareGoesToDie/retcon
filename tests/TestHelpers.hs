@@ -1,16 +1,18 @@
 {-# LANGUAGE OverloadedStrings #-}
 module TestHelpers where
 
-import           Data.Aeson
+import Data.Aeson
 import qualified Data.ByteString.Lazy as BS
-import qualified Data.HashMap.Lazy    as H
-import qualified Data.Map             as M
-import           System.Directory
-import           System.FilePath
-import           Test.Hspec
+import qualified Data.HashMap.Lazy as H
+import qualified Data.Map as M
+import System.Directory
+import System.FilePath
+import Test.Hspec
 
 import Retcon.Diff
 import Retcon.Document
+
+import TreeHelpers
 
 -- | Get the path to a test data file.
 testDataFile :: FilePath -> IO FilePath
