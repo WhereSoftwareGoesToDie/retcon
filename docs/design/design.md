@@ -44,17 +44,16 @@ types which implement the core functionality to merge changes between
 
 The data types defined in the library include:
 
-- The `Document` type in which the content to be synchronised is
-  expressed. This will essentially be a nested String/String map a la
-  JSON, etc.
+- The `Document` type represents the content to be synchronised between
+systems.
 
-- The `Diff` type which describes the changes between one `Document` and
-  another. Values of this type take an arbitrary label which can be used
-  by a merge policy to help implement such strategies as, e.g., last
-  writer wins or field-specific source of truth.
+- The `Diff` type describes the changes between one `Document` and another.
+Values of this type take an arbitrary label which can be used by a merge policy
+to help implement such strategies as, e.g., last writer wins or field-specific
+source of truth.
 
-- The `Operation` type describes a single change in a `Diff`. These
-  values take the same label as the `Diff` that contains them.
+- The `Operation` type describes a single change in a `Diff`. These values take
+labels of the same type as the `Diff` that contains them.
 
 - The `MergePolicy` type implements a specific policy which can be
   applied to label a `Diff` and to merge labelled `Diff`s. This is
@@ -62,20 +61,52 @@ The data types defined in the library include:
 
 A number of operations on these types:
 
+- Both `Diff` and `Operation` form functors, simplifying the manipulation of
+  their labels.
+
+- Generic `diff`, `mergeDiff`, and `applyDiff` operations act on `Document`,
+`Diff`, and `Operation` values maintaining but largely ignoring their labels.
+
+- `generateDiff :: MergePolicy l -> Document -> Document -> Diff l` uses these
+to generate a diff between two documents labelled according to the supplied
+merge policy.
+
+- `mergeDiff :: MergePolicy l -> [Diff l] -> (Diff (), [Diff l])`
+  uses a merge policy to merge a collection of diffs, generating a
+  merged `Diff`, and a collection of left-over `Diff`s containing the
+  operations which could not be merged.
+
 - `findInitialDocument :: [Document] -> Document` inspects a collection
   of `Document`s and generates a new `Document` can serve as a "common
   ancestor" to each of them. (NB: this document always exists because
   the empty `Document` is trivially prior to any other documents; so too
   is the intersection of the collection of documents).
 
-- `generateDiff :: MergePolicy l -> Document -> Document -> Diff l`
-  generates a `Diff` (labelled as required for the merge policy)
-  describing the changes to convert one document into another.
+# Document
 
-- `mergeDiff :: MergePolicy l -> [Diff l] -> (Diff (), [Diff l])`
-  uses a merge policy to merge a collection of diffs, generating a
-  merged `Diff`, and a collection of left-over `Diff`s containing the
-  operations which could not be merged.
+The `Document` type is a generic representation of tree-structured key/value
+data. They are represented using a Trie data structure with sequences of text
+values as the key rather than the more traditional sequences of characters.
+They are represented in the system using a variant of the Rose tree data
+structure with a `Map` of children instead of a list. This boils down to
+something very much like:
+
+````{.haskell}
+data Trie k v = Node (Maybe v) (Map k (Tree k v))
+type Document = Trie Text Text
+````
+
+As some point we may want to assess the [list-tries][] package and consider
+using it instead of our custom data type.
+
+[list-tries]: http://hackage.haskell.org/package/list-tries
+
+JSON documents can be converted to and from this type (assuming you like
+converting all your values to strings); but arbitrary `Document`s are *not*
+necessarily representable as JSON.
+
+This reasonably generic data structure allows us to implement some fairly
+generic operations to generate and apply diffs between `Document`s.
 
 # Merge policy
 
