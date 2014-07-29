@@ -21,10 +21,15 @@ suite = do
 
   describe "applying a diff" $ do
     it "should be idempotent with empty diffs" $ do
-      1 `shouldBe` 2
+      doc <- testLoad' "01-diff-source.json"
+      let doc' = applyDiff emptyDiff doc
+      doc' `shouldBe` doc
 
-    it "apply (diff empty doc) empty = doc" $ do
-      1 `shouldBe` 2
+    it "applyDiff (diff empty doc) empty = doc" $ do
+      doc <- testLoad' "01-diff-source.json"
+      let patch = diff emptyDocument doc
+      let doc' = applyDiff patch emptyDocument
+      doc' `shouldBe` doc
 
 -- | Run the test suite.
 main :: IO ()
