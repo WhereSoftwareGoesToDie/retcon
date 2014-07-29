@@ -24,3 +24,5 @@ clean:
 	@cabal clean >/dev/null
 	@rm -f tags
 
+test:
+	cabal test
