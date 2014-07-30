@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 module TreeHelpers where
 
 import Control.Applicative
@@ -6,10 +7,15 @@ import qualified Data.Map as M
 import Data.Text (Text)
 import qualified Data.Text as T
 import Test.QuickCheck
-import ToolShed.Test.QuickCheck.Arbitrary.Map
 
 import Data.Tree.EdgeLabelled
 
+-- | An approximation of the branching factor to be used in randomly generated
+-- trees.
+--
+-- This is currently a damn lie but should probably be a statistic at some point
+-- in the future.
+branchingFactor :: Int
 branchingFactor = 8
 
 -- | Generate a random tree with roughtly the given number of nodes.
@@ -23,17 +29,15 @@ branchingFactor = 8
 generateTree :: (Ord key, Arbitrary key, Arbitrary value)
              => Int
              -> Gen (Tree key value)
-generateTree n | n == 0    = pure  $  Node Nothing M.empty
-               | n == 1    = Node <$> (Just <$> arbitrary) <*> pure M.empty
-               | n <= 5    = Node <$> arbitrary <*> pure M.empty
-               | otherwise = do
-                    label <- arbitrary
-                    let size = n `div` branchingFactor
-                    let kids = [1..branchingFactor]
-                    nodes <- sequence $ take branchingFactor $ repeat (generateTree size)
-                    labels <- sequence $ take branchingFactor $ repeat (arbitrary)
-
-                    return $ Node label (M.fromList $ zip labels nodes)
+generateTree 0 = return $ Node Nothing M.empty
+generateTree 1 = Node <$> (Just <$> arbitrary) <*> return M.empty
+generateTree n = do
+    value <- arbitrary
+    branches <- choose (1, branchingFactor)
+    assign <- vectorOf (n-1) $ choose (1, branches)
+    kids <- sequence $ map (generateTree) $ map length $ group $ sort assign
+    labels <- vectorOf (n-1) arbitrary
+    return $ Node value $ M.fromList $ zip labels kids
 
 instance Arbitrary Text where
   arbitrary = T.pack <$> arbitrary
