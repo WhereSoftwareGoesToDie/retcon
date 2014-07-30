@@ -43,19 +43,6 @@ suite = do
 
     prop "applyDiff (idem)" prop_applyDiffIdem
 
-    -- prop "patch (diff empty doc) empty == doc"
-    -- prop "patch (diff doc empty) doc == empty"
-    it "should be idempotent with empty diffs" $ do
-      doc <- testLoad' "01-diff-source.json"
-      let doc' = applyDiff emptyDiff doc
-      doc' `shouldBe` doc
-
-    it "applyDiff (diff empty doc) empty = doc" $ do
-      doc <- testLoad' "01-diff-source.json"
-      let patch = diff emptyDocument doc
-      let doc' = applyDiff patch emptyDocument
-      doc' `shouldBe` doc
-
 -- | Run the test suite.
 main :: IO ()
 main = hspec suite
