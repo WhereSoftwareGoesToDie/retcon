@@ -20,6 +20,16 @@ emptyTree = Node Nothing M.empty
 emptyNode :: Tree k v -> Bool
 emptyNode (Node l kids) = isNothing l && M.null kids
 
+-- | Filter a Tree by a predicate.
+filterTree :: (Tree k v -> Bool) -> Tree k v -> Tree k v
+filterTree p (Node v kids) =
+  let tree' = Node v $ M.filter p kids
+  in if p tree' then tree' else emptyTree
+
+-- | Prune a Tree, removing empty nodes.
+pruneTree :: Tree k v -> Tree k v
+pruneTree = filterTree (not . emptyNode)
+
 -- | Follow a path and return the value, if any, at the end.
 navigate :: (Ord k)
          => [k]
