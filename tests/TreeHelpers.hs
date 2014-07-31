@@ -1,4 +1,15 @@
+--
+-- Copyright © 2013-2014 Anchor Systems, Pty Ltd and Others
+--
+-- The code in this file, and the program it is a part of, is
+-- made available to you by its authors as open source software:
+-- you can redistribute it and/or modify it under the terms of
+-- the 3-clause BSD licence.
+--
+
 {-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+
 module TreeHelpers where
 
 import Control.Applicative
@@ -43,5 +54,5 @@ instance Arbitrary Text where
   arbitrary = T.pack <$> arbitrary
 
 instance (Ord k, Arbitrary k, Arbitrary v) => Arbitrary (Tree k v) where
-  arbitrary = sized $ generateTree
+  arbitrary = sized generateTree
 

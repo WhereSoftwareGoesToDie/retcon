@@ -1,19 +1,32 @@
+--
+-- Copyright © 2013-2014 Anchor Systems, Pty Ltd and Others
+--
+-- The code in this file, and the program it is a part of, is
+-- made available to you by its authors as open source software:
+-- you can redistribute it and/or modify it under the terms of
+-- the 3-clause BSD licence.
+--
+
 {-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+
 module Main where
 
+import Data.Monoid
 import Test.Hspec
 import Test.Hspec.QuickCheck
-import Test.QuickCheck
-import Test.QuickCheck.Text
+import Test.QuickCheck.Arbitrary
 
 import Retcon.Diff
 import Retcon.Document
-
 import TestHelpers
 
--- | Proposition: 'emptyDiff' is a unit for 'applyPatch'.
+instance Arbitrary Document where
+    arbitrary = fmap Document arbitrary
+
+-- | Proposition: 'mempty' is a unit for 'applyPatch'.
 prop_applyDiffUnit :: Document -> Bool
-prop_applyDiffUnit doc = applyDiff emptyDiff doc == doc
+prop_applyDiffUnit doc = applyDiff (mempty :: Diff ()) doc == doc
 
 -- | Proposition: 'applyDiff (diff doc1 doc2) doc1 == doc2'
 prop_applyDiff :: Document -> Document -> Bool
