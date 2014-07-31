@@ -31,7 +31,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 
 import Data.Monoid
-import Data.Tree.EdgeLabelled
+import Data.Tree.GenericTrie
 
 -- | A retcon 'Document' is an edge-labelled tree with 'Text' labels on
 -- both nodes and edges.

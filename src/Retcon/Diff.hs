@@ -23,7 +23,7 @@ import Data.Maybe
 import Data.Monoid
 import Data.Text (Text)
 
-import Data.Tree.EdgeLabelled
+import Data.Tree.GenericTrie
 import Retcon.Document
 
 -- | A 'Diff' describes a collection of changes to a 'Document'.

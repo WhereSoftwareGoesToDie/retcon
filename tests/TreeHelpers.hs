@@ -19,7 +19,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Test.QuickCheck
 
-import Data.Tree.EdgeLabelled
+import Data.Tree.GenericTrie
 
 -- | An approximation of the branching factor to be used in randomly generated
 -- trees.

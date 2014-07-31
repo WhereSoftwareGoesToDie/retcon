@@ -19,7 +19,7 @@ source-repository head
 library
   exposed-modules:     Retcon.Document
                      , Retcon.Diff
-                     , Data.Tree.EdgeLabelled
+                     , Data.Tree.GenericTrie
   -- other-modules:       
   -- other-extensions:    DeriveFunctor, Rank2Types
   build-depends:       base >=4.7 && <4.8

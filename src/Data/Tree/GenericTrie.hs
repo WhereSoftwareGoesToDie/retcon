@@ -14,7 +14,7 @@
 {-# LANGUAGE DeriveTraversable     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 
-module Data.Tree.EdgeLabelled where
+module Data.Tree.GenericTrie where
 
 import Control.Applicative
 import Control.Lens

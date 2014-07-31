@@ -13,7 +13,7 @@ module Main where
 import Test.Hspec
 import Test.Hspec.QuickCheck
 
-import Data.Tree.EdgeLabelled
+import Data.Tree.GenericTrie
 
 import TreeHelpers ()
 
