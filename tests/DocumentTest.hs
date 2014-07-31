@@ -1,30 +1,21 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Main where
 
-import           Data.Aeson
-import qualified Data.HashMap.Lazy as H
-import           System.Exit
+import Test.Hspec
 
-import Retcon.Document
+import TestHelpers
 
-testData :: Value
-testData = Object $ H.fromList
-    [ ("name", String "Thomas Sutton")
-    , ("age", Number 30)
-    , ("address", Object $ H.fromList
-        [ ("company", String "Anchor")
-        , ("street", String "Level 11 / 201 Elizabeth Street")
-        , ("locality", String "Sydney")
-        ]
-      )
-    ]
+suite :: Spec
+suite = do
+  describe "JSON marhsalling" $ do
+    it "can load 01-diff-source.json" $ do
+      test1 <- testLoad "01-diff-source.json"
+      maybe (error "Could not load file") (const pass) test1
+
+    it "can load 01-diff-target.json" $ do
+      test2 <- testLoad "01-diff-target.json"
+      maybe (error "Could not load file") (const pass) test2
 
 main :: IO ()
-main = do
-  let doc = (decode $ encode testData :: Maybe  Document)
-  putStrLn "Test document functionality"
-  print doc
-  case doc of
-        Nothing -> exitFailure
-        Just _  -> exitSuccess
+main = hspec suite
 

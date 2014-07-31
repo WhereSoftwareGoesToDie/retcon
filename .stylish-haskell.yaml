@@ -1,6 +1,9 @@
 # stylish-haskell configuration file
 # ==================================
 
+# The stylish-haskell tool is mainly configured by specifying steps. These steps
+# are a list, so they have an order, and one specific step may appear more than
+# once (if needed). Each file is processed by these steps in the given order.
 steps:
   # Convert some ASCII sequences to their Unicode equivalents. This is disabled
   # by default.
@@ -19,16 +22,13 @@ steps:
       # - global: Align the import names and import list throughout the entire
       #   file.
       #
-      # - file: Like global, but don't add padding when there are no qualified
-      #   imports in the file.
-      #
       # - group: Only align the imports per group (a group is formed by adjacent
       #   import lines).
       #
       # - none: Do not perform any alignment.
       #
       # Default: global.
-      align: group
+      align: none
 
   # Language pragmas
   - language_pragmas:
@@ -37,9 +37,6 @@ steps:
       # - vertical: Vertical-spaced language pragmas, one per line.
       #
       # - compact: A more compact style.
-      #
-      # - compact_line: Similar to compact, but wrap each line with
-      #   `{-#LANGUAGE #-}'.
       #
       # Default: vertical.
       style: vertical
@@ -53,8 +50,8 @@ steps:
 
   # Replace tabs by spaces. This is disabled by default.
   - tabs:
-  #     # Number of spaces to use for each tab. Default: 8, as specified by the
-  #     # Haskell report.
+      # Number of spaces to use for each tab. Default: 8, as specified by the
+      # Haskell report.
       spaces: 8
 
   # Remove trailing whitespace
@@ -62,7 +59,7 @@ steps:
 
 # A common setting is the number of columns (parts of) code will be wrapped
 # to. Different steps take this into account. Default: 80.
-columns: 80
+columns: 78
 
 # Sometimes, language extensions are specified in a cabal file or from the
 # command line instead of using language pragmas in the file. stylish-haskell
