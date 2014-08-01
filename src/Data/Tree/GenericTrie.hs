@@ -7,7 +7,11 @@
 -- the 3-clause BSD licence.
 --
 
--- | Description: A Trie with arbitrary key values
+-- |
+-- Description: A trie with arbitrary key values.
+--
+-- This module defines a generic trie-like data structure where keys are
+-- sequences of any type in 'Ord'.
 
 {-# LANGUAGE DeriveFoldable        #-}
 {-# LANGUAGE DeriveFunctor         #-}
@@ -35,7 +39,7 @@ data Tree key value
 
 instance Monoid (Tree a b) where
     mempty = Node Nothing M.empty
-    mappend = error "union not implemented"
+    mappend = error "Monoid(Tree a b): union not implemented"
 
 instance FunctorWithIndex [i] (Tree i)
 instance FoldableWithIndex [i] (Tree i)

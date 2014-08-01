@@ -7,7 +7,6 @@
 -- the 3-clause BSD licence.
 --
 
-
 module Main where
 
 import Test.Hspec
