@@ -41,12 +41,15 @@ newtype Document
 type DocumentKey =  Text
 type DocumentValue = Text
 
+mkNode :: Applicative f => Maybe DocumentValue -> f Document
+mkNode x = pure . Document $ Node x mempty
+
 instance FromJSON Document where
-  parseJSON (String str) = pure . Document $ Node (Just str) mempty
-  parseJSON (Number num) = pure . Document $ Node (Just $ T.pack $ show num) mempty
-  parseJSON (Bool True)  = pure . Document $ Node (Just "TRUE") mempty
-  parseJSON (Bool False) = pure . Document $ Node (Just "FALSE") mempty
-  parseJSON (Null)       = pure . Document $ Node Nothing mempty
+  parseJSON (String str) = mkNode $ Just str
+  parseJSON (Number num) = mkNode . Just . T.pack $ show num
+  parseJSON (Bool True)  = mkNode $ Just "TRUE"
+  parseJSON (Bool False) = mkNode $ Just "FALSE"
+  parseJSON (Null)       = mkNode Nothing
   parseJSON (Array _)    = mzero -- TODO Maybe convert into a map?
   parseJSON (Object v)   = do
     let kvs = H.toList v
