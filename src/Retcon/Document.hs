@@ -23,6 +23,7 @@
 module Retcon.Document where
 
 import Control.Applicative
+import Control.Lens hiding ((.=))
 import Control.Monad
 import Data.Aeson
 import qualified Data.HashMap.Lazy as H
@@ -51,10 +52,9 @@ instance FromJSON Document where
   parseJSON (Bool False) = mkNode $ Just "FALSE"
   parseJSON (Null)       = mkNode Nothing
   parseJSON (Array _)    = mzero -- TODO Maybe convert into a map?
-  parseJSON (Object v)   = do
-    let kvs = H.toList v
-    kvs' <- mapM (\(k,v') -> return . (k,) . unDocument =<< parseJSON v') kvs
-    return . Document $ Node Nothing (M.fromList kvs')
+  parseJSON (Object v)   =
+    Document . Node Nothing . M.fromList . H.toList <$>
+        traverse (\x -> unDocument <$> parseJSON x) v
 
 -- TODO This instance will discard information when it encounters a
 -- node with a label *and* children.
