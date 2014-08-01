@@ -19,8 +19,8 @@ module Retcon.MergePolicy where
 import Data.List
 import GHC.TypeLits
 
-import Retcon.Document
 import Retcon.Diff
+import Retcon.Document
 
 -- * Merge policies
 
@@ -28,16 +28,16 @@ import Retcon.Diff
 -- requirements (hopefully some sort of business rules). Many policies will
 -- require some metadata about changes to make their decisions, so a merge
 -- policy is comprised of several elements:
--- 
+--
 -- - A function to extract the particular metadata required the policy; and
 --
 -- - A function to use, using that information, combine two 'Diff's.
 
 -- | A policy to merge 'Diff's using some arbitrary information @l@.
 data MergePolicy l =
-    MergePolicy { extractLabel :: Document -> l 
+    MergePolicy { extractLabel :: Document -> l
                 -- ^ Extract the label information needed to apply this policy.
-                , mergeDiffs :: Diff l -> Diff l -> (Diff l, Diff l)
+                , mergeDiffs   :: Diff l -> Diff l -> (Diff l, Diff l)
                 -- ^ Combine two diffs. The values are acc, new, (acc', new').
                 }
 
@@ -50,11 +50,11 @@ mergeWithPolicy policy d1 d2 = fst $ (mergeDiffs policy) d1 d2
 -- * Basic policies
 
 -- $ There are a small number of basic policies which can be used to describe
--- many more complex policies. 
+-- many more complex policies.
 
 -- | Policy: reject all changes.
 rejectAll :: MergePolicy ()
-rejectAll = MergePolicy (const ()) merge 
+rejectAll = MergePolicy (const ()) merge
   where
     merge (Diff ll opl) (Diff lr opr) = (Diff ll [], Diff lr (opl ++ opr))
 

@@ -30,7 +30,7 @@ suite = do
     describe "rejectAll merge policy" $ do
         let d1 = Diff () [InsertOp () ["value"] "one"]
         let d2 = Diff () [InsertOp () ["value"] "two"]
-        
+
         it "should ignore all changes" $ do
             let d' = mergeWithPolicy rejectAll d1 d2
             d' `shouldBe` mempty
@@ -38,7 +38,7 @@ suite = do
     describe "acceptAll merge policy" $ do
         let d1 = Diff () [InsertOp () ["value"] "one"]
         let d2 = Diff () [InsertOp () ["value"] "two"]
-        
+
         it "should include all changes" $ do
             let d' = mergeWithPolicy acceptAll d1 d2
             d' `shouldBe` Diff () [ InsertOp () ["value"] "one"
