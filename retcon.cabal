@@ -19,9 +19,9 @@ source-repository head
 library
   exposed-modules:     Retcon.Document
                      , Retcon.Diff
+                     , Retcon.MergePolicy
                      , Data.Tree.GenericTrie
   -- other-modules:       
-  -- other-extensions:    DeriveFunctor, Rank2Types
   build-depends:       base >=4.7 && <4.8
                      , bifunctors >=4.1 && <4.2
                      , containers >=0.5 && <0.6
@@ -50,7 +50,6 @@ test-suite             document-test
                      , containers
                      , unordered-containers
                      , hspec
-                     , toolshed
                      , QuickCheck
 
 test-suite             diff-test
@@ -67,7 +66,6 @@ test-suite             diff-test
                      , directory
                      , filepath
                      , hspec
-                     , toolshed
                      , QuickCheck
                      , unordered-containers
                      , containers
@@ -83,7 +81,21 @@ test-suite             tree-test
                      , bytestring
                      , text
                      , hspec
-                     , toolshed
+                     , QuickCheck
+                     , unordered-containers
+                     , containers
+
+test-suite             policy-test
+  type:                exitcode-stdio-1.0
+  default-language:    Haskell2010
+  hs-source-dirs:      tests
+  main-is:             PolicyTest.hs
+  other-modules:       TestHelpers, TreeHelpers
+  build-depends:       base
+                     , retcon
+                     , bytestring
+                     , text
+                     , hspec
                      , QuickCheck
                      , unordered-containers
                      , containers
