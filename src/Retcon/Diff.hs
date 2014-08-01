@@ -22,6 +22,7 @@ import qualified Data.Map as M
 import Data.Maybe
 import Data.Monoid
 import Data.Text (Text)
+import GHC.Exts (IsList (..))
 
 import Data.Tree.GenericTrie
 import Retcon.Document
