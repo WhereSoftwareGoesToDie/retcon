@@ -76,6 +76,7 @@ instance (Ord k) => IsList (Tree k v) where
             in Just $ Node l ch'
 
   toList t = t ^@.. itraversed
+
 emptyNode :: Tree k v -> Bool
 emptyNode (Node l kids) = isNothing l && M.null kids
 

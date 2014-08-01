@@ -13,12 +13,9 @@
 -- system manipulates. Documents are, essentially, nested key/value
 -- maps.
 
-{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE TupleSections              #-}
-{-# LANGUAGE TypeSynonymInstances       #-}
-{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Retcon.Document where
 
@@ -59,7 +56,7 @@ instance FromJSON Document where
 -- TODO This instance will discard information when it encounters a
 -- node with a label *and* children.
 instance ToJSON Document where
-  toJSON (Document (Node Nothing  children))
+  toJSON (Document (Node Nothing children))
     = object $ map (\(k,v) -> k .= Document v) $ M.toAscList children
   toJSON (Document (Node (Just val) children))
     | M.null children = toJSON val
