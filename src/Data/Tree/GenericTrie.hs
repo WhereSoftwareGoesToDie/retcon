@@ -17,6 +17,8 @@
 {-# LANGUAGE DeriveFunctor         #-}
 {-# LANGUAGE DeriveTraversable     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedLists       #-}
+{-# LANGUAGE TypeFamilies          #-}
 
 module Data.Tree.GenericTrie where
 
@@ -27,6 +29,7 @@ import Data.Map (Map)
 import qualified Data.Map as M
 import Data.Maybe
 import Data.Monoid
+import GHC.Exts (IsList (..))
 import Prelude hiding (concatMap, foldl, foldr)
 
 -- | A tree similar to 'Data.Tree' except it uses a 'Map' of children
@@ -56,10 +59,28 @@ instance TraversableWithIndex [i] (Tree i) where
 
         appendIndex idx i = go (idx ++ [i])
 
+-- Plated traverses a Node's immediate children.
 instance Plated (Tree k v) where
     plate f (Node v childs) = Node v <$> traverse f childs
 
--- | Predicate: is Tree empty?
+
+instance (Ord k) => IsList (Tree k v) where
+  type Item (Tree k v) = ([k],v)
+  fromList [] = mempty
+  fromList kvs = foldl worker mempty kvs
+    where
+        worker (Node _ kids) ([]  ,v) = Node (Just v) kids
+        worker (Node l kids) (k:ks,v) = Node l $ M.alter (update (ks,v)) k kids
+        update vs       Nothing = update vs $ Just mempty
+        update ([],v)   (Just (Node _ ch)) = Just $ Node (Just v) ch
+        update (k:ks,v) (Just (Node l ch)) =
+            let emptyCase = update (ks,v) $ Just mempty
+                fullCase n = update (ks,v) $ Just n
+                ch' = M.alter (maybe emptyCase fullCase) k ch
+            in Just $ Node l ch'
+
+  toList t = t ^@.. itraversed
+
 emptyNode :: Tree k v -> Bool
 emptyNode (Node l kids) = isNothing l && M.null kids
 
@@ -84,25 +105,3 @@ navigate :: (Ord k)
 navigate []     (Node v _kids) = v
 navigate (n:ns) (Node _ kids ) = M.lookup n kids >>= navigate ns
 
--- | Convert a 'Tree' into an association list of tree paths and values.
-toList :: (Ord k)
-       => Tree k v
-       -> [([k], v)]
-toList t = t ^@.. itraversed
-
--- | Convert an association list of tree paths and values into a 'Tree'.
-fromList :: (Ord k)
-         => [([k], v)]
-         -> Tree k v
-fromList [] = mempty
-fromList kvs = foldl worker mempty kvs
-  where
-    worker (Node _ kids) ([]  ,v) = Node (Just v) kids
-    worker (Node l kids) (k:ks,v) = Node l $ M.alter (update (ks,v)) k kids
-    update vs       Nothing = update vs $ Just mempty
-    update ([],v)   (Just (Node _ ch)) = Just $ Node (Just v) ch
-    update (k:ks,v) (Just (Node l ch)) =
-      let emptyCase = update (ks,v) $ Just mempty
-          fullCase n = update (ks,v) $ Just n
-          ch' = M.alter (maybe emptyCase fullCase) k ch
-      in Just $ Node l ch'

@@ -9,6 +9,7 @@
 
 module Main where
 
+import GHC.Exts (IsList (..))
 import Test.Hspec
 import Test.Hspec.QuickCheck
 
