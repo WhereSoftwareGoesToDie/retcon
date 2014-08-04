@@ -9,17 +9,17 @@
 
 -- | Description: API to implement entities and data sources.
 
-{-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE ExistentialQuantification  #-}
+{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE PolyKinds                  #-}
 
 module Retcon.DataSource where
 
 import Data.Proxy
-import GHC.TypeLits 
+import GHC.TypeLits
 
 import Retcon.Document
 import Retcon.Monad
@@ -59,7 +59,7 @@ class (KnownSymbol source, RetconEntity entity) => RetconDataSource entity sourc
     -- monad.
     setDocument :: Document
                 -> Maybe (ForeignKey entity source)
-		-> Retcon (ForeignKey entity source)
+                -> Retcon (ForeignKey entity source)
 
     -- | Retrieve a document from a data source.
     --
@@ -91,5 +91,5 @@ newtype RetconDataSource entity source => ForeignKey entity source =
 data SomeEntity = forall e. (KnownSymbol e, RetconEntity e) => SomeEntity (Proxy e)
 
 -- | Wrap an arbitrary 'RetconDataSource' for some entity 'e'.
-data SomeDataSource e = forall s. RetconDataSource e s => SomeDataSource (Proxy s) 
+data SomeDataSource e = forall s. RetconDataSource e s => SomeDataSource (Proxy s)
 
