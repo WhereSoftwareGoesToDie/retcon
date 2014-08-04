@@ -56,8 +56,7 @@ source of truth.
 labels of the same type as the `Diff` that contains them.
 
 - The `MergePolicy` type implements a specific policy which can be
-  applied to label a `Diff` and to merge labelled `Diff`s. This is
-  probably just a product type (maybe even just a tuple) of functions.
+  used to label a `Diff` and to merge labelled `Diff`s.
 
 A number of operations on these types:
 
@@ -78,22 +77,21 @@ merge policy.
 
 - `findInitialDocument :: [Document] -> Document` inspects a collection
   of `Document`s and generates a new `Document` can serve as a "common
-  ancestor" to each of them. (NB: this document always exists because
-  the empty `Document` is trivially prior to any other documents; so too
-  is the intersection of the collection of documents).
+  ancestor" to each of them.
 
 # Document
 
 The `Document` type is a generic representation of tree-structured key/value
-data. They are represented using a Trie data structure with sequences of text
-values as the key rather than the more traditional sequences of characters.
-They are represented in the system using a variant of the Rose tree data
-structure with a `Map` of children instead of a list. This boils down to
+data. They are represented using a Trie-like data structure with sequences of
+text values as the key rather than the more traditional sequences of
+characters. They are represented in the system using a variant of the Rose tree
+data structure with a `Map` of children instead of a list. This boils down to
 something very much like:
 
 ````{.haskell}
-data Trie k v = Node (Maybe v) (Map k (Tree k v))
-type Document = Trie Text Text
+data Trie k v = Node (Maybe v) (Map k (Trie k v))
+newtype Document e = Document (Trie Text Text)
+  deriving (...)
 ````
 
 As some point we may want to assess the [list-tries][] package and consider
@@ -102,11 +100,39 @@ using it instead of our custom data type.
 [list-tries]: http://hackage.haskell.org/package/list-tries
 
 JSON documents can be converted to and from this type (assuming you like
-converting all your values to strings); but arbitrary `Document`s are *not*
-necessarily representable as JSON.
+converting the distinct value types in JSON to strings); but arbitrary
+`Document`s are *not* necessarily representable as JSON.
 
 This reasonably generic data structure allows us to implement some fairly
 generic operations to generate and apply diffs between `Document`s.
+
+## Initial documents
+
+As mentioned, the algorithm described below requires an "initial" document
+which serves as the starting point of the possibly-diverging changes to be
+merged between the different data sources. The system is able to use the last
+known state for documents that have been processed previously but it will have
+to conjure a suitable for initial out of the whole cloth for brand new
+documents.
+
+There are several straightforward approaches to generating a document suitable
+for use as the "initial" for a set of input documents:
+
+- Just use the empty document; or
+
+- Take the intersection of the input documents (i.e. the keys and values on
+which they all agree).
+
+It should be obvious that the empty document is prior to all other documents
+and, likewise, that the intersection of a set of documents is prior to each of
+the individual documents in that set.
+
+While the former choice is simpler the latter can be expected to generate
+smaller and less complex diffs, so the initial version of retcon will use it.
+
+````{.haskell}
+findInitialDocument :: [Document] -> Document
+````
 
 # Merge policy
 
@@ -115,28 +141,34 @@ Each merge policy consists of two parts:
 - A function to extract a label value from a `Document` which will then
   be applied to the `Diff`s the policy will be applied to.
 
-- A function to merge two `Diff`s (labelled according to the policy) and
-  return a merged `Diff` and a "left-over" `Diff`. The left-over `Diff`
-  will be empty if the policy was able to merge all changes.
+- A function to include some or all of the changes in a collection of `Diff`s
+  (labelled according to the policy) and return a `Diff` containing all
+  included changes and a list of "left-over" `Diff`s containing the excluded
+  changes. The left-over `Diff`s will be empty if the policy was able to merge
+  all changes.
 
 A first approximation of the merge policy data type might be:
 
 ````{.haskell}
 data MergePolicy l = MergePolicy
     { extractLabel :: Document -> l
-    , acceptDiff   :: Diff l -> Diff l -> (Diff l, Diff l)
+    , mergeDiffs   :: [Diff l] -> (Diff l, [Diff l])
     }
 ````
 
-Or maybe that should be `Diff l -> Operation l -> Bool`?
+The initial implementation will include several sample merge policies but will
+not include combinators for composing more complex policies. These initial
+policies include:
 
-To make it easy to construct a merge policy which expresses business
-rules, the `MergePolicy` type will come equiped with a default policy
-and an append operation:
+- Trivially exclude all changes.
+
+- Trivially include all changes.
+
+- Include only non-conflicting changes.
+
+Later versions will include combinators such as:
 
 ````{.haskell}
-defaultPolicy :: MergePolicy ()
-
 -- | Compose two 'MergePolicy's
 andThen :: MergePolicy a -> MergePolicy b -> MergePolicy (a,b)
 
@@ -152,105 +184,86 @@ dropField :: Key -> MergePolicy l
 -- | Accept conflicting changes from the document with the highest
 -- timestamp.
 mostRecentBy :: Key -> MergePolicy String
-
--- | Trust the "accounts" source about the "paid" field, otherwise apply
--- the most recent changes.
-trustAccountsThenMostRecentByTimestamp :: MergePolicy (Source, String)
-trustAccountsThenMostRecentByTimestamp = 
-    onField "paid" (trustSource "accounts") `andThen`
-    mostRecentBy "timestamp"
-````
-
-It is likely that some of this machinery could be abstracted to use
-existing core or third-party libraries (it would be a `Monoid` if not
-for the labels and might something from `lens`).
-
-We need a NOP for both the label extraction and diff merging operations
-in the `MergePolicy` type. The label extraction NOP is clearly `const
-()` (so long as the first policy has *some* label; `const ()` is a good
-choice). The merging NOP is probably means `(,)`.
-
-````{.haskell}
-noMergePolicy :: MergePolicy ()
-noMergePolicy = MergePolicy (const ()) (,)
-````
-
-Then the append operations is something like:
-
-````{.haskell}
--- | Combine two merge policies by applying one and then another.
-andThen :: MergePolicy n -> MergePolicy m -> MergePolicy (n,m)
-andThen (MergePolicy ext1 pol1) (MergePolicy ext2 pol2) = MergePolicy ext3 pol3
-  where
-    ext3 doc = (ext1 doc, ext2 doc)
-    pol3 diff op = (policyOverLabel fst pol1 diff op) || (policyOverLabel snd pol2 diff op)
-````
-
-# Data sources
-
-A data source encapsulates the set of actions required to interact with
-an external system which stores data to be synchronised. These actions
-operate in a special monad, allowing the system to provide some support
-functionality automatically.
-
-The operations each data source supports are:
-
-````{.haskell}
--- | Retrieve a document from the foreign system.
-getDocument :: (RetconSource m)
-            => ForeignKey
-            -> m (Either DataSourceError Document)
-
--- | Write a document to the foreign system, returning the new foreign
--- key for the document, if any.
-setDocument :: (RetconSource m)
-            => Maybe ForeignKey
-            -> Document
-            -> m (Either DataSourceError (Maybe ForeignKey))
-
--- | Delete a document from the foreign system.
-deleteDocument :: (RetconSource m)
-               => ForeignKey
-               -> m (Either DataSourceError ())
-````
-
-The `RetconSource` type class is similar in spirit to the typeclasses which
-accompany some monad transformers: it allows the underlying monad to be
-replaced while still allowing the retcon-specific operations to be used
-unchanged (like `MonadIO` with `liftIO`).
-
-````{.haskell}
-class (MonadIO m, MonadLogger m) => RetconSource m where
-    entity :: m Entity
-    datasource :: m DataSource
-````
-
-These operations will need to have access to IO operations (probably through
-`MonadIO`); logging operations (possibly via `MonadLogger`); and some specific
-operations to access the retcon database lookup and cache tables.
-
-The implementation will likely be something a little bit like this (depending
-on the exact functionality we eventually depend on):
-
-````{.haskell}
-type RetconSource = ReaderT Entity (ReaderT DataSource IO))
-
-instance RetconSource RetconSource where
-    entity = ask
-    datasource = lift ask
-
--- | Run an action to interact with a retcon datasource.
-runRetconSource :: MonadIO m => Entity -> DataSource -> RetconSource r -> m r
-runRetconSource entity datasource action =
-    liftIO $ runReaderT (runReaderT action entity) datasource
 ````
 
 # Entity
 
-An entity encapsulates a collection of data sources and a merge policy
-which together specify the system's operation on a particular type of
-data. Once constructed, an `Entity` can be passed to a handler (see
-below) which implements the I/O, user interface, etc.
+An entity encapsulates a collection of data sources and a merge policy which
+together specify the system's operation on a particular type of data. An entity
+will be represented in the systems as an instance of a type class.
+
+The operations defined in the entity type class are:
+
+- List the data sources which handle this type of data.
+
+- Get the merge policy to apply when processing data of this type.
+
+````{.haskell}
+
+-- | Wrap any data source for the entity 'e' in an existenial type.
+-- .
+-- Values of 'SomeSource e' represent any data source for the entity 'e'.
+data SomeSource e = forall s. DataSource e s => SomeSource (Proxy s)
+
+class Entity e where
+    -- | Data sources which handle this type of data.
+    entitySources :: Proxy e -> [SomeSource e]
+
+    -- | Merge policy for this type of data.
+    entityPolicy :: Proxy e -> MergePolicy l
+````
+
+The types for which the class will be instantiated will be symbols (i.e.
+type-level strings). This helps to ensure that they cannot be confused with
+regular values while allowing us to make use some nice machinery provided by
+the GHC libraries.
+
+# Data sources
+
+A data source encapsulates the set of actions required to interact with an
+external system which stores data to be synchronised. Data sources are
+represented in the system as an instance of a multi-parameter type class with
+types representing both the entity (see below) and the data source.
+
+The operations each data source supports are:
+
+- Fetch a document with a specified foreign key.
+
+- Set a document with a specified foreign key.
+
+- Delete a document with a specified foreign key.
+
+Each of these operations will have types like:
+
+````{.haskell}
+
+newtype Retcon a = ...
+
+instance MonadIO Retcon where
+
+class DataSource entity source where
+    -- | Write a document to the foreign system, returning the foreign key
+    -- for the document.
+    setDocument :: Document entity
+        -> Maybe (ForeignKey entity source)
+        -> Retcon (ForeignKey entity source)
+
+    -- | Retrieve a document from the foreign system.
+    getDocument :: ForeignKey entity source
+        -> Retcon (Document entity)
+
+    -- | Delete a document from the foreign system.
+    deleteDocument :: ForeignKey entity source
+        -> Retcon ()
+````
+
+The data source types, like the entity types described above, will be symbols
+(i.e. type-level strings).
+
+These operations will operate in the `Retcon` monad, which will need to have
+access to IO operations (probably through `MonadIO`); logging operations
+(possibly via `MonadLogger`); and some specific operations to access the retcon
+database lookup and cache tables.
 
 # `runRetcon`
 
@@ -258,58 +271,49 @@ All of the details above are brought together in a single function which is
 responsible for evaluating retcon's internal data stores, coordinating access
 to external data stores, applying the core algorithm, logging changes, etc.
 
-This core algorithm will have a type a little like:
+This will be be implemented using the type literals machinery described above
+to match an entity and source from an incoming event description to a pair of
+*entity* and *source* types as described above. These will be used to determine
+the nature of the event (create, update, delete) by communicating with the
+source, and then process it and propagate any changes to other sources.
 
 ````{.haskell}
-runRetcon :: (MonadIO m)
-          => Entity
-          -> Event
-          -> m ()
-````
-
-but is likely to return something slightly more useful than `()`. The `Event`
-value will contain information describing the event notification delivered to
-the system through the handler (see below) which should include the source
-system, the document key from that system and, if required, the event type
-(create, update, or delete).
-
-It is entirely possible that we'll be able to implement the requirements
-without an explicit event type, infering the event type from information retcon
-already has (an event with an unknown document key is creation, an event with
-a document which can't be retrieved from that source is deletion, anything else
-is an update). If this will work (and it should), we'll do this. Then `Event`
-might look something like:
-
-````{.haskell}
-type Event = (Source, ForeignKey)
+runRetcon :: (String, String, String)
+          -> Retcon ()
 ````
 
 The logic of this function is relatively straightforward:
 
-1. Identify the type of change being performed (according to the logic above)
-and the retcon key of the document to be updated (allocating a new one, if
-required).
+0. Resolve the event description to specific entity and data source types.
 
-2. Fetch the matching document from all sources. If we don't know of a matching
-document in a particular data source, the `Nothing` will be replaced in retcon
-with the initial document. (This *should* only happen for newly created
-documents, in which case the initial document is $\emptyset$ and the diff will
-be "copy all the fields").
+1. Identify the type of change being performed (if the source ID is new, it's
+creation; if the source says the document doesn't exist, it's deletion;
+otherwise it's an update) and the retcon key of the document to be updated
+(allocating a new one, if required).
 
-3. Perform retcon on the documents.
+2. Fetch the matching document from all sources.
 
-4. Send the updated documents back to their corresponding data sources.
+3. Find an initial document; either from the cache database table or, if there
+isn't one, by generating one from the input documents as described above.
+
+4. Build a diff from the initial document, the input documents, and the merge
+policy using the algorithms described above.
+
+5. Update the initial document with this diff and save it in the cache.
+
+6. Update the input documents with this diff, and send them updated documents
+back to their corresponding data sources.
 
 This will be implemented in two functions:
 
 - `runRetcon` performs the full process; and itself uses:
 
 - `applyRetconChanges` which, given a set of changes, performs the process from
-steps 3.5 to 4 above.
+steps 5 and 6 above.
 
-This division will allow a handler to, e.g., give human users to ability to
-cherry-pick changes which could not be applied automatically and push them
-through.
+This division will allow future versions to implement additional features,
+e.g., give human users to ability to cherry-pick changes which could not be
+applied automatically and push them through.
 
 Each step in this process can record useful information in logs and in
 operational database tables. These details include:
@@ -326,7 +330,7 @@ primary key `(entity_name, retcon_key)`.
 
 - A record of the document in each data source after each change stored in
 `retcon_history` with a compound primary key `(entity_name, retcon_key,
-data_source, seq)`.
+data_source, sequence)`.
 
 # Handlers
 
@@ -340,10 +344,23 @@ limiting for some of the data source systems, it may be necessary to do crazy
 things to coordinate access between different data sources which interact with
 the same external system.
 
+## Command-line Handler
+
+The first handler to be developed will be for demonstration purposes and serves
+as the first "proof of concept" release. This handled will consist of a simple
+command line application which accepts arguments:
+
+- An entity name
+- A data source name
+- A foreign key
+
+This command line executable will make use of demonstration data sources which
+store documents in a directory of JSON files.
+
 ## Snaplet Handler
 
-Initially the only handler will be the Snap Framework snaplet which implements
-a basic RESTful web API and user interface.
+Initially the only full-featured handler will be the Snap Framework snaplet
+which implements a basic RESTful web API and user interface.
 
 The basic interface will look something like:
 
