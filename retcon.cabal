@@ -1,7 +1,6 @@
 name:                retcon
 version:             0.1.0.0
 synopsis:            Synchronise multiple data sources.
--- description:         
 license:             BSD3
 license-file:        LICENSE
 author:              Thomas Sutton <thomas.sutton@anchor.net.au>

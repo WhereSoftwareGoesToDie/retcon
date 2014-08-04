@@ -7,9 +7,9 @@
 -- the 3-clause BSD licence.
 --
 
--- | Description: Implement the monad for retcon actions to run in.
+-- | Description: A monad for data source action.
 --
--- This module implements the monad in which data source operations will be
+-- This module implements a monad in which data source operations will be
 -- executed.
 
 module Retcon.Monad where

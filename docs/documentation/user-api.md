@@ -70,7 +70,6 @@ import Retcon.Monad
 import Retcon.DataSource
 
 instance RetconDataSource "account" "customer-api" where
-
     getDocument key = error "getDocument is not defined"
 
     setDocument doc key = error "setDocument is not defined"
