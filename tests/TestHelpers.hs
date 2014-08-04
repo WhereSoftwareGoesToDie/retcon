@@ -20,6 +20,7 @@ import Test.Hspec
 
 import Retcon.Diff
 import Retcon.Document
+import Retcon.JsonDirectory
 
 import TreeHelpers
 
@@ -39,6 +40,10 @@ testLoad name = do
 -- | Load a 'Document' from a JSON file, raising an exception if it fails.
 testLoad' :: FilePath -> IO Document
 testLoad' n = testLoad n >>= return . maybe (error $ "Couldn't load " ++ n) id
+
+-- | Load a 'Document' from a JSON file using the JsonDirectory source.
+testReadJsonDir :: FilePath -> ForeignKey -> IO (Either DataSourceError Document)
+testReadJsonDir fp fk = getJsonDirDocument fp fk >>= return
 
 -- | Explicitly pass a test.
 pass :: Expectation
