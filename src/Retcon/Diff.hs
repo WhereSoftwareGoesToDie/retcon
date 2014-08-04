@@ -8,11 +8,11 @@
 --
 
 -- |
--- Description : Represent, build and apply diffs over documents.
+-- Description: Represent, build and apply diffs over documents.
 --
--- This module implements the 'Diff' and 'DiffOp' data styles which
--- together model the changes between 'Document's. Both diffs and the
--- operations which compose them can be labelled with arbitary values.
+-- This module implements the 'Diff' and 'DiffOp' data types which together
+-- model changes between 'Document's. Both diffs and the operations which
+-- compose them can be labelled with arbitary values.
 
 {-# LANGUAGE DeriveFunctor #-}
 
@@ -43,6 +43,15 @@ data DiffOp l
 instance Monoid l => Monoid (Diff l) where
     mempty = Diff mempty mempty
     mappend = error "unimplemented mappend for Diff"
+
+-- | Extract the key which will be modified by a 'DiffOp'.
+diffOpTarget :: DiffOp l -> [DocumentKey]
+diffOpTarget (InsertOp _ k _) = k
+diffOpTarget (DeleteOp _ k) = k
+
+-- | Predicate: does the operation touch one of these keys.
+diffOpAffects :: DiffOp l -> [[DocumentKey]] -> Bool
+diffOpAffects op keys = diffOpTarget op `elem` keys
 
 -- | Generate a 'Diff' from two documents, with a void label.
 diff :: Document -- ^ Source document.
