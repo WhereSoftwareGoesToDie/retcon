@@ -20,7 +20,7 @@ import Retcon.DataSource.JsonDirectory
 import TestHelpers
 
 instance RetconEntity "customer" where
-    entitySource _ = [
+    entitySources _ = [
         SomeDataSource (Proxy :: Proxy "data"),
         SomeDataSource (Proxy :: Proxy "test-results")
         ]
