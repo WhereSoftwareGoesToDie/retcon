@@ -18,10 +18,10 @@ import System.Directory
 import System.FilePath
 import Test.Hspec
 
-import Retcon.Diff
-import Retcon.Document
 import Retcon.DataSource
 import Retcon.DataSource.JsonDirectory
+import Retcon.Diff
+import Retcon.Document
 
 import TreeHelpers
 

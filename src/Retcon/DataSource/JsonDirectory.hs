@@ -12,9 +12,9 @@ import qualified Control.Exception as Ex
 import qualified Data.ByteString.Lazy as BSL
 
 import Data.Aeson
-import Data.Typeable
 import Data.Time
 import Data.Time.Clock.POSIX
+import Data.Typeable
 
 import System.Directory
 import System.FilePath.Posix
