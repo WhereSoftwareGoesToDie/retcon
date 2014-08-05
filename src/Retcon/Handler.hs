@@ -10,14 +10,15 @@
 -- | Description: Dispatch events with a retcon configuration.
 
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Retcon.Handler where
 
 import Control.Applicative
 import Control.Monad
 import Control.Monad.Reader
--- import Control.Monad.Trans.Reader (
-import Control.Monad.IO.Class
+import Control.Monad.IO.Class ()
 import Data.Maybe
 import Data.Proxy
 import GHC.TypeLits
@@ -42,8 +43,14 @@ runRetconHandler cfg (RetconHandler a) = runReaderT a cfg
 same :: (KnownSymbol a, KnownSymbol b) => Proxy a -> Proxy b -> Bool
 same a b = isJust (sameSymbol a b)
 
-decodeForeignKey :: RetconDataSource entity source => ForeignKey entity source -> String
-decodeForeignKey (ForeignKey fk) = fk
+-- | Encode a 'ForeignKey' as a 'String'.
+encodeForeignKey :: forall entity source. (KnownSymbol entity, KnownSymbol source)
+                 => ForeignKey entity source
+                 -> String
+encodeForeignKey (ForeignKey key) =
+    show ( symbolVal (Proxy :: Proxy entity)
+         , symbolVal (Proxy :: Proxy source)
+         , key)
 
 -- | Parse a request string and handle an event.
 dispatch :: String -> RetconHandler ()
@@ -51,13 +58,15 @@ dispatch work = do
     let (entity_str, source_str, key) = (read work :: (String, String, String))
     entities <- asks retconEntities
     case someSymbolVal entity_str of
-        SomeSymbol entity ->
+        SomeSymbol (entity :: Proxy entity_ty) ->
             forM_ entities $ \(SomeEntity e) ->
                 if same e entity
                 then forM_ (entitySources e) $ \(SomeDataSource s) -> do
                     case someSymbolVal source_str of
-                        SomeSymbol source -> when (same source s) (liftIO $ putStrLn "Performing an action!")
+                        SomeSymbol (source :: Proxy source_ty) -> do
+                          let lol = (ForeignKey key :: ForeignKey entity_ty source_ty)
+                          liftIO $ print $ encodeForeignKey lol
+                          when (same source s) (liftIO $ putStrLn "Performing an action!")
 
                 else liftIO $ putStrLn $ "Pass on " ++ symbolVal e
-
 
