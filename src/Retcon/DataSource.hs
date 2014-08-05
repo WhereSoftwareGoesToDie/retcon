@@ -37,7 +37,7 @@ import Retcon.Monad
 --
 class (KnownSymbol entity) => RetconEntity entity where
     -- | Get a list of data sources associated with the entity.
-    entitySource :: Proxy entity -> [SomeDataSource entity]
+    entitySources :: Proxy entity -> [SomeDataSource entity]
 
 -- * Data sources
 
