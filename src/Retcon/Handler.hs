@@ -9,16 +9,16 @@
 
 -- | Description: Dispatch events with a retcon configuration.
 
+{-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 
 module Retcon.Handler where
 
 import Control.Applicative
 import Control.Monad
-import Control.Monad.Reader
 import Control.Monad.IO.Class ()
+import Control.Monad.Reader
 import Data.Maybe
 import Data.Proxy
 import GHC.TypeLits
