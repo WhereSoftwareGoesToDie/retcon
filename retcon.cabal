@@ -118,7 +118,10 @@ test-suite             userapi-test
   other-modules:       TestHelpers, TreeHelpers
   build-depends:       base
                      , retcon
+                     , aeson
                      , bytestring
+                     , directory
+                     , filepath
                      , text
                      , hspec
                      , QuickCheck

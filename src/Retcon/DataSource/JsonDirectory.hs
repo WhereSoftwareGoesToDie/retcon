@@ -40,8 +40,8 @@ getJsonDirDocument dir fk = do
         fp = getFkFilename dir fk
 
 -- | API function setDocument
-setJsonDirDocument :: FilePath -> Maybe (ForeignKey entity source) -> Document -> IO (Either DataSourceError (Maybe (ForeignKey entity source)))
-setJsonDirDocument dir mfk doc = do
+setJsonDirDocument :: FilePath -> Document -> Maybe (ForeignKey entity source) -> IO (Either DataSourceError (Maybe (ForeignKey entity source)))
+setJsonDirDocument dir doc mfk = do
     case mfk of
         Nothing -> do
             nfk <- newFK dir

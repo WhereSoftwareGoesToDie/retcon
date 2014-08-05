@@ -47,12 +47,12 @@ testReadJsonDir :: FilePath -> ForeignKey entity source -> IO (Either DataSource
 testReadJsonDir fp fk = getJsonDirDocument fp fk >>= return
 
 -- | Write a 'Document' to a JSON file for an existing foreign key using the JsonDirectory source.
-testWriteJsonDirExisting :: FilePath -> ForeignKey entity source -> Document -> IO (Either DataSourceError (Maybe (ForeignKey entity source)))
-testWriteJsonDirExisting fp fk doc = setJsonDirDocument fp (Just fk) doc >>= return
+testWriteJsonDirExisting :: FilePath -> Document -> ForeignKey entity source -> IO (Either DataSourceError (Maybe (ForeignKey entity source)))
+testWriteJsonDirExisting fp doc fk = setJsonDirDocument fp doc (Just fk) >>= return
 
 -- | Write a 'Document' to a JSON file for a new foreign key using the JsonDirectory source.
 testWriteJsonDirNew :: FilePath -> Document -> IO (Either DataSourceError (Maybe (ForeignKey entity source)))
-testWriteJsonDirNew fp doc = setJsonDirDocument fp Nothing doc >>= return
+testWriteJsonDirNew fp doc = setJsonDirDocument fp doc Nothing >>= return
 
 -- | Delete a 'Document' stored as a JSON file using the JsonDirectory source.
 testDeleteJsonDir :: FilePath -> ForeignKey entity source -> IO (Either DataSourceError ())
