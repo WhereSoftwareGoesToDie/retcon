@@ -17,9 +17,9 @@ source-repository head
 
 library
   exposed-modules:     Retcon.DataSource
+                     , Retcon.DataSource.JsonDirectory
                      , Retcon.Diff
                      , Retcon.Document
-                     , Retcon.JsonDirectory
                      , Retcon.MergePolicy
                      , Retcon.Monad
                      , Data.Tree.GenericTrie

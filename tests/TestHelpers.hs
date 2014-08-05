@@ -20,7 +20,8 @@ import Test.Hspec
 
 import Retcon.Diff
 import Retcon.Document
-import Retcon.JsonDirectory
+import Retcon.DataSource
+import Retcon.DataSource.JsonDirectory
 
 import TreeHelpers
 
@@ -42,19 +43,19 @@ testLoad' :: FilePath -> IO Document
 testLoad' n = testLoad n >>= return . maybe (error $ "Couldn't load " ++ n) id
 
 -- | Load a 'Document' from a JSON file using the JsonDirectory source.
-testReadJsonDir :: FilePath -> ForeignKey -> IO (Either DataSourceError Document)
+testReadJsonDir :: FilePath -> ForeignKey entity source -> IO (Either DataSourceError Document)
 testReadJsonDir fp fk = getJsonDirDocument fp fk >>= return
 
 -- | Write a 'Document' to a JSON file for an existing foreign key using the JsonDirectory source.
-testWriteJsonDirExisting :: FilePath -> ForeignKey -> Document -> IO (Either DataSourceError (Maybe ForeignKey))
+testWriteJsonDirExisting :: FilePath -> ForeignKey entity source -> Document -> IO (Either DataSourceError (Maybe (ForeignKey entity source)))
 testWriteJsonDirExisting fp fk doc = setJsonDirDocument fp (Just fk) doc >>= return
 
 -- | Write a 'Document' to a JSON file for a new foreign key using the JsonDirectory source.
-testWriteJsonDirNew :: FilePath -> Document -> IO (Either DataSourceError (Maybe ForeignKey))
+testWriteJsonDirNew :: FilePath -> Document -> IO (Either DataSourceError (Maybe (ForeignKey entity source)))
 testWriteJsonDirNew fp doc = setJsonDirDocument fp Nothing doc >>= return
 
 -- | Delete a 'Document' stored as a JSON file using the JsonDirectory source.
-testDeleteJsonDir :: FilePath -> ForeignKey -> IO (Either DataSourceError ())
+testDeleteJsonDir :: FilePath -> ForeignKey entity source -> IO (Either DataSourceError ())
 testDeleteJsonDir fp fk = deleteJsonDirDocument fp fk >>= return
 
 -- | Explicitly pass a test.
