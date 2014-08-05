@@ -105,6 +105,8 @@ main = do
     putStrLn "Type checker passes"
     putStrLn "The code compiles, links and runs"
     putStrLn "Surely it's correct"
+    f' <- testResultsFp
+    createDirectoryIfMissing True f'
     hspec suite
 
 
