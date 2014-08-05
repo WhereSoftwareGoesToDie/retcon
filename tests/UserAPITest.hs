@@ -16,6 +16,7 @@ import System.FilePath
 
 import Retcon.DataSource
 import Retcon.DataSource.JsonDirectory
+import Retcon.Handler
 
 import TestHelpers
 
@@ -102,14 +103,11 @@ suite = do
 -- instances above.
 main :: IO ()
 main = do
-    putStrLn "Type checker passes"
-    putStrLn "The code compiles, links and runs"
-    putStrLn "Surely it's correct"
     f' <- testResultsFp
     createDirectoryIfMissing True f'
+    runRetconHandler cfg $ dispatch $ show ("non-entity", "data", "elephant")
+    runRetconHandler cfg $ dispatch $ show ("customer", "data", "elephant")
     hspec suite
-
-
-
-
+  where
+    cfg = RetconConfig [ SomeEntity (Proxy :: Proxy "customer") ]
 
