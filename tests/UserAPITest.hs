@@ -6,6 +6,8 @@
 
 module Main where
 
+import Test.Hspec
+
 import Data.Proxy
 import GHC.TypeLits
 import System.Directory
@@ -14,6 +16,8 @@ import System.FilePath
 
 import Retcon.DataSource
 import Retcon.DataSource.JsonDirectory
+
+import TestHelpers
 
 instance RetconEntity "customer" where
     entitySource _ = [
@@ -67,6 +71,24 @@ testResultsFp = do
     cwd <- getCurrentDirectory
     return $ joinPath [cwd, "tests", "test-results"]
 
+-- | test suite
+suite :: Spec
+suite = do
+    describe "JSON directory marshalling" $ do
+        it "can load 01-diff-source" $ do
+            test1Doc <- getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "data")
+            pass
+
+        it "can write 01-diff-source to another source with that key" $ do
+            doc1 <- getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "data")
+            test2Key <- setDocument doc1 (Just (ForeignKey "01-diff-source" :: ForeignKey "customer" "test-results"))
+            pass
+
+        it "can write 01-diff-source to another source with new key" $ do
+            doc1 <- getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "data")
+            test3Key <- setDocument doc1 (Nothing :: Maybe (ForeignKey "customer" "test-results"))
+            pass
+
 -- | This test is mainly to make sure that the types line up in the
 -- instances above.
 main :: IO ()
@@ -74,5 +96,9 @@ main = do
     putStrLn "Type checker passes"
     putStrLn "The code compiles, links and runs"
     putStrLn "Surely it's correct"
-    exitSuccess
+    hspec suite
+
+
+
+
 
