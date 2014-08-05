@@ -79,14 +79,23 @@ suite = do
             test1Doc <- getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "data")
             pass
 
+        it "can load 01-diff-target" $ do
+            test2Doc <- getDocument (ForeignKey "01-diff-target" :: ForeignKey "customer" "data")
+            pass
+
         it "can write 01-diff-source to another source with that key" $ do
-            doc1 <- getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "data")
-            test2Key <- setDocument doc1 (Just (ForeignKey "01-diff-source" :: ForeignKey "customer" "test-results"))
+            doc3 <- getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "data")
+            test3Key <- setDocument doc3 (Just (ForeignKey "01-diff-source" :: ForeignKey "customer" "test-results"))
             pass
 
         it "can write 01-diff-source to another source with new key" $ do
-            doc1 <- getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "data")
-            test3Key <- setDocument doc1 (Nothing :: Maybe (ForeignKey "customer" "test-results"))
+            doc4 <- getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "data")
+            test4Key <- setDocument doc4 (Nothing :: Maybe (ForeignKey "customer" "test-results"))
+            pass
+
+        it "can delete 01-diff-source from the test source" $ do
+            doc5 <- getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "test-results")
+            test5DeleteOK <- deleteDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "test-results")
             pass
 
 -- | This test is mainly to make sure that the types line up in the
