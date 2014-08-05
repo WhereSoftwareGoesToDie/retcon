@@ -142,7 +142,6 @@ test-suite             json-directory-test
                      , bytestring
                      , text
                      , hspec
-                     , toolshed
                      , QuickCheck
                      , unordered-containers
                      , containers
