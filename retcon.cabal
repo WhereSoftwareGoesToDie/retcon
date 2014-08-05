@@ -117,6 +117,8 @@ test-suite             userapi-test
   build-depends:       base
                      , retcon
                      , bytestring
+                     , directory
+                     , filepath
                      , text
                      , hspec
                      , QuickCheck
