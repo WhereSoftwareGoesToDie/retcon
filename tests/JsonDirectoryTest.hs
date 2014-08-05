@@ -88,5 +88,8 @@ targetFp = do
     return $ joinPath [cwd, "tests", "test-results"]
 
 main :: IO ()
-main = hspec suite
+main = do
+    f' <- targetFp
+    createDirectoryIfMissing True f'
+    hspec suite
 
