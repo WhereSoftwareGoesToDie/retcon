@@ -27,37 +27,37 @@ instance RetconEntity "customer" where
         ]
 
 instance RetconDataSource "customer" "data" where
-    getDocument _key = do
+    getDocument key = do
         f <- dataFp
-        res <- getJsonDirDocument f _key
+        res <- getJsonDirDocument f key
         either (error . show) return res
-    setDocument _doc _key = do
+    setDocument doc key = do
         f <- dataFp
-        res <- setJsonDirDocument f _doc _key
+        res <- setJsonDirDocument f doc key
         either (error . show) (\x ->
             case x of
                 Nothing -> error "No key"
                 Just y  -> return y) res
-    deleteDocument _key = do
+    deleteDocument key = do
         f <- dataFp
-        res <- deleteJsonDirDocument f _key
+        res <- deleteJsonDirDocument f key
         either (error . show) return res
 
 instance RetconDataSource "customer" "test-results" where
-    getDocument _key = do
+    getDocument key = do
         f <- testResultsFp
-        res <- getJsonDirDocument f _key
+        res <- getJsonDirDocument f key
         either (error . show) return res
-    setDocument _doc _key = do
+    setDocument doc key = do
         f <- testResultsFp
-        res <- setJsonDirDocument f _doc _key
+        res <- setJsonDirDocument f doc key
         either (error . show) (\x ->
             case x of
                 Nothing -> error "No key"
                 Just y  -> return y) res
-    deleteDocument _key = do
+    deleteDocument key = do
         f <- testResultsFp
-        res <- deleteJsonDirDocument f _key
+        res <- deleteJsonDirDocument f key
         either (error . show) return res
 
 -- | get source file path
