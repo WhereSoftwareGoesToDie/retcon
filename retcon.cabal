@@ -158,6 +158,7 @@ test-suite             json-directory-test
                      , directory
                      , filepath
                      , bytestring
+                     , process
                      , text
                      , hspec
                      , QuickCheck
