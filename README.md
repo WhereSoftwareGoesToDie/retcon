@@ -1,6 +1,8 @@
 Retcon
 ======
 
+[![Build Status](https://travis-ci.org/anchor/retcon.svg?branch=master)](https://travis-ci.org/anchor/retcon)
+
 A Haskell library and daemon for synchronising data sources. `retcon`
 operates by generating, merging, and applying diffs according.
 
