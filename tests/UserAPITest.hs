@@ -20,6 +20,14 @@ import Retcon.Handler
 
 import TestHelpers
 
+-- | Path to the "customer:data" JSON files.
+customerDataPath :: FilePath
+customerDataPath = joinPath ["tests", "data"]
+
+-- | Path to the "customer:test-results" JSON files.
+customerTestResultsPath :: FilePath
+customerTestResultsPath = joinPath ["tests", "test-results"]
+
 instance RetconEntity "customer" where
     entitySources _ = [
         SomeDataSource (Proxy :: Proxy "data"),
@@ -28,49 +36,31 @@ instance RetconEntity "customer" where
 
 instance RetconDataSource "customer" "data" where
     getDocument key = do
-        f <- dataFp
-        res <- getJsonDirDocument f key
+        res <- getJsonDirDocument customerDataPath key
         either (error . show) return res
     setDocument doc key = do
-        f <- dataFp
-        res <- setJsonDirDocument f doc key
+        res <- setJsonDirDocument customerDataPath doc key
         either (error . show) (\x ->
             case x of
                 Nothing -> error "No key"
                 Just y  -> return y) res
     deleteDocument key = do
-        f <- dataFp
-        res <- deleteJsonDirDocument f key
+        res <- deleteJsonDirDocument customerDataPath key
         either (error . show) return res
 
 instance RetconDataSource "customer" "test-results" where
     getDocument key = do
-        f <- testResultsFp
-        res <- getJsonDirDocument f key
+        res <- getJsonDirDocument customerTestResultsPath key
         either (error . show) return res
     setDocument doc key = do
-        f <- testResultsFp
-        res <- setJsonDirDocument f doc key
+        res <- setJsonDirDocument customerTestResultsPath doc key
         either (error . show) (\x ->
             case x of
                 Nothing -> error "No key"
                 Just y  -> return y) res
     deleteDocument key = do
-        f <- testResultsFp
-        res <- deleteJsonDirDocument f key
+        res <- deleteJsonDirDocument customerTestResultsPath key
         either (error . show) return res
-
--- | get source file path
-dataFp :: IO FilePath
-dataFp = do
-    cwd <- getCurrentDirectory
-    return $ joinPath [cwd, "tests", "data"]
-
--- | get target file path
-testResultsFp :: IO FilePath
-testResultsFp = do
-    cwd <- getCurrentDirectory
-    return $ joinPath [cwd, "tests", "test-results"]
 
 -- | test suite
 suite :: Spec
@@ -103,10 +93,7 @@ suite = do
 -- instances above.
 main :: IO ()
 main = do
-    f' <- testResultsFp
-    createDirectoryIfMissing True f'
-    runRetconHandler cfg $ dispatch $ show ("non-entity", "data", "elephant")
-    runRetconHandler cfg $ dispatch $ show ("customer", "data", "elephant")
+    createDirectoryIfMissing True customerTestResultsPath
     hspec suite
   where
     cfg = RetconConfig [ SomeEntity (Proxy :: Proxy "customer") ]
