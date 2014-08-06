@@ -11,6 +11,7 @@
 
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 
 module Retcon.Handler where
@@ -74,7 +75,6 @@ dispatch work = do
 -- This function is responsible for determining the type of event which has
 -- occured and invoking the correct 'RetconDataSource' actions and retcon
 -- algorithms to handle it.
-
 process :: (RetconDataSource entity source)
         => ForeignKey entity source
         -> RetconHandler ()
