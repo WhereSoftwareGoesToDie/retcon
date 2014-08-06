@@ -61,12 +61,25 @@ dispatch work = do
         SomeSymbol (entity :: Proxy entity_ty) ->
             forM_ entities $ \(SomeEntity e) ->
                 if same e entity
-                then forM_ (entitySources e) $ \(SomeDataSource s) -> do
+                then forM_ (entitySources e) $ \(SomeDataSource (sp :: Proxy st) :: SomeDataSource et) -> do
                     case someSymbolVal source_str of
                         SomeSymbol (source :: Proxy source_ty) -> do
-                          let lol = (ForeignKey key :: ForeignKey entity_ty source_ty)
-                          liftIO $ print $ encodeForeignKey lol
-                          when (same source s) (liftIO $ putStrLn "Performing an action!")
+                          let fk = (ForeignKey key :: ForeignKey et st)
+                          when (same source sp) (process fk)
 
-                else liftIO $ putStrLn $ "Pass on " ++ symbolVal e
+                else return ()
+
+-- | Process an event on a specified 'ForeignKey'.
+--
+-- This function is responsible for determining the type of event which has
+-- occured and invoking the correct 'RetconDataSource' actions and retcon
+-- algorithms to handle it.
+
+process :: (RetconDataSource entity source)
+        => ForeignKey entity source
+        -> RetconHandler ()
+process fk = do
+    doc <- liftIO $ getDocument fk
+    liftIO $ putStr "Now handling event on: " >> print fk >> print doc
+    return ()
 
