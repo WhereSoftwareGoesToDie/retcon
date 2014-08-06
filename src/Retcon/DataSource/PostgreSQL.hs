@@ -1,8 +1,8 @@
-{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DeriveDataTypeable        #-}
 {-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleInstances         #-}
+{-# LANGUAGE OverloadedStrings         #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
 
 module Retcon.DataSource.PostgreSQL (
     getPgDocument,
@@ -20,10 +20,10 @@ import qualified Data.ByteString.Lazy.Char8 as BSL8
 
 import Data.Aeson
 import Data.Maybe
-import qualified Database.PostgreSQL.Simple as PG
-import qualified Database.PostgreSQL.Simple.Types as PGT
-import Database.PostgreSQL.Simple.FromRow
 import Data.Typeable
+import qualified Database.PostgreSQL.Simple as PG
+import Database.PostgreSQL.Simple.FromRow
+import qualified Database.PostgreSQL.Simple.Types as PGT
 
 import Retcon.DataSource
 import Retcon.Document
