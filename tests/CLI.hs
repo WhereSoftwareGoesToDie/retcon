@@ -22,6 +22,7 @@
 module Main where
 
 import Data.Proxy
+import Database.PostgreSQL.Simple
 import GHC.TypeLits
 import System.Directory
 import System.Environment
@@ -30,7 +31,6 @@ import System.FilePath
 import Retcon.DataSource
 import Retcon.DataSource.JsonDirectory
 import Retcon.Handler
-
 
 -- * Entity definitions
 
@@ -127,7 +127,7 @@ instance RetconDataSource "event" "exchange" where
         res <- deleteJsonDirDocument f key
         either (error . show) return res
 
--- | make file path
+-- | Make file path
 fp :: String -> String -> IO FilePath
 fp source entity = do
     cwd <- getCurrentDirectory
@@ -135,12 +135,19 @@ fp source entity = do
 
 -- * Retcon configuration
 
+cfg :: RetconConfig
 cfg = RetconConfig [ SomeEntity (Proxy :: Proxy "event")
                    , SomeEntity (Proxy :: Proxy "customer")
                    ]
 
+-- * Parse and execute commands
+
+-- $ TODO: add simple configuration handling.
+
+-- | Parse event from command line and execute it.
 main :: IO ()
 main = do
     (entity:source:key:_) <- getArgs
-    runRetconHandler cfg $ dispatch $ show (entity, source, key)
+    conn <- connectPostgreSQL "dbname='retcon'"
+    runRetconHandler cfg conn $ dispatch $ show (entity, source, key)
 
