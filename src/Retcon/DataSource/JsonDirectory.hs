@@ -8,7 +8,7 @@ module Retcon.DataSource.JsonDirectory (
     ForeignKey
     ) where
 
-import qualified Control.Exception as Ex
+import Control.Exception
 import qualified Data.ByteString.Lazy as BSL
 
 import Data.Aeson
@@ -25,15 +25,17 @@ import Retcon.DataSource
 import Retcon.Document
 
 data DataSourceError = DataSourceError String deriving (Show, Typeable)
-instance Ex.Exception DataSourceError
+instance Exception DataSourceError
 
 -- | API function getDocument
-getJsonDirDocument :: FilePath -> ForeignKey entity source -> IO (Either DataSourceError Document)
+getJsonDirDocument :: FilePath
+                   -> ForeignKey entity source
+                   -> IO (Either DataSourceError Document)
 getJsonDirDocument dir fk = do
     readOK <- readFileFromDocument fp
     case (readOK) of
-        Left err   -> do
-            return $ Left (DataSourceError "barf")
+        Left err -> do
+            return $ Left (DataSourceError err)
         Right fdoc -> do
             return $ Right fdoc
     where
@@ -62,7 +64,7 @@ deleteJsonDirDocument dir fk = do
         False -> do
             return $ Left (DataSourceError "File does not exist")
         True  -> do
-            Ex.try (removeFile fp)
+            try (removeFile fp)
     where
         fp = getFkFilename dir fk
 
@@ -107,6 +109,6 @@ makeSeed = do
 
 -- | Writes a retcon document to a file
 writeDocumentToFile :: FilePath -> ForeignKey entity source -> Document -> IO (Either DataSourceError ())
-writeDocumentToFile dir fk doc = Ex.try (BSL.writeFile fp $ encode doc)
+writeDocumentToFile dir fk doc = try (BSL.writeFile fp $ encode doc)
     where
         fp = getFkFilename dir fk
