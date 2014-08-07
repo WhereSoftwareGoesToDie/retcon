@@ -20,8 +20,10 @@ module Retcon.Handler where
 import Control.Applicative
 import Control.Exception
 import Control.Monad
+import Control.Monad.Except
 import Control.Monad.IO.Class ()
 import Control.Monad.Reader
+import Control.Monad.Writer
 import Data.Maybe
 import Data.Proxy
 import Database.PostgreSQL.Simple
@@ -29,19 +31,57 @@ import GHC.TypeLits
 
 import Retcon.DataSource
 import Retcon.Document
+import Retcon.Monad
 
 -- | Configuration for the retcon system.
 data RetconConfig =
     RetconConfig { retconEntities :: [SomeEntity] }
 
+-- | Exceptions which can be raised by actions in the RetconHandler monad.
+data HandlerError =
+      HERP   -- ^ Unforced error.
+    | DERP   -- ^ Forced error.
+    | LOLWUT -- ^ Aren't we playing tennis?
+  deriving (Show)
+
+-- | Logs recorded by actions in the RetconHandler monad.
+data HandlerLog = Log [String]
+  deriving (Show)
+
+instance Monoid HandlerLog where
+    mempty = Log []
+    (Log m) `mappend` (Log n) = Log $ m `mplus` n
+
 -- | Monad for the retcon system.
+--
+-- This monad provides error handling (by throwing 'HandlerLog' exceptions),
+-- logging (write 'HandlerLog'), access to configuration and PostgreSQL
+-- connections (reader), and IO facilities.
 newtype RetconHandler a =
-    RetconHandler { unRetconHandler :: ReaderT (RetconConfig,Connection) IO a }
-  deriving (Functor, Applicative, Monad, MonadReader (RetconConfig,Connection), MonadIO)
+    RetconHandler {
+        unRetconHandler :: ExceptT HandlerError (
+                           WriterT HandlerLog (
+                           ReaderT (RetconConfig,Connection)
+                           IO)) a
+    }
+  deriving (Functor, Applicative, Monad, MonadIO, MonadWriter HandlerLog,
+  MonadReader (RetconConfig,Connection), MonadError HandlerError)
 
 -- | Run a 'RetconHandler' action with the given configuration.
-runRetconHandler :: RetconConfig -> Connection -> RetconHandler a -> IO a
-runRetconHandler cfg conn (RetconHandler a) = runReaderT a (cfg,conn)
+runRetconHandler :: RetconConfig
+                 -> Connection
+                 -> RetconHandler a
+                 -> IO (Either HandlerError a, HandlerLog)
+runRetconHandler cfg conn (RetconHandler a) =
+    flip runReaderT (cfg,conn) $ runWriterT $ runExceptT a
+
+-- | Add a message to the 'RetconHandler' log.
+logMessage :: String -> RetconHandler ()
+logMessage msg = tell $ Log [msg]
+
+-- | Record an error in the 'RetconHandler' log.
+logError :: HandlerError -> RetconHandler ()
+logError err = logMessage $ "ERROR: " ++ show err
 
 -- | Check that two symbols are the same.
 same :: (KnownSymbol a, KnownSymbol b) => Proxy a -> Proxy b -> Bool
@@ -114,7 +154,7 @@ process fk = do
         Nothing -> create fk
         Just _  -> return ()
 
-    -- If we can't find a Document: it's a DELETE.
+    -- If we can't get the upstream Document: it's a DELETE.
     doc <- liftIO $ catch (getDocument fk >>= return . Just)
                           (\(_ :: IOException) -> return Nothing)
     case doc of
@@ -129,6 +169,7 @@ create :: (RetconDataSource entity source)
        => ForeignKey entity source
        -> RetconHandler ()
 create fk = do
+    logMessage "CREATE"
     liftIO $ putStr "\tCREATE\t"
     liftIO $ print fk
 
@@ -137,6 +178,7 @@ delete :: (RetconDataSource entity source)
        => ForeignKey entity source
        -> RetconHandler ()
 delete fk = do
+    logMessage "DELETE"
     liftIO $ putStr "\tDELETE\t"
     liftIO $ print fk
 
@@ -145,6 +187,7 @@ update :: (RetconDataSource entity source)
        => ForeignKey entity source
        -> RetconHandler ()
 update fk = do
+    logMessage "UPDATE"
     key <- lookupInternalKey fk
     liftIO $ putStr "\tUPDATE\t"
     liftIO $ print key
