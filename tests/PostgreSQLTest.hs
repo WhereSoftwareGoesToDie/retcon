@@ -88,11 +88,11 @@ suite = do
 
 -- | get source file path
 sourceDb :: ByteString
-sourceDb = "postgresql://localhost:5432/retcon_pg_test"
+sourceDb = "dbname='retcon_pg_test'"
 
 -- | get target file path
 targetDb :: ByteString
-targetDb = "postgresql://localhost:5432/retcon_pg_test2"
+targetDb = "dbname='retcon_pg_test2'"
 
 -- | Explicitly pass a test.
 pass :: Expectation
