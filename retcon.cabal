@@ -9,6 +9,7 @@ copyright:           (c) 2014 Anchor Systems, Pty Ltd and Others
 category:            Data
 build-type:          Simple
 extra-source-files:  README.md
+                   , retcon.sql
 cabal-version:       >=1.10
 
 source-repository head
@@ -61,6 +62,7 @@ executable             retcon-demo
                      , lens
                      , directory
                      , filepath
+                     , postgresql-simple
 
 test-suite             document-test
   type:                exitcode-stdio-1.0
