@@ -137,6 +137,14 @@ dispatch work = do
 
                 else return ()
 
+-- | Run the retcon process on an event.
+retcon :: RetconConfig
+       -> Connection
+       -> String -- ^ Key to use.
+       -> IO (Either HandlerError (), HandlerLog)
+retcon config conn key = do
+    runRetconHandler config conn $ dispatch $ key
+
 -- | Process an event on a specified 'ForeignKey'.
 --
 -- This function is responsible for determining the type of event which has

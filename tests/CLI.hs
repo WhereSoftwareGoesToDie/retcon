@@ -149,7 +149,7 @@ main :: IO ()
 main = do
     (entity:source:key:_) <- getArgs
     conn <- connectPostgreSQL "dbname='retcon'"
-    (res, log) <- runRetconHandler cfg conn $ dispatch $ show (entity, source, key)
-    print log
+    (res, msg) <- retcon cfg conn $ show (entity, source, key)
+    print msg
     return $ either (const ()) (id) res
 
