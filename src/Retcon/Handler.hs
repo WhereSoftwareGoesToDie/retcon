@@ -26,6 +26,8 @@ import Control.Monad.Reader
 import Control.Monad.Writer
 import Data.Maybe
 import Data.Proxy
+import Data.Text (Text)
+import qualified Data.Text as T
 import Database.PostgreSQL.Simple
 import GHC.TypeLits
 
@@ -45,12 +47,15 @@ data HandlerError =
   deriving (Show)
 
 -- | Logs recorded by actions in the RetconHandler monad.
-data HandlerLog = Log [String]
-  deriving (Show)
+type HandlerLog = [LogMessage]
 
-instance Monoid HandlerLog where
-    mempty = Log []
-    (Log m) `mappend` (Log n) = Log $ m `mplus` n
+-- | Log messages.
+data LogMessage =
+      LogDebug Text
+    | LogInfo Text
+    | LogWarn Text
+    | LogError Text
+  deriving (Show, Eq)
 
 -- | Monad for the retcon system.
 --
@@ -67,6 +72,18 @@ newtype RetconHandler a =
   deriving (Functor, Applicative, Monad, MonadIO, MonadWriter HandlerLog,
   MonadReader (RetconConfig,Connection), MonadError HandlerError)
 
+logDebug :: Text -> RetconHandler ()
+logDebug msg = tell [LogDebug msg]
+
+logInfo :: Text -> RetconHandler ()
+logInfo msg = tell [LogDebug msg]
+
+logError :: Text -> RetconHandler ()
+logError msg = tell [LogError msg]
+
+logException :: HandlerError -> RetconHandler ()
+logException = logError . T.pack . show
+
 -- | Run a 'RetconHandler' action with the given configuration.
 runRetconHandler :: RetconConfig
                  -> Connection
@@ -74,14 +91,6 @@ runRetconHandler :: RetconConfig
                  -> IO (Either HandlerError a, HandlerLog)
 runRetconHandler cfg conn (RetconHandler a) =
     flip runReaderT (cfg,conn) $ runWriterT $ runExceptT a
-
--- | Add a message to the 'RetconHandler' log.
-logMessage :: String -> RetconHandler ()
-logMessage msg = tell $ Log [msg]
-
--- | Record an error in the 'RetconHandler' log.
-logError :: HandlerError -> RetconHandler ()
-logError err = logMessage $ "ERROR: " ++ show err
 
 -- | Check that two symbols are the same.
 same :: (KnownSymbol a, KnownSymbol b) => Proxy a -> Proxy b -> Bool
@@ -111,7 +120,6 @@ lookupInternalKey :: (RetconDataSource entity source)
               -> RetconHandler (Maybe (InternalKey entity))
 lookupInternalKey _fk = do
     conn <- asks snd
-    (res :: [Only String]) <- liftIO $ query conn "SELECT CONCAT(?,?)" ("lol"::String, "wut"::String)
     -- Look for the internal key in the database.
     -- If it exists, return it.
     -- Otherwise:
@@ -177,7 +185,7 @@ create :: (RetconDataSource entity source)
        => ForeignKey entity source
        -> RetconHandler ()
 create fk = do
-    logMessage "CREATE"
+    logDebug "CREATE"
     liftIO $ putStr "\tCREATE\t"
     liftIO $ print fk
 
@@ -186,7 +194,7 @@ delete :: (RetconDataSource entity source)
        => ForeignKey entity source
        -> RetconHandler ()
 delete fk = do
-    logMessage "DELETE"
+    logDebug "DELETE"
     liftIO $ putStr "\tDELETE\t"
     liftIO $ print fk
 
@@ -195,7 +203,7 @@ update :: (RetconDataSource entity source)
        => ForeignKey entity source
        -> RetconHandler ()
 update fk = do
-    logMessage "UPDATE"
+    logDebug "UPDATE"
     key <- lookupInternalKey fk
     liftIO $ putStr "\tUPDATE\t"
     liftIO $ print key
