@@ -44,6 +44,7 @@ library
                      , directory
                      , filepath
                      , postgresql-simple
+                     , monad-logger
   hs-source-dirs:      src
   default-language:    Haskell2010
 
@@ -63,6 +64,7 @@ executable             retcon-demo
                      , directory
                      , filepath
                      , postgresql-simple
+                     , monad-logger
 
 test-suite             document-test
   type:                exitcode-stdio-1.0

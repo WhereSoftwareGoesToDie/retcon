@@ -14,6 +14,7 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TemplateHaskell            #-}
 
 module Retcon.Handler where
 
@@ -22,8 +23,8 @@ import Control.Exception
 import Control.Monad
 import Control.Monad.Except
 import Control.Monad.IO.Class ()
+import Control.Monad.Logger
 import Control.Monad.Reader
-import Control.Monad.Writer
 import Data.Maybe
 import Data.Proxy
 import Data.Text (Text)
@@ -46,17 +47,6 @@ data HandlerError =
     | LOLWUT -- ^ Aren't we playing tennis?
   deriving (Show)
 
--- | Logs recorded by actions in the RetconHandler monad.
-type HandlerLog = [LogMessage]
-
--- | Log messages.
-data LogMessage =
-      LogDebug Text
-    | LogInfo Text
-    | LogWarn Text
-    | LogError Text
-  deriving (Show, Eq)
-
 -- | Monad for the retcon system.
 --
 -- This monad provides error handling (by throwing 'HandlerLog' exceptions),
@@ -65,32 +55,20 @@ data LogMessage =
 newtype RetconHandler a =
     RetconHandler {
         unRetconHandler :: ExceptT HandlerError (
-                           WriterT HandlerLog (
+                           LoggingT (
                            ReaderT (RetconConfig,Connection)
                            IO)) a
     }
-  deriving (Functor, Applicative, Monad, MonadIO, MonadWriter HandlerLog,
+  deriving (Functor, Applicative, Monad, MonadIO, MonadLogger,
   MonadReader (RetconConfig,Connection), MonadError HandlerError)
-
-logDebug :: Text -> RetconHandler ()
-logDebug msg = tell [LogDebug msg]
-
-logInfo :: Text -> RetconHandler ()
-logInfo msg = tell [LogDebug msg]
-
-logError :: Text -> RetconHandler ()
-logError msg = tell [LogError msg]
-
-logException :: HandlerError -> RetconHandler ()
-logException = logError . T.pack . show
 
 -- | Run a 'RetconHandler' action with the given configuration.
 runRetconHandler :: RetconConfig
                  -> Connection
                  -> RetconHandler a
-                 -> IO (Either HandlerError a, HandlerLog)
+                 -> IO (Either HandlerError a)
 runRetconHandler cfg conn (RetconHandler a) =
-    flip runReaderT (cfg,conn) $ runWriterT $ runExceptT a
+    flip runReaderT (cfg,conn) $ runStderrLoggingT $ runExceptT a
 
 -- | Check that two symbols are the same.
 same :: (KnownSymbol a, KnownSymbol b) => Proxy a -> Proxy b -> Bool
@@ -149,7 +127,7 @@ dispatch work = do
 retcon :: RetconConfig
        -> Connection
        -> String -- ^ Key to use.
-       -> IO (Either HandlerError (), HandlerLog)
+       -> IO (Either HandlerError ())
 retcon config conn key = do
     runRetconHandler config conn $ dispatch $ key
 
@@ -162,7 +140,7 @@ process :: (RetconDataSource entity source)
         => ForeignKey entity source
         -> RetconHandler ()
 process fk = do
-    liftIO $ putStr "EVENT\t" >> print fk
+    $logDebug "EVENT"
 
     -- If we can't find an InternalKey: it's a CREATE.
     key <- lookupInternalKey fk
@@ -185,26 +163,21 @@ create :: (RetconDataSource entity source)
        => ForeignKey entity source
        -> RetconHandler ()
 create fk = do
-    logDebug "CREATE"
-    liftIO $ putStr "\tCREATE\t"
-    liftIO $ print fk
+    $logDebug "CREATE"
 
 -- | Process a deletion event.
 delete :: (RetconDataSource entity source)
        => ForeignKey entity source
        -> RetconHandler ()
 delete fk = do
-    logDebug "DELETE"
-    liftIO $ putStr "\tDELETE\t"
-    liftIO $ print fk
+    $logDebug "DELETE"
 
 -- | Process an update event.
 update :: (RetconDataSource entity source)
        => ForeignKey entity source
        -> RetconHandler ()
 update fk = do
-    logDebug "UPDATE"
+    $logDebug "UPDATE"
     key <- lookupInternalKey fk
-    liftIO $ putStr "\tUPDATE\t"
-    liftIO $ print key
+    return ()
 
