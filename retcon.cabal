@@ -39,15 +39,15 @@ library
                      , filepath
                      , free
                      , lens
-                     , transformers-base
-                     , monad-logger
                      , monad-control
+                     , monad-logger
                      , mtl
                      , postgresql-simple
                      , random
                      , text
                      , time
                      , transformers
+                     , transformers-base
                      , unix
                      , unordered-containers
   hs-source-dirs:      src
