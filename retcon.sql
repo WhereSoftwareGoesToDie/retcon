@@ -10,7 +10,7 @@
 -- | The `retcon` table is the primary store if a particular entity document in
 -- the database.
 CREATE TABLE retcon (
-    entity VARCHAR(128) NOT NULL,
+    entity VARCHAR(64) NOT NULL,
     id SERIAL NOT NULL,
 
     PRIMARY KEY (entity, id)
@@ -19,10 +19,10 @@ CREATE TABLE retcon (
 -- | The `retcon_fk` table records information about a particular entity
 -- document as stored in a foreign system.
 CREATE TABLE retcon_fk (
-    entity VARCHAR(128) NOT NULL,
+    entity VARCHAR(64) NOT NULL,
     id     INTEGER NOT NULL,
-    source VARCHAR(128) NOT NULL,
-    fk     VARCHAR(128) NOT NULL,
+    source VARCHAR(64) NOT NULL,
+    fk     TEXT NOT NULL,
 
     PRIMARY KEY (entity, source, fk),
     UNIQUE (entity, id, source),
@@ -32,7 +32,7 @@ CREATE TABLE retcon_fk (
 -- | The `retcon_initial` table records the "initial" document used in the last
 -- run for a particular entity document.
 CREATE TABLE retcon_initial (
-    entity VARCHAR(128) NOT NULL,
+    entity VARCHAR(64) NOT NULL,
     id     INTEGER NOT NULL,
     document JSON NOT NULL,
 
