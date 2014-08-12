@@ -22,7 +22,8 @@ import Data.Proxy
 import GHC.TypeLits
 
 import Retcon.Document
-import Retcon.Monad
+
+type Retcon a = IO a
 
 -- * Entities
 

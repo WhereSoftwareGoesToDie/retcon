@@ -9,20 +9,16 @@
 
 -- | Description: Dispatch events with a retcon configuration.
 
-{-# LANGUAGE ExistentialQuantification  #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE MultiParamTypeClasses      #-}
-{-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE TemplateHaskell            #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TemplateHaskell       #-}
 
 module Retcon.Handler where
 
 import Control.Applicative
 import Control.Exception
-import Control.Monad
-import Control.Monad.Except
-import Control.Monad.IO.Class ()
 import Control.Monad.Logger
 import Control.Monad.Reader
 import Data.Maybe
@@ -32,43 +28,10 @@ import qualified Data.Text as T
 import Database.PostgreSQL.Simple
 import GHC.TypeLits
 
+import Retcon.Config
 import Retcon.DataSource
 import Retcon.Document
 import Retcon.Monad
-
--- | Configuration for the retcon system.
-data RetconConfig =
-    RetconConfig { retconEntities :: [SomeEntity] }
-
--- | Exceptions which can be raised by actions in the RetconHandler monad.
-data HandlerError =
-      HERP   -- ^ Unforced error.
-    | DERP   -- ^ Forced error.
-    | LOLWUT -- ^ Aren't we playing tennis?
-  deriving (Show)
-
--- | Monad for the retcon system.
---
--- This monad provides error handling (by throwing 'HandlerLog' exceptions),
--- logging (write 'HandlerLog'), access to configuration and PostgreSQL
--- connections (reader), and IO facilities.
-newtype RetconHandler a =
-    RetconHandler {
-        unRetconHandler :: ExceptT HandlerError (
-                           LoggingT (
-                           ReaderT (RetconConfig,Connection)
-                           IO)) a
-    }
-  deriving (Functor, Applicative, Monad, MonadIO, MonadLogger,
-  MonadReader (RetconConfig,Connection), MonadError HandlerError)
-
--- | Run a 'RetconHandler' action with the given configuration.
-runRetconHandler :: RetconConfig
-                 -> Connection
-                 -> RetconHandler a
-                 -> IO (Either HandlerError a)
-runRetconHandler cfg conn (RetconHandler a) =
-    flip runReaderT (cfg,conn) $ runStderrLoggingT $ runExceptT a
 
 -- | Check that two symbols are the same.
 same :: (KnownSymbol a, KnownSymbol b) => Proxy a -> Proxy b -> Bool
@@ -95,7 +58,7 @@ newtype RetconEntity entity => InternalKey entity =
 -- in a translation table in the database.
 lookupInternalKey :: (RetconDataSource entity source)
                   => ForeignKey entity source
-              -> RetconHandler (Maybe (InternalKey entity))
+                  -> RetconHandler (Maybe (InternalKey entity))
 lookupInternalKey _fk = do
     conn <- asks snd
     -- Look for the internal key in the database.
@@ -105,6 +68,15 @@ lookupInternalKey _fk = do
     --     Record it in the database.
     --     Return it.
     return Nothing
+
+-- | Resolve the 'ForeignKey' associated with an 'InternalKey' for a given data
+-- source.
+lookupForeignKey :: forall entity source. (RetconDataSource entity source)
+                 => InternalKey entity
+                 -> RetconHandler (ForeignKey entity source)
+lookupForeignKey key = do
+    let fk = "123"
+    return (ForeignKey fk :: ForeignKey entity source)
 
 -- | Parse a request string and handle an event.
 dispatch :: String -> RetconHandler ()
@@ -136,27 +108,31 @@ retcon config conn key = do
 -- This function is responsible for determining the type of event which has
 -- occured and invoking the correct 'RetconDataSource' actions and retcon
 -- algorithms to handle it.
-process :: (RetconDataSource entity source)
+process :: forall entity source. (RetconDataSource entity source)
         => ForeignKey entity source
         -> RetconHandler ()
 process fk = do
-    $logDebug "EVENT"
+    $logDebug $ T.concat ["EVENT against ", (T.pack $ show $ length sources), " sources"]
 
     -- If we can't find an InternalKey: it's a CREATE.
     key <- lookupInternalKey fk
-    case key of
-        Nothing -> create fk
-        Just _  -> return ()
+
+    (lookupInternalKey fk >> (carefully $ create fk))
+
+    $logDebug "PROCESS 1"
 
     -- If we can't get the upstream Document: it's a DELETE.
-    doc <- liftIO $ catch (getDocument fk >>= return . Just)
-                          (\(_ :: IOException) -> return Nothing)
-    case doc of
-        Nothing -> delete fk
-        Just _  -> return ()
+    ((liftIO $ getDocument fk) >> delete fk)
+
+    $logDebug "PROCESS 2"
 
     -- Otherwise: it's an UPDATE.
-    when (isJust key && isJust doc) $ update fk
+    update fk
+
+    $logDebug "PROCESS 3"
+  where
+    sources = entitySources (Proxy :: Proxy entity)
+
 
 -- | Process a creation event.
 create :: (RetconDataSource entity source)
@@ -164,6 +140,8 @@ create :: (RetconDataSource entity source)
        -> RetconHandler ()
 create fk = do
     $logDebug "CREATE"
+
+    liftIO $ throwIO $ userError "I am walrus"
 
 -- | Process a deletion event.
 delete :: (RetconDataSource entity source)
@@ -180,4 +158,10 @@ update fk = do
     $logDebug "UPDATE"
     key <- lookupInternalKey fk
     return ()
+
+getDocuments :: forall entity. (RetconEntity entity)
+             => InternalKey entity
+             -> [SomeDataSource entity]
+             -> RetconHandler [Either SomeException Document]
+getDocuments key = undefined -- sequence . map (tryAny . (lookupForeignKey key >>= flip getDocument))
 

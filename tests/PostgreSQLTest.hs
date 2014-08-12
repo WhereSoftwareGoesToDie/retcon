@@ -15,16 +15,18 @@
 
 module Main where
 
-import Test.Hspec
-
-import Retcon.DataSource
-import Retcon.DataSource.PostgreSQL
-import Retcon.Handler
-
 import Data.ByteString
 import Data.Proxy
 import GHC.TypeLits
 import System.Process
+import Test.Hspec
+
+import Retcon.Config
+import Retcon.DataSource
+import Retcon.DataSource.PostgreSQL
+import Retcon.Handler
+
+
 
 instance RetconEntity "customer" where
     entitySources _ = [

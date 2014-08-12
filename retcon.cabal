@@ -17,7 +17,8 @@ source-repository head
   location: git@github.com:anchor/retcon.git
 
 library
-  exposed-modules:     Retcon.DataSource
+  exposed-modules:     Retcon.Config
+                     , Retcon.DataSource
                      , Retcon.DataSource.JsonDirectory
                      , Retcon.DataSource.PostgreSQL
                      , Retcon.Diff
@@ -28,23 +29,27 @@ library
                      , Data.Tree.GenericTrie
   -- other-modules:       
   build-depends:       base >=4.7 && <4.8
-                     , bifunctors >=4.1 && <4.2
-                     , containers >=0.5 && <0.6
-                     , free >=4.9 && <4.10
-                     , transformers >=0.4 && <0.5
-                     , mtl
-                     , text
                      , aeson
-                     , unordered-containers
-                     , lens
-                     , random
+                     , async
+                     , bifunctors
                      , bytestring
-                     , unix
-                     , time
+                     , containers
                      , directory
+                     , enclosed-exceptions
                      , filepath
-                     , postgresql-simple
+                     , free
+                     , lens
+                     , transformers-base
                      , monad-logger
+                     , monad-control
+                     , mtl
+                     , postgresql-simple
+                     , random
+                     , text
+                     , time
+                     , transformers
+                     , unix
+                     , unordered-containers
   hs-source-dirs:      src
   default-language:    Haskell2010
 
@@ -73,15 +78,15 @@ test-suite             document-test
   main-is:             DocumentTest.hs
   other-modules:       TestHelpers, TreeHelpers
   build-depends:       base
-                     , retcon
                      , aeson
                      , bytestring
-                     , text
+                     , containers
                      , directory
                      , filepath
-                     , containers
-                     , unordered-containers
                      , hspec
+                     , retcon
+                     , text
+                     , unordered-containers
                      , QuickCheck
 
 test-suite             diff-test
@@ -91,16 +96,16 @@ test-suite             diff-test
   main-is:             DiffTest.hs
   other-modules:       TestHelpers, TreeHelpers
   build-depends:       base
-                     , retcon
                      , aeson
                      , bytestring
-                     , text
+                     , containers
                      , directory
                      , filepath
                      , hspec
-                     , QuickCheck
+                     , retcon
+                     , text
                      , unordered-containers
-                     , containers
+                     , QuickCheck
 
 test-suite             tree-test
   type:                exitcode-stdio-1.0
@@ -109,13 +114,13 @@ test-suite             tree-test
   main-is:             TreeTest.hs
   other-modules:       TestHelpers, TreeHelpers
   build-depends:       base
-                     , retcon
                      , bytestring
-                     , text
-                     , hspec
-                     , QuickCheck
-                     , unordered-containers
                      , containers
+                     , hspec
+                     , retcon
+                     , text
+                     , unordered-containers
+                     , QuickCheck
 
 test-suite             policy-test
   type:                exitcode-stdio-1.0
@@ -124,13 +129,13 @@ test-suite             policy-test
   main-is:             PolicyTest.hs
   other-modules:       TestHelpers, TreeHelpers
   build-depends:       base
-                     , retcon
                      , bytestring
-                     , text
-                     , hspec
-                     , QuickCheck
-                     , unordered-containers
                      , containers
+                     , hspec
+                     , retcon
+                     , text
+                     , unordered-containers
+                     , QuickCheck
 
 test-suite             userapi-test
   type:                exitcode-stdio-1.0
@@ -139,16 +144,16 @@ test-suite             userapi-test
   main-is:             UserAPITest.hs
   other-modules:       TestHelpers, TreeHelpers
   build-depends:       base
-                     , retcon
                      , aeson
                      , bytestring
+                     , containers
                      , directory
                      , filepath
-                     , text
                      , hspec
-                     , QuickCheck
+                     , retcon
+                     , text
                      , unordered-containers
-                     , containers
+                     , QuickCheck
 
 test-suite             json-directory-test
   type:                exitcode-stdio-1.0
@@ -157,17 +162,17 @@ test-suite             json-directory-test
   main-is:             JsonDirectoryTest.hs
   other-modules:       TestHelpers, TreeHelpers
   build-depends:       base
-                     , retcon
                      , aeson
+                     , bytestring
+                     , containers
                      , directory
                      , filepath
-                     , bytestring
-                     , process
-                     , text
                      , hspec
-                     , QuickCheck
+                     , process
+                     , retcon
+                     , text
                      , unordered-containers
-                     , containers
+                     , QuickCheck
 
 test-suite             postgresql-test
   type:                exitcode-stdio-1.0
@@ -176,15 +181,15 @@ test-suite             postgresql-test
   main-is:             PostgreSQLTest.hs
   other-modules:       TestHelpers, TreeHelpers
   build-depends:       base
-                     , retcon
                      , aeson
+                     , bytestring
+                     , containers
                      , directory
                      , filepath
-                     , process
-                     , postgresql-simple
-                     , bytestring
-                     , text
                      , hspec
-                     , QuickCheck
+                     , postgresql-simple
+                     , process
+                     , retcon
+                     , text
                      , unordered-containers
-                     , containers
+                     , QuickCheck
