@@ -46,7 +46,7 @@ library
                      , random
                      , text
                      , time
-                     , transformers
+                     , transformers >= 0.4
                      , transformers-base
                      , unix
                      , unordered-containers
