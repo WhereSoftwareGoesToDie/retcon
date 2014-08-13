@@ -18,6 +18,8 @@ import System.Directory
 import System.FilePath
 import Test.Hspec
 
+import Retcon.DataSource
+import Retcon.DataSource.JsonDirectory
 import Retcon.Diff
 import Retcon.Document
 
@@ -39,6 +41,22 @@ testLoad name = do
 -- | Load a 'Document' from a JSON file, raising an exception if it fails.
 testLoad' :: FilePath -> IO Document
 testLoad' n = testLoad n >>= return . maybe (error $ "Couldn't load " ++ n) id
+
+-- | Load a 'Document' from a JSON file using the JsonDirectory source.
+testReadJsonDir :: FilePath -> ForeignKey entity source -> IO (Either DataSourceError Document)
+testReadJsonDir fp fk = getJsonDirDocument fp fk >>= return
+
+-- | Write a 'Document' to a JSON file for an existing foreign key using the JsonDirectory source.
+testWriteJsonDirExisting :: FilePath -> Document -> ForeignKey entity source -> IO (Either DataSourceError (Maybe (ForeignKey entity source)))
+testWriteJsonDirExisting fp doc fk = setJsonDirDocument fp doc (Just fk) >>= return
+
+-- | Write a 'Document' to a JSON file for a new foreign key using the JsonDirectory source.
+testWriteJsonDirNew :: FilePath -> Document -> IO (Either DataSourceError (Maybe (ForeignKey entity source)))
+testWriteJsonDirNew fp doc = setJsonDirDocument fp doc Nothing >>= return
+
+-- | Delete a 'Document' stored as a JSON file using the JsonDirectory source.
+testDeleteJsonDir :: FilePath -> ForeignKey entity source -> IO (Either DataSourceError ())
+testDeleteJsonDir fp fk = deleteJsonDirDocument fp fk >>= return
 
 -- | Explicitly pass a test.
 pass :: Expectation
