@@ -31,6 +31,7 @@ import GHC.TypeLits
 import Retcon.Config
 import Retcon.DataSource
 import Retcon.Document
+import Retcon.Error
 import Retcon.Monad
 
 -- | Check that two symbols are the same.
@@ -99,7 +100,7 @@ dispatch work = do
 retcon :: RetconConfig
        -> Connection
        -> String -- ^ Key to use.
-       -> IO (Either HandlerError ())
+       -> IO (Either RetconError ())
 retcon config conn key = do
     runRetconHandler config conn $ dispatch $ key
 
@@ -122,7 +123,6 @@ process fk = do
     $logDebug "PROCESS 1"
 
     -- If we can't get the upstream Document: it's a DELETE.
-    ((liftIO $ getDocument fk) >> delete fk)
 
     $logDebug "PROCESS 2"
 

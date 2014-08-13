@@ -18,12 +18,19 @@
 
 module Retcon.DataSource where
 
+import Control.Applicative
+import Control.Exception
+import Control.Exception.Enclosed
+import Control.Monad.Base
+import Control.Monad.Except
+import Control.Monad.Logger
+import Control.Monad.Reader
+import Control.Monad.Trans.Control
 import Data.Proxy
 import GHC.TypeLits
 
 import Retcon.Document
-
-type Retcon a = IO a
+import Retcon.Error
 
 -- * Entities
 
@@ -60,21 +67,21 @@ class (KnownSymbol source, RetconEntity entity) => RetconDataSource entity sourc
     -- monad.
     setDocument :: Document
                 -> Maybe (ForeignKey entity source)
-                -> Retcon (ForeignKey entity source)
+                -> DataSourceAction (ForeignKey entity source)
 
     -- | Retrieve a document from a data source.
     --
     -- If the document cannot be retrieved an error is returned in the 'Retcon'
     -- monad.
     getDocument :: ForeignKey entity source
-                -> Retcon Document
+                -> DataSourceAction Document
 
     -- | Delete a document from a data source.
     --
     -- If the document cannot be deleted an error is returned in the 'Retcon'
     -- monad.
     deleteDocument :: ForeignKey entity source
-                   -> Retcon ()
+                   -> DataSourceAction ()
 
 -- | The unique identifier used by the 'source' data source to refer to an
 -- 'entity' it stores.
@@ -93,4 +100,27 @@ data SomeEntity = forall e. (KnownSymbol e, RetconEntity e) => SomeEntity (Proxy
 
 -- | Wrap an arbitrary 'RetconDataSource' for some entity 'e'.
 data SomeDataSource e = forall s. RetconDataSource e s => SomeDataSource (Proxy s)
+
+-- * Monads
+
+-- $ Operations which interact with external "data source" systems are
+-- implemented in the 'DataSourceAction' monad.
+
+-- | Monad transformer stack used in the 'DataSourceAction' monad.
+type DataSourceActionStack = ExceptT RetconError (LoggingT IO)
+
+-- | Monad for interactions with data sources.
+--
+-- This monad provides error handling, logging, and I/O facilities.
+newtype DataSourceAction a =
+    DataSourceAction {
+        unDataSourceAction :: DataSourceActionStack a
+    }
+  deriving (Functor, Applicative, Monad, MonadBase IO, MonadIO, MonadLogger,
+  MonadError RetconError)
+
+-- | Run a 'DataSourceAction' action.
+runDataSourceAction :: DataSourceAction a
+                    -> IO (Either RetconError a)
+runDataSourceAction = runStderrLoggingT . runExceptT . unDataSourceAction
 

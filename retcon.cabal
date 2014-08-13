@@ -23,6 +23,7 @@ library
                      , Retcon.DataSource.PostgreSQL
                      , Retcon.Diff
                      , Retcon.Document
+                     , Retcon.Error
                      , Retcon.Handler
                      , Retcon.MergePolicy
                      , Retcon.Monad
@@ -152,6 +153,7 @@ test-suite             userapi-test
                      , hspec
                      , retcon
                      , text
+                     , transformers
                      , unordered-containers
                      , QuickCheck
 
@@ -191,5 +193,6 @@ test-suite             postgresql-test
                      , process
                      , retcon
                      , text
+                     , transformers
                      , unordered-containers
                      , QuickCheck

@@ -15,6 +15,7 @@
 
 module Main where
 
+import Control.Monad.IO.Class
 import Data.ByteString
 import Data.Proxy
 import GHC.TypeLits
@@ -26,8 +27,6 @@ import Retcon.DataSource
 import Retcon.DataSource.PostgreSQL
 import Retcon.Handler
 
-
-
 instance RetconEntity "customer" where
     entitySources _ = [
         SomeDataSource (Proxy :: Proxy "db1"),
@@ -35,30 +34,34 @@ instance RetconEntity "customer" where
         ]
 
 instance RetconDataSource "customer" "db1" where
-    getDocument key = do
+    getDocument key = liftIO $ do
         res <- getPgDocument sourceDb key
         either (error . show) return res
-    setDocument doc key = do
+
+    setDocument doc key = liftIO $ do
         res <- setPgDocument sourceDb doc key
         either (error . show) (\x ->
             case x of
                 Nothing -> error "No key"
                 Just y  -> return y) res
-    deleteDocument key = do
+
+    deleteDocument key = liftIO $ do
         res <- deletePgDocument sourceDb key
         either (error . show) return res
 
 instance RetconDataSource "customer" "db2" where
-    getDocument key = do
+    getDocument key = liftIO $ do
         res <- getPgDocument targetDb key
         either (error . show) return res
-    setDocument doc key = do
+
+    setDocument doc key = liftIO $ do
         res <- setPgDocument targetDb doc key
         either (error . show) (\x ->
             case x of
                 Nothing -> error "No key"
                 Just y  -> return y) res
-    deleteDocument key = do
+
+    deleteDocument key = liftIO $ do
         res <- deletePgDocument targetDb key
         either (error . show) return res
 
@@ -66,26 +69,31 @@ suite :: Spec
 suite = do
     describe "PostgreSQL marshalling" $ do
         it "can load row 1 from db1" $ do
-            test1Doc <- getDocument (ForeignKey "1" :: ForeignKey "customer" "db1")
+            res <- runDataSourceAction $ do
+                getDocument (ForeignKey "1" :: ForeignKey "customer" "db1")
             pass
 
         it "can load row 2 from db1" $ do
-            test2Doc <- getDocument (ForeignKey "2" :: ForeignKey "customer" "db1")
+            res <- runDataSourceAction $ do
+                getDocument (ForeignKey "2" :: ForeignKey "customer" "db1")
             pass
 
         it "can write db1/row1 to db2 with new key" $ do
-            doc3 <- getDocument (ForeignKey "1" :: ForeignKey "customer" "db1")
-            test3Key <- setDocument doc3 (Nothing :: Maybe (ForeignKey "customer" "db2"))
+            res <- runDataSourceAction $ do
+                doc3 <- getDocument (ForeignKey "1" :: ForeignKey "customer" "db1")
+                setDocument doc3 (Nothing :: Maybe (ForeignKey "customer" "db2"))
             pass
 
         it "can write db1/row2 to db2 with existing key row1" $ do
-            doc4 <- getDocument (ForeignKey "2" :: ForeignKey "customer" "db1")
-            test4Key <- setDocument doc4 (Just $ ForeignKey "1" :: Maybe (ForeignKey "customer" "db2"))
+            res <- runDataSourceAction $ do
+                doc4 <- getDocument (ForeignKey "2" :: ForeignKey "customer" "db1")
+                setDocument doc4 (Just $ ForeignKey "1" :: Maybe (ForeignKey "customer" "db2"))
             pass
 
         it "can delete db2/row1" $ do
-            doc5 <- getDocument (ForeignKey "1" :: ForeignKey "customer" "db2")
-            test5DeleteOK <- deleteDocument (ForeignKey "1" :: ForeignKey "customer" "db2")
+            res <- runDataSourceAction $ do
+                doc5 <- getDocument (ForeignKey "1" :: ForeignKey "customer" "db2")
+                deleteDocument (ForeignKey "1" :: ForeignKey "customer" "db2")
             pass
 
 -- | get source file path

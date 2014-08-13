@@ -21,6 +21,7 @@
 
 module Main where
 
+import Control.Monad.IO.Class
 import Data.Proxy
 import Database.PostgreSQL.Simple
 import GHC.TypeLits
@@ -49,81 +50,81 @@ instance RetconEntity "event" where
 -- * Data sources
 
 instance RetconDataSource "customer" "json" where
-    getDocument key = do
+    getDocument key = liftIO $ do
         f <- fp "customer" "json"
         doc <- getJsonDirDocument f key
         either (error . show) return doc
 
-    setDocument doc key = do
+    setDocument doc key = liftIO $ do
         f <- fp "customer" "json"
         key' <- setJsonDirDocument f doc key
         either (error . show) (maybe (error "No key") return) key'
 
-    deleteDocument key = do
+    deleteDocument key = liftIO $ do
         f <- fp "customer" "json"
         res <- deleteJsonDirDocument f key
         either (error . show) return res
 
 instance RetconDataSource "customer" "json2" where
-    getDocument key = do
+    getDocument key = liftIO $ do
         f <- fp "customer" "json2"
         doc <- getJsonDirDocument f key
         either (error . show) return doc
 
-    setDocument doc key = do
+    setDocument doc key = liftIO $ do
         f <- fp "customer" "json2"
         key' <- setJsonDirDocument f doc key
         either (error . show) (maybe (error "No key") return) key'
 
-    deleteDocument key = do
+    deleteDocument key = liftIO $ do
         f <- fp "customer" "json2"
         res <- deleteJsonDirDocument f key
         either (error . show) return res
 
 instance RetconDataSource "event" "json" where
-    getDocument key = do
+    getDocument key = liftIO $ do
         f <- fp "event" "json"
         doc <- getJsonDirDocument f key
         either (error . show) return doc
 
-    setDocument doc key = do
+    setDocument doc key = liftIO $ do
         f <- fp "event" "json"
         key' <- setJsonDirDocument f doc key
         either (error . show) (maybe (error "No key") return) key'
 
-    deleteDocument key = do
+    deleteDocument key = liftIO $ do
         f <- fp "event" "json"
         res <- deleteJsonDirDocument f key
         either (error . show) return res
 
 instance RetconDataSource "event" "icalendar" where
-    getDocument key = do
+    getDocument key = liftIO $ do
         f <- fp "event" "icalendar"
         doc <- getJsonDirDocument f key
         either (error . show) return doc
 
-    setDocument doc key = do
+    setDocument doc key = liftIO $ do
         f <- fp "event" "icalendar"
         key' <- setJsonDirDocument f doc key
         either (error . show) (maybe (error "No key") return) key'
 
-    deleteDocument key = do
+    deleteDocument key = liftIO $ do
         f <- fp "event" "icalendar"
         res <- deleteJsonDirDocument f key
         either (error . show) return res
 
 instance RetconDataSource "event" "exchange" where
-    getDocument key = do
+    getDocument key = liftIO $ do
         f <- fp "event" "exchange"
         doc <- getJsonDirDocument f key
         either (error . show) return doc
 
-    setDocument doc key = do
+    setDocument doc key = liftIO $ do
         f <- fp "event" "exchange"
         key' <- setJsonDirDocument f doc key
         either (error . show) (maybe (error "No key") return) key'
 
-    deleteDocument key = do
+    deleteDocument key = liftIO $ do
         f <- fp "event" "exchange"
         res <- deleteJsonDirDocument f key
         either (error . show) return res

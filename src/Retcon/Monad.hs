@@ -35,27 +35,20 @@ import Control.Monad.Trans.Control
 import Database.PostgreSQL.Simple
 
 import Retcon.Config
+import Retcon.Error
 
--- * Errors
-
--- | Exceptions which can be raised by actions in the RetconHandler monad.
-data HandlerError =
-      HandlerFailed --
-    | HandlerError SomeException --
-  deriving (Show)
-
--- | Run an action in 'RetconHandler', catching any exceptions and propagating them
--- as 'HandlerError's.
+-- | Run an action in 'RetconHandler', catching any exceptions and propagating
+-- them as 'RetconError's.
 carefully :: RetconHandler a -> RetconHandler a
-carefully = handleAny (\e -> throwError $ HandlerError e)
+carefully = handleAny (\e -> throwError $ RetconError e)
 
--- * Monad
+-- * Handler monad
 
 -- $ Retcon handlers (i.e. actions which process and response to an event) are
 -- actions in the 'RetconHandler' monad.
 
--- | The retcon handler monad has a bunch of effects. Here they are!
-type RetconHandlerStack = ExceptT HandlerError (LoggingT (ReaderT (RetconConfig, Connection) IO))
+-- | Monad transformer stack used in the 'RetconHandler' monad.
+type RetconHandlerStack = ExceptT RetconError (LoggingT (ReaderT (RetconConfig, Connection) IO))
 
 -- | Monad for the retcon system.
 --
@@ -67,7 +60,7 @@ newtype RetconHandler a =
         unRetconHandler :: RetconHandlerStack a
     }
   deriving (Functor, Applicative, Monad, MonadIO, MonadLogger,
-  MonadReader (RetconConfig,Connection), MonadError HandlerError, MonadBase IO)
+  MonadReader (RetconConfig,Connection), MonadError RetconError, MonadBase IO)
 
 -- | MonadBaseControl used to catch IO exceptions
 instance MonadBaseControl IO RetconHandler where
@@ -86,8 +79,7 @@ instance MonadBaseControl IO RetconHandler where
 runRetconHandler :: RetconConfig
                  -> Connection
                  -> RetconHandler a
-                 -> IO (Either HandlerError a)
+                 -> IO (Either RetconError a)
 runRetconHandler cfg conn (RetconHandler a) =
     flip runReaderT (cfg,conn) $ runStderrLoggingT $ runExceptT a
-
 

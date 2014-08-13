@@ -8,6 +8,7 @@ module Main where
 
 import Test.Hspec
 
+import Control.Monad.IO.Class
 import Data.Proxy
 import GHC.TypeLits
 import System.Directory
@@ -36,30 +37,34 @@ instance RetconEntity "customer" where
         ]
 
 instance RetconDataSource "customer" "data" where
-    getDocument key = do
+    getDocument key = liftIO $ do
         res <- getJsonDirDocument customerDataPath key
         either (error . show) return res
-    setDocument doc key = do
+
+    setDocument doc key = liftIO $ do
         res <- setJsonDirDocument customerDataPath doc key
         either (error . show) (\x ->
             case x of
                 Nothing -> error "No key"
                 Just y  -> return y) res
-    deleteDocument key = do
+
+    deleteDocument key = liftIO $ do
         res <- deleteJsonDirDocument customerDataPath key
         either (error . show) return res
 
 instance RetconDataSource "customer" "test-results" where
-    getDocument key = do
+    getDocument key = liftIO $ do
         res <- getJsonDirDocument customerTestResultsPath key
         either (error . show) return res
-    setDocument doc key = do
+
+    setDocument doc key = liftIO $ do
         res <- setJsonDirDocument customerTestResultsPath doc key
         either (error . show) (\x ->
             case x of
                 Nothing -> error "No key"
                 Just y  -> return y) res
-    deleteDocument key = do
+
+    deleteDocument key = liftIO $ do
         res <- deleteJsonDirDocument customerTestResultsPath key
         either (error . show) return res
 
@@ -68,26 +73,32 @@ suite :: Spec
 suite = do
     describe "JSON directory marshalling" $ do
         it "can load 01-diff-source" $ do
-            test1Doc <- getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "data")
+            res <- runDataSourceAction $ do
+                getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "data")
             pass
 
         it "can load 01-diff-target" $ do
-            test2Doc <- getDocument (ForeignKey "01-diff-target" :: ForeignKey "customer" "data")
+            res <- runDataSourceAction $ do
+                getDocument (ForeignKey "01-diff-target" :: ForeignKey "customer" "data")
             pass
 
         it "can write 01-diff-source to another source with that key" $ do
-            doc3 <- getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "data")
-            test3Key <- setDocument doc3 (Just (ForeignKey "01-diff-source" :: ForeignKey "customer" "test-results"))
+            runDataSourceAction $ do
+                doc3 <- getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "data")
+                test3Key <- setDocument doc3 (Just (ForeignKey "01-diff-source" :: ForeignKey "customer" "test-results"))
+                return ()
             pass
 
         it "can write 01-diff-source to another source with new key" $ do
-            doc4 <- getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "data")
-            test4Key <- setDocument doc4 (Nothing :: Maybe (ForeignKey "customer" "test-results"))
+            res <- runDataSourceAction $ do
+                doc4 <- getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "data")
+                setDocument doc4 (Nothing :: Maybe (ForeignKey "customer" "test-results"))
             pass
 
         it "can delete 01-diff-source from the test source" $ do
-            doc5 <- getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "test-results")
-            test5DeleteOK <- deleteDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "test-results")
+            res <- runDataSourceAction $ do
+                getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "test-results")
+                deleteDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "test-results")
             pass
 
 -- | This test is mainly to make sure that the types line up in the
