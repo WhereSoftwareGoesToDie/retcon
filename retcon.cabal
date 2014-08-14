@@ -27,6 +27,7 @@ library
                      , Retcon.Handler
                      , Retcon.MergePolicy
                      , Retcon.Monad
+                     , Retcon.Options
                      , Data.Tree.GenericTrie
   -- other-modules:       
   build-depends:       base >=4.7 && <4.8
@@ -43,12 +44,14 @@ library
                      , monad-control
                      , monad-logger
                      , mtl
+                     , optparse-applicative
                      , postgresql-simple
                      , random
                      , text
                      , time
                      , transformers >= 0.4
                      , transformers-base
+                     , trifecta
                      , unix
                      , unordered-containers
   hs-source-dirs:      src

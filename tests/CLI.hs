@@ -18,9 +18,11 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RecordWildCards            #-}
 
 module Main where
 
+import Control.Monad
 import Control.Monad.IO.Class
 import Data.Proxy
 import Database.PostgreSQL.Simple
@@ -33,6 +35,7 @@ import Retcon.Config
 import Retcon.DataSource
 import Retcon.DataSource.JsonDirectory
 import Retcon.Handler
+import Retcon.Options
 
 -- * Entity definitions
 
@@ -149,8 +152,12 @@ cfg = RetconConfig [ SomeEntity (Proxy :: Proxy "event")
 -- | Parse event from command line and execute it.
 main :: IO ()
 main = do
-    (entity:source:key:_) <- getArgs
-    conn <- connectPostgreSQL "dbname='retcon'"
+    opts@RetconOptions{..} <- parseArgsWithConfig "/etc/retcon.conf"
+
+    when (optVerbose) $ print opts
+
+    let (entity:source:key:_) = optArgs
+    conn <- connectPostgreSQL optDB
     res <- retcon cfg conn $ show (entity, source, key)
     print res
     return $ either (const ()) (id) res
