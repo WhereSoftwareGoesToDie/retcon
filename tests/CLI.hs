@@ -147,18 +147,17 @@ cfg = RetconConfig [ SomeEntity (Proxy :: Proxy "event")
 
 -- * Parse and execute commands
 
--- $ TODO: add simple configuration handling.
-
 -- | Parse event from command line and execute it.
 main :: IO ()
 main = do
     opts@RetconOptions{..} <- parseArgsWithConfig "/etc/retcon.conf"
-
     when (optVerbose) $ print opts
 
     let (entity:source:key:_) = optArgs
+
     conn <- connectPostgreSQL optDB
     res <- retcon cfg conn $ show (entity, source, key)
+
     print res
     return $ either (const ()) (id) res
 
