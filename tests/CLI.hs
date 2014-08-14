@@ -156,7 +156,7 @@ main = do
     let (entity:source:key:_) = optArgs
 
     conn <- connectPostgreSQL optDB
-    res <- retcon cfg conn $ show (entity, source, key)
+    res <- retcon opts cfg conn $ show (entity, source, key)
 
     print res
     return $ either (const ()) (id) res

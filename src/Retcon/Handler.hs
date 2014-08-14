@@ -33,6 +33,7 @@ import Retcon.DataSource
 import Retcon.Document
 import Retcon.Error
 import Retcon.Monad
+import Retcon.Options
 
 -- | Check that two symbols are the same.
 same :: (KnownSymbol a, KnownSymbol b) => Proxy a -> Proxy b -> Bool
@@ -97,12 +98,13 @@ dispatch work = do
                 else return ()
 
 -- | Run the retcon process on an event.
-retcon :: RetconConfig
+retcon :: RetconOptions
+       -> RetconConfig
        -> Connection
        -> String -- ^ Key to use.
        -> IO (Either RetconError ())
-retcon config conn key = do
-    runRetconHandler config conn $ dispatch $ key
+retcon opts config conn key = do
+    runRetconHandler opts config conn $ dispatch $ key
 
 -- | Process an event on a specified 'ForeignKey'.
 --

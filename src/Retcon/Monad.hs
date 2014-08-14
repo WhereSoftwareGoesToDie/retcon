@@ -36,6 +36,7 @@ import Database.PostgreSQL.Simple
 
 import Retcon.Config
 import Retcon.Error
+import Retcon.Options
 
 -- | Run an action in 'RetconHandler', catching any exceptions and propagating
 -- them as 'RetconError's.
@@ -76,10 +77,11 @@ instance MonadBaseControl IO RetconHandler where
     restoreM       = RetconHandler . restoreM . unStHandler
 
 -- | Run a 'RetconHandler' action with the given configuration.
-runRetconHandler :: RetconConfig
+runRetconHandler :: RetconOptions
+                 -> RetconConfig
                  -> Connection
                  -> RetconHandler a
                  -> IO (Either RetconError a)
-runRetconHandler cfg conn (RetconHandler a) =
+runRetconHandler opt cfg conn (RetconHandler a) =
     flip runReaderT (cfg,conn) $ runStderrLoggingT $ runExceptT a
 
