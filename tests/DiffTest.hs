@@ -30,7 +30,7 @@ prop_applyDiffUnit doc = applyDiff (mempty :: Diff ()) doc == doc
 
 -- | Proposition: 'applyDiff (diff doc1 doc2) doc1 == doc2'
 prop_applyDiff :: Document -> Document -> Bool
-prop_applyDiff doc1 doc2 = doc2 == (applyDiff patch doc1)
+prop_applyDiff doc1 doc2 = doc2 == applyDiff patch doc1
   where patch = diff doc1 doc2
 
 -- | Proposition: 'applyDiff patch' is idempotent.

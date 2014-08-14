@@ -33,6 +33,7 @@ import Retcon.DataSource
 import Retcon.Document
 import Retcon.Error
 import Retcon.Monad
+import Retcon.Options
 
 -- | Check that two symbols are the same.
 same :: (KnownSymbol a, KnownSymbol b) => Proxy a -> Proxy b -> Bool
@@ -82,27 +83,25 @@ lookupForeignKey key = do
 -- | Parse a request string and handle an event.
 dispatch :: String -> RetconHandler ()
 dispatch work = do
-    let (entity_str, source_str, key) = (read work :: (String, String, String))
+    let (entity_str, source_str, key) = read work :: (String, String, String)
     entities <- asks (retconEntities . fst)
     case someSymbolVal entity_str of
         SomeSymbol (entity :: Proxy entity_ty) ->
             forM_ entities $ \(SomeEntity e) ->
-                if same e entity
-                then forM_ (entitySources e) $ \(SomeDataSource (sp :: Proxy st) :: SomeDataSource et) -> do
+                when (same e entity) $ forM_ (entitySources e) $ \(SomeDataSource (sp :: Proxy st) :: SomeDataSource et) -> do
                     case someSymbolVal source_str of
                         SomeSymbol (source :: Proxy source_ty) -> do
-                          let fk = (ForeignKey key :: ForeignKey et st)
+                          let fk = ForeignKey key :: ForeignKey et st
                           when (same source sp) (process fk)
 
-                else return ()
-
 -- | Run the retcon process on an event.
-retcon :: RetconConfig
+retcon :: RetconOptions
+       -> RetconConfig
        -> Connection
        -> String -- ^ Key to use.
        -> IO (Either RetconError ())
-retcon config conn key = do
-    runRetconHandler config conn $ dispatch $ key
+retcon opts config conn key = do
+    runRetconHandler opts config conn . dispatch $ key
 
 -- | Process an event on a specified 'ForeignKey'.
 --
@@ -113,12 +112,12 @@ process :: forall entity source. (RetconDataSource entity source)
         => ForeignKey entity source
         -> RetconHandler ()
 process fk = do
-    $logDebug $ T.concat ["EVENT against ", (T.pack $ show $ length sources), " sources"]
+    $logDebug $ T.concat ["EVENT against ", T.pack $ show $ length sources, " sources"]
 
     -- If we can't find an InternalKey: it's a CREATE.
     key <- lookupInternalKey fk
 
-    (lookupInternalKey fk >> (carefully $ create fk))
+    lookupInternalKey fk >> carefully (create fk)
 
     $logDebug "PROCESS 1"
 

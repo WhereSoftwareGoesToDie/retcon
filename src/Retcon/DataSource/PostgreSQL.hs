@@ -41,11 +41,11 @@ getPgDocument connString fk = Ex.bracket (PG.connectPostgreSQL connString) PG.cl
     where
         run conn = do
             results <- PG.query conn selectQ (PGT.Only $ unForeignKey fk)
-            case (results) of
+            case results of
                 [] -> do
                     return $ Left (DataSourceError "Nothing to get")
                 (PGT.Only fdoc:_) -> do
-                    case (fromJSON fdoc) of
+                    case fromJSON fdoc of
                         Error msg   -> do
                             return $ Left (DataSourceError msg)
                         Success doc -> do
@@ -59,13 +59,13 @@ setPgDocument connString doc mfk = Ex.bracket (PG.connectPostgreSQL connString) 
         run conn = do
             case mfk of
                 Nothing -> do
-                    newFK <- PG.returning conn insertQ [(PGT.Only enc)]
+                    newFK <- PG.returning conn insertQ [PGT.Only enc]
                     case newFK of
                         []                        -> return $ Left (DataSourceError "Could not insert")
                         (PGT.Only (x :: Int) : _) -> return $ Right $ Just (ForeignKey (show x) :: ForeignKey entity source)
                 Just fk -> do
                     updated <- PG.execute conn updateQ (enc, unForeignKey fk)
-                    case (updated) of
+                    case updated of
                         0 -> return $ Left (DataSourceError "Nothing to update")
                         _ -> return $ Right $ Just fk
         enc = encode doc
@@ -78,7 +78,7 @@ deletePgDocument connString fk = Ex.bracket (PG.connectPostgreSQL connString) PG
     where
         run conn = do
             deleted <- PG.execute conn deleteQ (PGT.Only $ unForeignKey fk)
-            case (deleted) of
+            case deleted of
                 0 -> return $ Left (DataSourceError "Nothing to delete")
                 _ -> return $ Right ()
         deleteQ = "DELETE FROM retcon WHERE id = ?"

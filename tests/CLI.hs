@@ -13,14 +13,15 @@
 -- algorithm. It is intended as an example and demonstration piece more than a
 -- useful tool.
 
-{-# LANGUAGE DataKinds                  #-}
-{-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE MultiParamTypeClasses      #-}
-{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE RecordWildCards       #-}
 
 module Main where
 
+import Control.Monad
 import Control.Monad.IO.Class
 import Data.Proxy
 import Database.PostgreSQL.Simple
@@ -33,6 +34,7 @@ import Retcon.Config
 import Retcon.DataSource
 import Retcon.DataSource.JsonDirectory
 import Retcon.Handler
+import Retcon.Options
 
 -- * Entity definitions
 
@@ -144,14 +146,15 @@ cfg = RetconConfig [ SomeEntity (Proxy :: Proxy "event")
 
 -- * Parse and execute commands
 
--- $ TODO: add simple configuration handling.
-
 -- | Parse event from command line and execute it.
 main :: IO ()
 main = do
-    (entity:source:key:_) <- getArgs
-    conn <- connectPostgreSQL "dbname='retcon'"
-    res <- retcon cfg conn $ show (entity, source, key)
+    opts@RetconOptions{..} <- parseArgsWithConfig "/etc/retcon.conf"
+    when optVerbose $ print opts
+    conn <- connectPostgreSQL optDB
+
+    let (entity:source:key:_) = optArgs
+
+    res <- retcon opts cfg conn $ show (entity, source, key)
     print res
-    return $ either (const ()) (id) res
 

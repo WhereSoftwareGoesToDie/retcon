@@ -46,7 +46,7 @@ generateTree n = do
     value <- arbitrary
     branches <- choose (1, branchingFactor)
     assign <- vectorOf (n-1) $ choose (1, branches)
-    kids <- sequence $ map (generateTree) $ map length $ group $ sort assign
+    kids <- mapM (generateTree . length) $ group $ sort assign
     labels <- vectorOf (n-1) arbitrary
     return $ Node value $ M.fromList $ zip labels kids
 

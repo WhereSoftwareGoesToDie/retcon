@@ -24,6 +24,9 @@ clean:
 	@cabal clean >/dev/null
 	@rm -f tags
 
+lint: $(SOURCES)
+	for i in $^; do hlint $$i; done
+
 test:
 	@/bin/echo -e "TEST"
 	cabal test

@@ -45,7 +45,7 @@ data MergePolicy l =
 
 -- | Merge two diffs by applying a 'MergePolicy'.
 mergeWithPolicy :: MergePolicy l -> Diff l -> Diff l -> Diff l
-mergeWithPolicy policy d1 d2 = fst $ (mergeDiffs policy) d1 d2
+mergeWithPolicy policy d1 d2 = fst $ mergeDiffs policy d1 d2
 
 -- * Basic policies
 
@@ -73,10 +73,10 @@ ignoreConflicts = MergePolicy (const ()) merge
     merge (Diff ll opl) (Diff lr opr) =
         let keysl = nub $ map diffOpTarget opl
             keysr = nub $ map diffOpTarget opr
-            keyconflicts = (intersect keysl keysr)
+            keyconflicts = intersect keysl keysr
             changes = opl ++ opr
-            clash = filter (flip diffOpAffects keyconflicts) $ changes
-            noclash = filter (not . flip diffOpAffects keyconflicts) $ changes
+            clash = filter (flip diffOpAffects keyconflicts) changes
+            noclash = filter (not . flip diffOpAffects keyconflicts) changes
         in (Diff ll noclash, Diff lr clash)
 
 -- | TODO: sources should *not* be identified by their strings.
