@@ -13,12 +13,11 @@
 -- algorithm. It is intended as an example and demonstration piece more than a
 -- useful tool.
 
-{-# LANGUAGE DataKinds                  #-}
-{-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE MultiParamTypeClasses      #-}
-{-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE RecordWildCards       #-}
 
 module Main where
 
@@ -151,13 +150,11 @@ cfg = RetconConfig [ SomeEntity (Proxy :: Proxy "event")
 main :: IO ()
 main = do
     opts@RetconOptions{..} <- parseArgsWithConfig "/etc/retcon.conf"
-    when (optVerbose) $ print opts
+    when optVerbose $ print opts
+    conn <- connectPostgreSQL optDB
 
     let (entity:source:key:_) = optArgs
 
-    conn <- connectPostgreSQL optDB
     res <- retcon opts cfg conn $ show (entity, source, key)
-
     print res
-    return $ either (const ()) (id) res
 

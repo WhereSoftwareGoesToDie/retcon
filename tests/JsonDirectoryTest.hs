@@ -65,7 +65,7 @@ suite = do
                     preTest4b <- testWriteJsonDirNew targetFp doc
                     case preTest4b of
                         Left err        -> error "Couldn't write document when we should have done so"
-                        Right (Nothing) -> error "Didn't get a ForeignKey"
+                        Right Nothing -> error "Didn't get a ForeignKey"
                         Right (Just fk) -> do
                             test4 <- testWriteJsonDirExisting targetFp doc fk
                             either (error "Could not write file again") (const pass) test4
@@ -79,7 +79,7 @@ suite = do
                     preTest5b <- testWriteJsonDirNew targetFp doc
                     case preTest5b of
                         Left err        -> error "Couldn't write document when we should have done so"
-                        Right (Nothing) -> error "Didn't get a ForeignKey"
+                        Right Nothing   -> error "Didn't get a ForeignKey"
                         Right (Just fk) -> do
                             test5 <- testDeleteJsonDir targetFp fk
                             either (error "Could not write file again") (const pass) test5

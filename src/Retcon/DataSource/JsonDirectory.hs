@@ -33,7 +33,7 @@ getJsonDirDocument :: FilePath
                    -> IO (Either DataSourceError Document)
 getJsonDirDocument dir fk = do
     readOK <- readFileFromDocument fp
-    case (readOK) of
+    case readOK of
         Left err -> do
             return $ Left (DataSourceError err)
         Right fdoc -> do
@@ -54,17 +54,15 @@ setJsonDirDocument dir doc mfk = do
             either throwException (\x -> return $ Right $ Just fk) writeOK
     where
         doWrite k      = writeDocumentToFile dir k doc
-        throwException = \ex -> return $ Left ex
+        throwException = return . Left
 
 -- | API function deleteDocument
 deleteJsonDirDocument :: FilePath -> ForeignKey entity source -> IO (Either DataSourceError ())
 deleteJsonDirDocument dir fk = do
     exists <- fileExist fp
-    case (exists) of
-        False -> do
-            return $ Left (DataSourceError "File does not exist")
-        True  -> do
-            try (removeFile fp)
+    if exists
+        then try (removeFile fp)
+        else return $ Left (DataSourceError "File does not exist")
     where
         fp = getFkFilename dir fk
 
@@ -72,16 +70,15 @@ deleteJsonDirDocument dir fk = do
 readFileFromDocument :: FilePath -> IO (Either String Document)
 readFileFromDocument fp = do
     exists <- fileExist fp
-    case (exists) of
-        False -> do
-            return $ Left "File does not exist"
-        True  -> do
+    if exists
+        then do
             fbs <- BSL.readFile fp
             return $ eitherDecode fbs
+        else return $ Left "File does not exist"
 
 -- | Converts a foreign key to a filename
 getFkFilename :: FilePath -> ForeignKey entity source -> FilePath
-getFkFilename dir fk = dir </> ((unForeignKey fk) ++ ".json")
+getFkFilename dir fk = dir </> (unForeignKey fk ++ ".json")
 
 -- | Generates a new foreign key using chars a-z
 newFK :: FilePath -> IO (ForeignKey entity source)
@@ -89,13 +86,11 @@ newFK dir = do
     s <- makeSeed
     let newKey = makeKey s
     exists <- fileExist $ tryPath newKey
-    case (exists) of
-        True  -> do
-            newFK dir
-        False -> do
-            return newKey
+    if exists
+        then newFK dir
+        else return newKey
     where
-        tryPath fk = getFkFilename dir fk
+        tryPath = getFkFilename dir
 
 -- | make key out of random seed
 makeKey :: Int -> ForeignKey entity source

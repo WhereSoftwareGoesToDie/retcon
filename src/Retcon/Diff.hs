@@ -77,7 +77,7 @@ diffLists :: [([DocumentKey],DocumentValue)]   -- ^ Source tree.
           -> [([DocumentKey],DocumentValue)]   -- ^ Target tree.
           -> [DiffOp ()]
 diffLists from [] = map (\(n,_) -> DeleteOp () n) from
-diffLists []   to = map (\(n,v) -> InsertOp () n v) to
+diffLists []   to = map (uncurry $ InsertOp ()) to
 diffLists ss@((ns,vs):sr) ds@((nd,vd):dr) =
     case compare ns nd of
         LT -> DeleteOp () ns:diffLists sr ds

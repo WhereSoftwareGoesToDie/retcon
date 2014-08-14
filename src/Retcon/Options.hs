@@ -69,7 +69,7 @@ optionsParser RetconOptions{..} =
     RetconOptions <$> parseVerbose
                   <*> parseLogging
                   <*> parseDB
-                  <*> parseArgs
+                  <*> parseID
   where
     parseVerbose = switch $
            long "verbose"
@@ -91,8 +91,10 @@ optionsParser RetconOptions{..} =
         <> value optLogging
         <> showDefault
         <> reader readLog
-    parseArgs = many $ argument (return . T.pack) $
-           metavar "FILES..."
+    parseID = (\x y z -> [x,y,z])
+        <$> argument (return . T.pack) (metavar "ENTITY")
+        <*> argument (return . T.pack) (metavar "SOURCE")
+        <*> argument (return . T.pack) (metavar "ID")
 
 -- | Reader for logging options.
 readLog :: (Monad m, MonadPlus m) => String -> m Logging
@@ -108,11 +110,7 @@ parseFile :: FilePath -> IO RetconOptions
 parseFile path = do
     exists <- doesFileExist path
     if exists
-    then do
-        maybe_ls <- parseFromFile configParser path
-        case maybe_ls of
-            Just ls -> return $ mergeConfig ls defaultOptions
-            Nothing -> return defaultOptions
+    then maybe defaultOptions (`mergeConfig` defaultOptions) <$> parseFromFile configParser path
     else return defaultOptions
   where
     mergeConfig ls RetconOptions{..} = fromJust $

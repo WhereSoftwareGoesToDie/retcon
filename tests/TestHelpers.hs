@@ -10,10 +10,12 @@
 
 module TestHelpers where
 
+import Control.Monad
 import Data.Aeson
 import qualified Data.ByteString.Lazy as BS
 import qualified Data.HashMap.Lazy as H
 import qualified Data.Map as M
+import Data.Maybe
 import System.Directory
 import System.FilePath
 import Test.Hspec
@@ -40,23 +42,23 @@ testLoad name = do
 
 -- | Load a 'Document' from a JSON file, raising an exception if it fails.
 testLoad' :: FilePath -> IO Document
-testLoad' n = testLoad n >>= return . maybe (error $ "Couldn't load " ++ n) id
+testLoad' n = liftM (fromMaybe (error $ "Couldn't load " ++ n)) (testLoad n)
 
 -- | Load a 'Document' from a JSON file using the JsonDirectory source.
 testReadJsonDir :: FilePath -> ForeignKey entity source -> IO (Either DataSourceError Document)
-testReadJsonDir fp fk = getJsonDirDocument fp fk >>= return
+testReadJsonDir = getJsonDirDocument
 
 -- | Write a 'Document' to a JSON file for an existing foreign key using the JsonDirectory source.
 testWriteJsonDirExisting :: FilePath -> Document -> ForeignKey entity source -> IO (Either DataSourceError (Maybe (ForeignKey entity source)))
-testWriteJsonDirExisting fp doc fk = setJsonDirDocument fp doc (Just fk) >>= return
+testWriteJsonDirExisting fp doc fk = setJsonDirDocument fp doc (Just fk)
 
 -- | Write a 'Document' to a JSON file for a new foreign key using the JsonDirectory source.
 testWriteJsonDirNew :: FilePath -> Document -> IO (Either DataSourceError (Maybe (ForeignKey entity source)))
-testWriteJsonDirNew fp doc = setJsonDirDocument fp doc Nothing >>= return
+testWriteJsonDirNew fp doc = setJsonDirDocument fp doc Nothing
 
 -- | Delete a 'Document' stored as a JSON file using the JsonDirectory source.
 testDeleteJsonDir :: FilePath -> ForeignKey entity source -> IO (Either DataSourceError ())
-testDeleteJsonDir fp fk = deleteJsonDirDocument fp fk >>= return
+testDeleteJsonDir = deleteJsonDirDocument
 
 -- | Explicitly pass a test.
 pass :: Expectation

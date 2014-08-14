@@ -30,9 +30,9 @@ import TreeHelpers
 preloadTargetDir :: FilePath -> FilePath -> IO ()
 preloadTargetDir src dst = do
     srcOK <- doesDirectoryExist src
-    case srcOK of
-        False -> error ("Can not find source directory " ++ src)
-        True  -> do
+    if srcOK
+        then do
             createDirectoryIfMissing True dst
-            done <- system ("cp -r " ++ src ++ " " ++ dst)
+            _ <- system ("cp -r " ++ src ++ " " ++ dst)
             return ()
+        else error ("Can not find source directory " ++ src)

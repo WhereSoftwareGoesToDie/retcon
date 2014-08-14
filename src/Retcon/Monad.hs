@@ -41,7 +41,7 @@ import Retcon.Options
 -- | Run an action in 'RetconHandler', catching any exceptions and propagating
 -- them as 'RetconError's.
 carefully :: RetconHandler a -> RetconHandler a
-carefully = handleAny (\e -> throwError $ RetconError e)
+carefully = handleAny (throwError . RetconError)
 
 -- * Handler monad
 
@@ -83,7 +83,7 @@ runRetconHandler :: RetconOptions
                  -> RetconHandler a
                  -> IO (Either RetconError a)
 runRetconHandler opt cfg conn (RetconHandler a) =
-    flip runReaderT (cfg,conn) $ (runLogging) $ runExceptT a
+    flip runReaderT (cfg,conn) . runLogging . runExceptT $ a
   where
     runLogging = case optLogging opt of
       LogStderr -> runStderrLoggingT
