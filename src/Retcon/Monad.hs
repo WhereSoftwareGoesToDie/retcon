@@ -83,5 +83,10 @@ runRetconHandler :: RetconOptions
                  -> RetconHandler a
                  -> IO (Either RetconError a)
 runRetconHandler opt cfg conn (RetconHandler a) =
-    flip runReaderT (cfg,conn) $ runStderrLoggingT $ runExceptT a
+    flip runReaderT (cfg,conn) $ (runLogging) $ runExceptT a
+  where
+    runLogging = case optLogging opt of
+      LogStderr -> runStderrLoggingT
+      LogStdout -> runStdoutLoggingT
+      LogNone   -> (`runLoggingT` \_ _ _ _ -> return ())
 
