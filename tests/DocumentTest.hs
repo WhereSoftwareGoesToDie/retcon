@@ -32,6 +32,9 @@ suite = do
       maybe (error "Could not load file") (const pass) test2
 
   describe "initial document calculation" $ do
+    it "should be empty whenever the input list is empty" $ do
+      calculateInitialDocument [] `shouldBe` mempty
+
     it "should be empty whenever an empty is input" $ do
       test1 <- testLoad "01-diff-source.json"
       test2 <- testLoad "01-diff-target.json"
@@ -46,7 +49,6 @@ suite = do
       let diffs = concatMap (diffChanges . diff initial) documents
       let deletions = filter diffOpIsDelete diffs
       length deletions `shouldBe` 0
-
 
 main :: IO ()
 main = hspec suite
