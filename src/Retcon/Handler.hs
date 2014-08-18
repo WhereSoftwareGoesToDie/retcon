@@ -38,6 +38,7 @@ import Retcon.Config
 import Retcon.DataSource
 import Retcon.Document
 import Retcon.Error
+import Retcon.Helpers.Strings
 import Retcon.Monad
 import Retcon.Options
 
@@ -210,4 +211,44 @@ getDocuments ik =
                         liftIO . runDataSourceAction $ getDocument fk
                     Nothing ->
                         return . Left $ RetconFailed)
+
+-- | Fetch the initial document
+getInitialDocument :: forall entity. (RetconEntity entity)
+       => InternalKey entity
+       -> RetconHandler (Maybe Document)
+getInitialDocument (InternalKey key) = do
+    conn <- asks snd
+
+    let entity = symbolVal (Proxy :: Proxy entity)
+
+    (results::[Only Value]) <- liftIO $ query conn selectQ (entity, key)
+    case results of
+        Only v:_ ->
+          case (fromJSON v :: Result Document) of
+            Error err   -> return (Nothing :: Maybe Document)
+            Success doc -> return (Just doc)
+        []       -> return (Nothing :: Maybe Document)
+    where
+        selectQ = "SELECT document FROM retcon_initial WHERE entity = ? AND id = ?"
+
+-- | Write the initial document
+putInitialDocument :: forall entity. (RetconEntity entity)
+        => InternalKey entity
+        -> Document
+        -> RetconHandler ()
+putInitialDocument ik doc = do
+    conn <- asks snd
+
+    let (entity, ikValue) = internalKeyValue ik
+    void $ liftIO $ execute conn upsertQ (entity, ikValue, ikValue, entity, toJSON doc)
+
+    where
+        upsertQ = "BEGIN; DELETE FROM retcon_initial WHERE entity = ? AND id = ?; INSERT INTO retcon_initial (id, entity, document) values (?, ?, ?); COMMIT;"
+
+
+
+
+
+
+
 
