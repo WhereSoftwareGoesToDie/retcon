@@ -36,8 +36,10 @@ import GHC.TypeLits
 
 import Retcon.Config
 import Retcon.DataSource
+import Retcon.Diff
 import Retcon.Document
 import Retcon.Error
+import Retcon.MergePolicy
 import Retcon.Monad
 import Retcon.Options
 
@@ -87,7 +89,6 @@ lookupInternalKey :: (RetconDataSource entity source)
                   -> RetconHandler (Maybe (InternalKey entity))
 lookupInternalKey fk = do
     conn <- asks snd
-    -- Look for the internal key in the database.
 
     (results :: [Only Int]) <- liftIO $ query conn "SELECT id FROM retcon_fk WHERE entity = ? AND source = ? AND fk = ? LIMIT 1" $ foreignKeyValue fk
     case results of
@@ -154,11 +155,12 @@ process fk = do
     -- If we can't find an InternalKey: it's a CREATE.
     -- If we can't get the upstream Document: it's a DELETE.
     -- Otherwise: it's an UPDATE.
-
-    update fk
+    ik' <- lookupInternalKey fk
+    case ik' of
+        Nothing -> create fk
+        Just ik -> update ik
   where
     sources = entitySources (Proxy :: Proxy entity)
-
 
 -- | Process a creation event.
 create :: (RetconDataSource entity source)
@@ -166,8 +168,6 @@ create :: (RetconDataSource entity source)
        -> RetconHandler ()
 create fk = do
     $logDebug "CREATE"
-
-    -- liftIO $ throwIO $ userError "I am walrus"
 
 -- | Process a deletion event.
 delete :: (RetconDataSource entity source)
@@ -177,18 +177,19 @@ delete fk = do
     $logDebug "DELETE"
 
 -- | Process an update event.
-update :: (RetconDataSource entity source)
-       => ForeignKey entity source
+update :: RetconEntity entity
+       => InternalKey entity
        -> RetconHandler ()
-update fk = do
+update ik = do
     $logDebug "UPDATE"
-    ik <- lookupInternalKey fk
-    docs <- case ik of
-        Nothing  -> return []
-        Just ik' -> do
-            carefully $ getDocuments ik'
-    let valid = rights docs
-    liftIO $ print valid
+
+    docs <- carefully $ getDocuments ik
+    let valid = rights $ docs
+    let initial = calculateInitialDocument valid
+
+    -- Build the diff.
+    let diffs = map (diff initial) valid
+    let (diff, fragments) = mergeDiffs ignoreConflicts $ diffs
 
     return ()
 

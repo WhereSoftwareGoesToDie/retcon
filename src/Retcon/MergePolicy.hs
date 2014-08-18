@@ -74,9 +74,9 @@ ignoreConflicts = MergePolicy (const ()) merge
         let ops = concatMap diffChanges ds
             keys = group . sort . map diffOpTarget $ ops
             keyconflicts = map head . filter (\l -> length l > 1) $ keys
-            clash = filter (flip diffOpAffects keyconflicts) ops
             noclash = filter (not . flip diffOpAffects keyconflicts) ops
-        in (Diff () noclash, [])
+            scraps = map (\(Diff l ops) -> Diff l $ filter (flip diffOpAffects keyconflicts) ops) ds
+        in (Diff () noclash, scraps)
 
 -- | TODO: sources should *not* be identified by their strings.
 type Source = SomeSymbol
