@@ -47,12 +47,14 @@ instance Monoid l => Monoid (Diff l) where
 -- | Predicate: Operation is an insertion.
 diffOpIsInsert :: DiffOp l -> Bool
 diffOpIsInsert op = case op of
-    (InsertOp _ _ _) -> True
-    _otherwise       -> False
+    DeleteOp {} -> False
+    InsertOp {} -> True
 
 -- | Predicate: Operation is a deletion.
 diffOpIsDelete :: DiffOp l -> Bool
-diffOpIsDelete = not . diffOpIsInsert
+diffOpIsDelete op = case op of
+    DeleteOp {} -> True
+    InsertOp {} -> False
 
 -- | Extract the key which will be modified by a 'DiffOp'.
 diffOpTarget :: DiffOp l -> [DocumentKey]
