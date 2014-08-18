@@ -216,12 +216,10 @@ getDocuments ik =
 getInitialDocument :: forall entity. (RetconEntity entity)
        => InternalKey entity
        -> RetconHandler (Maybe Document)
-getInitialDocument (InternalKey key) = do
+getInitialDocument ik = do
     conn <- asks snd
 
-    let entity = symbolVal (Proxy :: Proxy entity)
-
-    (results::[Only Value]) <- liftIO $ query conn selectQ (entity, key)
+    (results::[Only Value]) <- liftIO $ query conn selectQ (internalKeyValue ik)
     case results of
         Only v:_ ->
           case (fromJSON v :: Result Document) of
@@ -245,10 +243,13 @@ putInitialDocument ik doc = do
     where
         upsertQ = "BEGIN; DELETE FROM retcon_initial WHERE entity = ? AND id = ?; INSERT INTO retcon_initial (id, entity, document) values (?, ?, ?); COMMIT;"
 
+-- | Delete the initial document
 
-
-
-
-
-
-
+deleteInitialDocument :: forall entity. (RetconEntity entity)
+        => InternalKey entity
+        -> RetconHandler ()
+deleteInitialDocument ik = do
+    conn <- asks snd
+    void $ liftIO $ execute conn deleteQ (internalKeyValue ik)
+    where
+        deleteQ = "DELETE FROM retcon_initial WHERE entity = ? AND id = ?"

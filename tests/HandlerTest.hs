@@ -71,6 +71,28 @@ suite = do
                     maybe_put `shouldBe` ()
                     maybe_get `shouldBe` (Just testDoc)
 
+        it "deletes initial documents" $ do
+            let testDoc = Document [(["isThisGoingToGetDeleted"], "yes")]
+            result <- testHandler $ do
+                conn <- asks snd
+
+                result <- liftIO $ query conn "INSERT INTO retcon (entity) VALUES (?) RETURNING id" (Only "alicorn_invoice" :: Only String)
+                case result of
+                    [Only ik_base] -> do
+                        let ik = InternalKey ik_base :: InternalKey "alicorn_invoice"
+
+                        maybePut <- putInitialDocument ik testDoc
+                        maybeDel <- deleteInitialDocument ik
+                        maybeGet <- getInitialDocument ik
+                        return $ (maybePut, maybeDel, maybeGet)
+                    _ -> error "I have no idea what happened here"
+            case result of
+                Left e -> error (show e)
+                Right (maybe_put, maybe_del, maybe_get) -> do
+                    maybe_put `shouldBe` ()
+                    maybe_del `shouldBe` ()
+                    maybe_get `shouldBe` Nothing
+
 testHandler :: RetconHandler a -> IO (Either RetconError a)
 testHandler a = bracket setupConn closeConn run
     where
