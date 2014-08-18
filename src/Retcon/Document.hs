@@ -61,3 +61,8 @@ instance ToJSON Document where
   toJSON (Document (Node (Just val) children))
     | M.null children = toJSON val
     | otherwise       = object $ map (\(k,v) -> k .= Document v) $ M.toAscList children
+
+-- | Calulate an "initial" document from a collection of input documents.
+calculateInitialDocument :: [Document] -> Document
+calculateInitialDocument = mempty
+

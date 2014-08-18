@@ -44,6 +44,16 @@ instance Monoid l => Monoid (Diff l) where
     mempty = Diff mempty mempty
     mappend = error "unimplemented mappend for Diff"
 
+-- | Predicate: Operation is an insertion.
+diffOpIsInsert :: DiffOp l -> Bool
+diffOpIsInsert op = case op of
+    (InsertOp _ _ _) -> True
+    _otherwise       -> False
+
+-- | Predicate: Operation is a deletion.
+diffOpIsDelete :: DiffOp l -> Bool
+diffOpIsDelete = not . diffOpIsInsert
+
 -- | Extract the key which will be modified by a 'DiffOp'.
 diffOpTarget :: DiffOp l -> [DocumentKey]
 diffOpTarget (InsertOp _ k _) = k
