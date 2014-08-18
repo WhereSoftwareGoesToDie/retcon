@@ -58,11 +58,11 @@ instance FromJSON Document where
 -- TODO This instance will discard information when it encounters a
 -- node with a label *and* children.
 instance ToJSON Document where
-  toJSON (Document (Node Nothing children))
-    = object $ map (\(k,v) -> k .= Document v) $ M.toAscList children
-  toJSON (Document (Node (Just val) children))
-    | M.null children = toJSON val
-    | otherwise       = object $ map (\(k,v) -> k .= Document v) $ M.toAscList children
+  toJSON (Document (Node Nothing childs))
+    = object $ map (\(k,v) -> k .= Document v) $ M.toAscList childs
+  toJSON (Document (Node (Just val) childs))
+    | M.null childs = toJSON val
+    | otherwise     = object $ map (\(k,v) -> k .= Document v) $ M.toAscList childs
 
 -- | Calulate an "initial" document from a collection of input documents.
 --

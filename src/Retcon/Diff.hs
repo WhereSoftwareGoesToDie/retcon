@@ -115,10 +115,10 @@ evalDiffOp (DeleteOp _ []) (Document (Node _ kids))
   = Document . Node Nothing $ M.filter (not . emptyNode) kids
 
 -- Navigate to a location (so you can delete it's value).
-evalDiffOp (DeleteOp _ (k:ks)) (Document (Node l kids))
-  = Document . Node l $ M.filter (not . emptyNode) $ M.alter (Just . updateChild) k kids
-  where
-    updateChild = unDocument . evalDiffOp (DeleteOp () ks) . Document . fromMaybe mempty
+evalDiffOp (DeleteOp _ (k:ks)) (Document (Node l kids)) =
+    Document
+    . Node l
+    . M.filter (not . emptyNode) $ M.alter (updateChild (DeleteOp () ks)) k kids
 
 -- Set the value at the current location.
 evalDiffOp (InsertOp _ []  v) (Document (Node _ kids)) =
@@ -126,7 +126,9 @@ evalDiffOp (InsertOp _ []  v) (Document (Node _ kids)) =
 
 -- Navigate to a location (so you can set it's value).
 evalDiffOp (InsertOp _ (k:ks) v) (Document (Node l kids))
-  = Document . Node l $ M.alter (Just . updateChild) k kids
-  where
-    updateChild = unDocument . evalDiffOp (InsertOp () ks v) . Document . fromMaybe mempty
+  = Document . Node l $ M.alter (updateChild (InsertOp () ks v)) k kids
+
+updateChild :: DiffOp a -> Maybe (Tree DocumentKey DocumentValue) -> Maybe (Tree DocumentKey DocumentValue)
+updateChild op =
+    Just . unDocument . evalDiffOp op . Document . fromMaybe mempty
 

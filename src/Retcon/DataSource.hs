@@ -122,5 +122,8 @@ newtype DataSourceAction a =
 -- | Run a 'DataSourceAction' action.
 runDataSourceAction :: DataSourceAction a
                     -> IO (Either RetconError a)
-runDataSourceAction = runStderrLoggingT . runExceptT . unDataSourceAction
+runDataSourceAction =
+    runStderrLoggingT
+    . runExceptT
+    . unDataSourceAction
 
