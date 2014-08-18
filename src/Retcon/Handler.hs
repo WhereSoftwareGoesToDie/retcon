@@ -19,9 +19,15 @@ module Retcon.Handler where
 
 import Control.Applicative
 import Control.Exception
+import Control.Exception.Enclosed (tryAny)
+import Control.Monad.Error.Class
 import Control.Monad.Logger
 import Control.Monad.Reader
+import Data.Aeson
+import Data.Bifunctor
+import Data.Either
 import Data.Maybe
+import Data.Monoid
 import Data.Proxy
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -39,20 +45,38 @@ import Retcon.Options
 same :: (KnownSymbol a, KnownSymbol b) => Proxy a -> Proxy b -> Bool
 same a b = isJust (sameSymbol a b)
 
+-- | Extract the type-level information from a 'ForeignKey'.
+--
+-- The triple contains the entity, data source, and key in that order.
+foreignKeyValue :: forall entity source. (RetconDataSource entity source)
+                => ForeignKey entity source
+                -> (String, String, String)
+foreignKeyValue (ForeignKey key) =
+    let entity = symbolVal (Proxy :: Proxy entity)
+        source = symbolVal (Proxy :: Proxy source)
+    in (entity, source, key)
+
 -- | Encode a 'ForeignKey' as a 'String'.
-encodeForeignKey :: forall entity source. (KnownSymbol entity, KnownSymbol source)
+encodeForeignKey :: forall entity source. (RetconDataSource entity source)
                  => ForeignKey entity source
                  -> String
-encodeForeignKey (ForeignKey key) =
-    show ( symbolVal (Proxy :: Proxy entity)
-         , symbolVal (Proxy :: Proxy source)
-         , key)
+encodeForeignKey = show . foreignKeyValue
 
 -- | The unique identifier used to identify a unique 'entity' document within
 -- retcon.
 newtype RetconEntity entity => InternalKey entity =
-    InternalKey { unInternalKey :: String }
+    InternalKey { unInternalKey :: Int }
   deriving (Eq, Ord, Show)
+
+-- | Extract the type-level information from an 'InternalKey'.
+--
+-- The pair contains the entity, and the key in that order.
+internalKeyValue :: forall entity. RetconEntity entity
+                 => InternalKey entity
+                 -> (String, Int)
+internalKeyValue (InternalKey key) =
+    let entity = symbolVal (Proxy :: Proxy entity)
+    in (entity, key)
 
 -- | Translate a 'ForeignKey' to an 'InternalKey'
 --
@@ -61,24 +85,37 @@ newtype RetconEntity entity => InternalKey entity =
 lookupInternalKey :: (RetconDataSource entity source)
                   => ForeignKey entity source
                   -> RetconHandler (Maybe (InternalKey entity))
-lookupInternalKey _fk = do
+lookupInternalKey fk = do
     conn <- asks snd
     -- Look for the internal key in the database.
-    -- If it exists, return it.
+
+    (results :: [Only Int]) <- liftIO $ query conn "SELECT id FROM retcon_fk WHERE entity = ? AND source = ? AND fk = ? LIMIT 1" $ foreignKeyValue fk
+    case results of
+      Only key:_ -> return $ Just (InternalKey key)
+      []         -> return Nothing
+    -- If it exists, return it
     -- Otherwise:
     --     Allocate a new internal key.
     --     Record it in the database.
     --     Return it.
-    return Nothing
 
 -- | Resolve the 'ForeignKey' associated with an 'InternalKey' for a given data
 -- source.
 lookupForeignKey :: forall entity source. (RetconDataSource entity source)
                  => InternalKey entity
-                 -> RetconHandler (ForeignKey entity source)
-lookupForeignKey key = do
-    let fk = "123"
-    return (ForeignKey fk :: ForeignKey entity source)
+                 -> RetconHandler (Maybe (ForeignKey entity source))
+lookupForeignKey (InternalKey key) = do
+    conn <- asks snd
+
+    let entity = symbolVal (Proxy :: Proxy entity)
+    let source = symbolVal (Proxy :: Proxy source)
+
+    (results::[Only String]) <- liftIO $ query conn "SELECT fk FROM retcon_fk WHERE entity = ? AND source = ? AND id = ?" (entity, source, key)
+    liftIO $ putStrLn (unlines . map show $ results)
+
+    return $ case results of
+        Only key:_ -> Just (ForeignKey key :: ForeignKey entity source)
+        []         -> Nothing
 
 -- | Parse a request string and handle an event.
 dispatch :: String -> RetconHandler ()
@@ -115,20 +152,10 @@ process fk = do
     $logDebug $ T.concat ["EVENT against ", T.pack $ show $ length sources, " sources"]
 
     -- If we can't find an InternalKey: it's a CREATE.
-    key <- lookupInternalKey fk
-
-    lookupInternalKey fk >> carefully (create fk)
-
-    $logDebug "PROCESS 1"
-
     -- If we can't get the upstream Document: it's a DELETE.
-
-    $logDebug "PROCESS 2"
-
     -- Otherwise: it's an UPDATE.
-    update fk
 
-    $logDebug "PROCESS 3"
+    update fk
   where
     sources = entitySources (Proxy :: Proxy entity)
 
@@ -140,7 +167,7 @@ create :: (RetconDataSource entity source)
 create fk = do
     $logDebug "CREATE"
 
-    liftIO $ throwIO $ userError "I am walrus"
+    -- liftIO $ throwIO $ userError "I am walrus"
 
 -- | Process a deletion event.
 delete :: (RetconDataSource entity source)
@@ -155,12 +182,32 @@ update :: (RetconDataSource entity source)
        -> RetconHandler ()
 update fk = do
     $logDebug "UPDATE"
-    key <- lookupInternalKey fk
+    ik <- lookupInternalKey fk
+    docs <- case ik of
+        Nothing  -> return []
+        Just ik' -> do
+            carefully $ getDocuments ik'
+    let valid = rights docs
+    liftIO $ print valid
+
     return ()
 
+-- | Get 'Document's corresponding to an 'InternalKey' for all sources for an
+-- entity.
 getDocuments :: forall entity. (RetconEntity entity)
              => InternalKey entity
-             -> [SomeDataSource entity]
-             -> RetconHandler [Either SomeException Document]
-getDocuments key = undefined -- sequence . map (tryAny . (lookupForeignKey key >>= flip getDocument))
+             -> RetconHandler [Either RetconError Document]
+getDocuments ik =
+    forM (entitySources (Proxy :: Proxy entity)) $
+        \(SomeDataSource (Proxy :: Proxy source)) ->
+            --
+            join . first RetconError <$> tryAny (do
+                -- Lookup the foreign key for this data source.
+                mkey <- lookupForeignKey ik
+                -- If there was a
+                case mkey of
+                    Just (fk :: ForeignKey entity source) ->
+                        liftIO . runDataSourceAction $ getDocument fk
+                    Nothing ->
+                        return . Left $ RetconFailed)
 
