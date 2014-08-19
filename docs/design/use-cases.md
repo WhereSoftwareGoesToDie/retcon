@@ -19,3 +19,14 @@ A user now manually triggers the library to synchronise from *local* to
 
 A record is deleted in the *upstream* data source, that deletion is either
 propogated or reverted, depending on configuration.
+
+## Comparing and resolving conflicting diffs from different sources
+
+A record receives updates to the same fields from *local* and *upstream* at
+the same time, and the changes conflict.
+
+Instead of propagating the conflicting change, both changes are recorded in
+the Retcon database, and system maintainers are notified of a data conflict.
+They can then use an interface to Retcon, web or otherwise, to view the
+conflicting diffs, and select the diff portion that should be propagated to
+both *local* and *upstream*.
