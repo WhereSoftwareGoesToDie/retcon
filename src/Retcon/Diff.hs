@@ -76,6 +76,18 @@ instance ToJSON l => ToJSON (DiffOp l) where
                                            , "keys"     .= keys
                                            ]
 
+-- | Predicate: Operation is an insertion.
+diffOpIsInsert :: DiffOp l -> Bool
+diffOpIsInsert op = case op of
+    DeleteOp {} -> False
+    InsertOp {} -> True
+
+-- | Predicate: Operation is a deletion.
+diffOpIsDelete :: DiffOp l -> Bool
+diffOpIsDelete op = case op of
+    DeleteOp {} -> True
+    InsertOp {} -> False
+
 -- | Extract the key which will be modified by a 'DiffOp'.
 diffOpTarget :: DiffOp l -> [DocumentKey]
 diffOpTarget (InsertOp _ k _) = k

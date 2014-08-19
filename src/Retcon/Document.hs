@@ -24,11 +24,13 @@ import Control.Lens hiding ((.=))
 import Control.Monad
 import Data.Aeson
 import qualified Data.HashMap.Lazy as H
+import Data.List
 import qualified Data.Map as M
+import Data.Monoid
 import Data.Text (Text)
 import qualified Data.Text as T
+import GHC.Exts (IsList (..))
 
-import Data.Monoid
 import Data.Tree.GenericTrie
 
 -- | A retcon 'Document' is an edge-labelled tree with 'Text' labels on
@@ -61,3 +63,14 @@ instance ToJSON Document where
   toJSON (Document (Node (Just val) childs))
     | M.null childs = toJSON val
     | otherwise     = object $ map (\(k,v) -> k .= Document v) $ M.toAscList childs
+
+-- | Calulate an "initial" document from a collection of input documents.
+--
+-- Currently takes the keys and values upon which all input documents agree.
+calculateInitialDocument :: [Document] -> Document
+calculateInitialDocument docs =
+    let count = length docs
+        pairs = sort . concatMap (toList . unDocument) $ docs
+        common = map head . filter (\l -> length l == count) . group $ pairs
+    in Document $ fromList common
+
