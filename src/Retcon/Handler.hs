@@ -218,13 +218,13 @@ getInitialDocument :: forall entity. (RetconEntity entity)
 getInitialDocument ik = do
     conn <- asks snd
 
-    (results::[Only Value]) <- liftIO $ query conn selectQ (internalKeyValue ik)
+    results <- liftIO $ query conn selectQ (internalKeyValue ik)
     case results of
         Only v:_ ->
-          case (fromJSON v :: Result Document) of
-            Error err   -> return (Nothing :: Maybe Document)
+          case (fromJSON v) of
+            Error err   -> return Nothing
             Success doc -> return (Just doc)
-        []       -> return (Nothing :: Maybe Document)
+        []       -> return Nothing
     where
         selectQ = "SELECT document FROM retcon_initial WHERE entity = ? AND id = ?"
 
