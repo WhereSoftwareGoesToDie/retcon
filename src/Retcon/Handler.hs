@@ -211,3 +211,44 @@ getDocuments ik =
                     Nothing ->
                         return . Left $ RetconFailed)
 
+-- | Fetch the initial document
+getInitialDocument :: forall entity. (RetconEntity entity)
+       => InternalKey entity
+       -> RetconHandler (Maybe Document)
+getInitialDocument ik = do
+    conn <- asks snd
+
+    results <- liftIO $ query conn selectQ (internalKeyValue ik)
+    case results of
+        Only v:_ ->
+          case (fromJSON v) of
+            Error err   -> return Nothing
+            Success doc -> return (Just doc)
+        []       -> return Nothing
+    where
+        selectQ = "SELECT document FROM retcon_initial WHERE entity = ? AND id = ?"
+
+-- | Write the initial document
+putInitialDocument :: forall entity. (RetconEntity entity)
+        => InternalKey entity
+        -> Document
+        -> RetconHandler ()
+putInitialDocument ik doc = do
+    conn <- asks snd
+
+    let (entity, ikValue) = internalKeyValue ik
+    void $ liftIO $ execute conn upsertQ (entity, ikValue, ikValue, entity, toJSON doc)
+
+    where
+        upsertQ = "BEGIN; DELETE FROM retcon_initial WHERE entity = ? AND id = ?; INSERT INTO retcon_initial (id, entity, document) values (?, ?, ?); COMMIT;"
+
+-- | Delete the initial document
+
+deleteInitialDocument :: forall entity. (RetconEntity entity)
+        => InternalKey entity
+        -> RetconHandler ()
+deleteInitialDocument ik = do
+    conn <- asks snd
+    void $ liftIO $ execute conn deleteQ (internalKeyValue ik)
+    where
+        deleteQ = "DELETE FROM retcon_initial WHERE entity = ? AND id = ?"
