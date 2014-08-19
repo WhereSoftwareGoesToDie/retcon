@@ -29,7 +29,7 @@ library
                      , Retcon.Monad
                      , Retcon.Options
                      , Data.Tree.GenericTrie
-  other-modules:       Retcon.Helpers.Strings
+  -- other-modules:       
   build-depends:       base >=4.7 && <4.8
                      , aeson
                      , async

@@ -38,7 +38,6 @@ import Retcon.Config
 import Retcon.DataSource
 import Retcon.Document
 import Retcon.Error
-import Retcon.Helpers.Strings
 import Retcon.Monad
 import Retcon.Options
 
