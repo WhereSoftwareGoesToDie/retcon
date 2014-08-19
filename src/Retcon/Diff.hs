@@ -14,8 +14,8 @@
 -- model changes between 'Document's. Both diffs and the operations which
 -- compose them can be labelled with arbitary values.
 
+{-# LANGUAGE DeriveFunctor     #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE DeriveFunctor #-}
 
 module Retcon.Diff where
 
@@ -60,7 +60,7 @@ instance Monoid l => Monoid (Diff l) where
 
 instance FromJSON l => FromJSON (DiffOp l) where
     parseJSON (Object v) = case (HM.lookup "op" v) of
-        Just "Insert" -> InsertOp <$> v .: "op_label" <*> v .: "keys" <*> v .: "text" 
+        Just "Insert" -> InsertOp <$> v .: "op_label" <*> v .: "keys" <*> v .: "text"
         Just "Delete" -> DeleteOp <$> v .: "op_label" <*> v .: "keys"
         _ -> mzero
     parseJSON _          = mzero

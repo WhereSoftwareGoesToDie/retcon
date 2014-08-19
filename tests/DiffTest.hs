@@ -7,15 +7,15 @@
 -- the 3-clause BSD licence.
 --
 
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Main where
 
 import Control.Applicative
-import Data.Monoid
 import Data.Aeson
+import Data.Monoid
 import Data.Text
 import Test.Hspec
 import Test.Hspec.QuickCheck

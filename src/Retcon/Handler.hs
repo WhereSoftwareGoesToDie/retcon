@@ -158,7 +158,12 @@ process fk = do
     ik' <- lookupInternalKey fk
     case ik' of
         Nothing -> create fk
-        Just ik -> update ik
+        Just ik -> do
+            doc' <- first RetconError <$> tryAny
+                (liftIO . runDataSourceAction $ getDocument fk)
+            case doc' of
+                Left _ -> delete ik
+                Right _ -> update ik
   where
     sources = entitySources (Proxy :: Proxy entity)
 
@@ -170,10 +175,10 @@ create fk = do
     $logDebug "CREATE"
 
 -- | Process a deletion event.
-delete :: (RetconDataSource entity source)
-       => ForeignKey entity source
+delete :: (RetconEntity entity)
+       => InternalKey entity
        -> RetconHandler ()
-delete fk = do
+delete ik = do
     $logDebug "DELETE"
 
 -- | Process an update event.
@@ -183,13 +188,32 @@ update :: RetconEntity entity
 update ik = do
     $logDebug "UPDATE"
 
+    -- Fetch documents.
     docs <- carefully $ getDocuments ik
     let valid = rights $ docs
-    let initial = calculateInitialDocument valid
+
+    -- Find or calculate the initial document.
+    --
+    -- TODO This is fragile in the case that only one data sources has a document.
+    initial <- fromMaybe (calculateInitialDocument valid) <$>
+               getInitialDocument ik
 
     -- Build the diff.
     let diffs = map (diff initial) valid
     let (diff, fragments) = mergeDiffs ignoreConflicts $ diffs
+
+    -- Apply the diff to each source document.
+    --
+    -- TODO: We replace documents we couldn't get with the initial document. The
+    -- initial document may not be "valid".
+    let output = map (applyDiff diff . either (const initial) id) docs
+
+    -- TODO: Record changes in database.
+
+    -- Save documents.
+    results <- carefully $ setDocuments ik output
+
+    -- TODO: Log all the failures.
 
     return ()
 
@@ -201,16 +225,32 @@ getDocuments :: forall entity. (RetconEntity entity)
 getDocuments ik =
     forM (entitySources (Proxy :: Proxy entity)) $
         \(SomeDataSource (Proxy :: Proxy source)) ->
-            --
+            -- Flatten any nested errors.
             join . first RetconError <$> tryAny (do
                 -- Lookup the foreign key for this data source.
                 mkey <- lookupForeignKey ik
-                -- If there was a
+                -- If there was a key, use it to fetch the document.
                 case mkey of
                     Just (fk :: ForeignKey entity source) ->
                         liftIO . runDataSourceAction $ getDocument fk
                     Nothing ->
                         return . Left $ RetconFailed)
+
+-- | Set 'Document's corresponding to an 'InternalKey' for all sources for an
+-- entity.
+setDocuments :: forall entity. (RetconEntity entity)
+             => InternalKey entity
+             -> [Document]
+             -> RetconHandler [Either RetconError ()]
+setDocuments ik docs =
+    forM (zip docs (entitySources (Proxy :: Proxy entity))) $
+        \(doc, SomeDataSource (Proxy :: Proxy source)) ->
+            join . first RetconError <$> tryAny (do
+                (fk :: Maybe (ForeignKey entity source)) <- lookupForeignKey ik
+                fk' <- liftIO $ runDataSourceAction $ setDocument doc fk
+                -- TODO: Save ForeignKey to database.
+                return $ Right ()
+            )
 
 -- | Fetch the initial document
 getInitialDocument :: forall entity. (RetconEntity entity)

@@ -7,17 +7,16 @@
 -- the 3-clause BSD licence.
 --
 
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE OverloadedLists #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedLists       #-}
+{-# LANGUAGE OverloadedStrings     #-}
 
 module Main where
 
 import Test.Hspec
 
-import TestHelpers
 import Retcon.Config
 import Retcon.DataSource
 import Retcon.Document
@@ -25,6 +24,7 @@ import Retcon.Error
 import Retcon.Handler
 import Retcon.Monad
 import Retcon.Options
+import TestHelpers
 
 import Control.Applicative
 import Control.Exception
@@ -34,11 +34,11 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BS
 import Data.Proxy
 import Data.String
+import Data.Text (Text)
 import Database.PostgreSQL.Simple
 import GHC.TypeLits
 import System.IO
 import System.Process
-import Data.Text (Text)
 
 instance RetconEntity "alicorn_invoice" where
     entitySources _ = [ SomeDataSource (Proxy :: Proxy "alicorn_source") ]
