@@ -14,10 +14,15 @@
 -- model changes between 'Document's. Both diffs and the operations which
 -- compose them can be labelled with arbitary values.
 
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveFunctor #-}
 
 module Retcon.Diff where
 
+import Control.Applicative
+import Control.Monad
+import Data.Aeson
+import qualified Data.HashMap.Strict as HM
 import qualified Data.Map as M
 import Data.Maybe
 import Data.Monoid
@@ -34,6 +39,15 @@ data Diff l = Diff
   }
   deriving (Eq, Show, Functor)
 
+instance FromJSON l => FromJSON (Diff l) where
+    parseJSON (Object v) = Diff <$> v .: "diff_label" <*> v .: "changes"
+    parseJSON _          = mzero
+
+instance ToJSON l => ToJSON (Diff l) where
+    toJSON (Diff l changes) = object [ "diff_label" .= toJSON l
+                                     , "changes"    .= changes
+                                     ]
+
 -- | A 'DiffOp' describes a single change to be applied to a 'Document'.
 data DiffOp l
   = InsertOp l [DocumentKey] Text -- ^ Set a field to a value.
@@ -43,6 +57,24 @@ data DiffOp l
 instance Monoid l => Monoid (Diff l) where
     mempty = Diff mempty mempty
     mappend = error "unimplemented mappend for Diff"
+
+instance FromJSON l => FromJSON (DiffOp l) where
+    parseJSON (Object v) = case (HM.lookup "op" v) of
+        Just "Insert" -> InsertOp <$> v .: "op_label" <*> v .: "keys" <*> v .: "text" 
+        Just "Delete" -> DeleteOp <$> v .: "op_label" <*> v .: "keys"
+        _ -> mzero
+    parseJSON _          = mzero
+
+instance ToJSON l => ToJSON (DiffOp l) where
+    toJSON (InsertOp l keys text) = object [ "op"       .= String "Insert"
+                                           , "op_label" .= toJSON l
+                                           , "keys"     .= keys
+                                           , "text"     .= text
+                                           ]
+    toJSON (DeleteOp l keys)      = object [ "op"       .= String "Delete"
+                                           , "op_label" .= toJSON l
+                                           , "keys"     .= keys
+                                           ]
 
 -- | Predicate: Operation is an insertion.
 diffOpIsInsert :: DiffOp l -> Bool
