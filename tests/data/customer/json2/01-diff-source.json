@@ -1,11 +1,11 @@
 {
-   "name" : "Jack Sutton",
-   "age" : 29,
-   "address" : {
-      "locality" : "London",
-      "postcode" : "L1",
-      "country" : "United Kingdom",
-      "street" : "Level 11 / 201 Elizabeth Street",
-      "company" : "Anchor Systems"
-   }
+    "address": {
+        "company": "Anchor Systems",
+        "country": "United Kingdom",
+        "locality": "London",
+        "postcode": "L1",
+        "street": "Level 11 / 201 Elizabeth Street"
+    },
+    "age": "29.0",
+    "name": "Jack Sutton"
 }

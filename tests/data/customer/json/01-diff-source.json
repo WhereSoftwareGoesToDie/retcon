@@ -1,11 +1,12 @@
 {
-   "address" : {
-      "street" : "Level 11 / 201 Elizabeth Street",
-      "company" : "Anchor Systems",
-      "postcode" : 2000,
-      "locality" : "Sydney",
-      "country" : "Australia"
-   },
-   "age" : 30,
-   "name" : "Thomas Sutton"
+    "address": {
+        "company": "Anchor Systems",
+        "country": "Australia",
+        "locality": "Sydney",
+        "postcode": "2000.0",
+        "street": "Level 11 / 201 Elizabeth Street"
+    },
+    "age": "30.0",
+    "name": "Thomas Sutton",
+    "token": "API-TOKEN-GOES-HERE"
 }
