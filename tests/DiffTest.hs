@@ -8,13 +8,18 @@
 --
 
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Main where
 
+import Control.Applicative
 import Data.Monoid
+import Data.Aeson
+import Data.Text
 import Test.Hspec
 import Test.Hspec.QuickCheck
+import Test.QuickCheck
 import Test.QuickCheck.Arbitrary
 
 import Retcon.Diff
@@ -23,6 +28,15 @@ import TestHelpers
 
 instance Arbitrary Document where
     arbitrary = fmap Document arbitrary
+
+instance Arbitrary (Diff Text) where
+    arbitrary = Diff <$> arbitrary <*> arbitrary
+
+instance Arbitrary (DiffOp Text) where
+    arbitrary = oneof [
+                InsertOp <$> arbitrary <*> arbitrary <*> arbitrary,
+                DeleteOp <$> arbitrary <*> arbitrary
+                ]
 
 -- | Proposition: 'mempty' is a unit for 'applyPatch'.
 prop_applyDiffUnit :: Document -> Bool
@@ -37,6 +51,14 @@ prop_applyDiff doc1 doc2 = doc2 == applyDiff patch doc1
 prop_applyDiffIdem :: Document -> Document -> Bool
 prop_applyDiffIdem doc1 doc2 = doc2 == applyDiff patch (applyDiff patch doc1)
   where patch = diff doc1 doc2
+
+-- | Proposition: Diff objects can be converted into JSON form and back again.
+prop_diffJsonSerialisable :: Diff Text -> Bool
+prop_diffJsonSerialisable diff = (decode $ encode diff) == (Just diff)
+
+-- | Proposition: DiffOp objects can be converted into JSON form and back again.
+prop_diffopJsonSerialisable :: DiffOp Text -> Bool
+prop_diffopJsonSerialisable diffop = (decode $ encode diffop) == (Just diffop)
 
 -- | Hspec test suite for the 'Retcon.Diff' module.
 suite :: Spec
@@ -55,6 +77,12 @@ suite = do
     prop "applyDiff (unit)" prop_applyDiffUnit
 
     prop "applyDiff (idem)" prop_applyDiffIdem
+
+  describe "serialising a diff" $ do
+    prop "serialiseJSON (Diff)" prop_diffJsonSerialisable
+
+  describe "serialising a diff operation" $ do
+    prop "serialiseJSON (DiffOp)" prop_diffopJsonSerialisable
 
 -- | Run the test suite.
 main :: IO ()
