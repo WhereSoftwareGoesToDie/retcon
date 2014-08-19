@@ -27,6 +27,6 @@ the same time, and the changes conflict.
 
 Instead of propagating the conflicting change, both changes are recorded in
 the Retcon database, and system maintainers are notified of a data conflict.
-They can then use an interface to Retcon, web or otherwise, to view the
-conflicting diffs, and select the diff portion that should be propagated to
-both *local* and *upstream*.
+The maintainers can then use an interface to Retcon, web or otherwise, to view
+the conflicting diffs, and select the diff portion that should be
+propagated to both *local* and *upstream*.
