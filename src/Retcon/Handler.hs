@@ -181,6 +181,14 @@ delete :: (RetconEntity entity)
 delete ik = do
     $logDebug "DELETE"
 
+    -- Delete from data sources.
+    results <- carefully $ deleteDocuments ik
+
+    -- TODO: Log things.
+
+    -- Delete the internal associated with the key.
+    deleteState ik
+
 -- | Process an update event.
 update :: RetconEntity entity
        => InternalKey entity
@@ -252,7 +260,31 @@ setDocuments ik docs =
                 return $ Right ()
             )
 
--- | Fetch the initial document
+-- | Delete a document.
+deleteDocuments :: forall entity. (RetconEntity entity)
+                => InternalKey entity
+                -> RetconHandler [Either RetconError ()]
+deleteDocuments ik =
+    forM (entitySources (Proxy :: Proxy entity)) $
+        \(SomeDataSource (Proxy :: Proxy source)) ->
+            join . first RetconError <$> tryAny (do
+                (fk' :: Maybe (ForeignKey entity source)) <- lookupForeignKey ik
+                val <- case fk' of
+                  Nothing -> return $ Right ()
+                  Just fk -> liftIO $ runDataSourceAction $ deleteDocument fk
+                return val
+            )
+
+-- | Delete the internal state associated with an 'InternalKey'.
+deleteState :: forall entity. (RetconEntity entity)
+            => InternalKey entity
+            -> RetconHandler ()
+deleteState ik = do
+    $logInfo "DELETE state"
+
+    deleteInitialDocument ik
+
+-- | Fetch the initial document, if any, last used for an 'InternalKey'.
 getInitialDocument :: forall entity. (RetconEntity entity)
        => InternalKey entity
        -> RetconHandler (Maybe Document)
@@ -269,7 +301,7 @@ getInitialDocument ik = do
     where
         selectQ = "SELECT document FROM retcon_initial WHERE entity = ? AND id = ?"
 
--- | Write the initial document
+-- | Write the initial document associated with an 'InternalKey' to the database.
 putInitialDocument :: forall entity. (RetconEntity entity)
         => InternalKey entity
         -> Document
@@ -279,12 +311,10 @@ putInitialDocument ik doc = do
 
     let (entity, ikValue) = internalKeyValue ik
     void $ liftIO $ execute conn upsertQ (entity, ikValue, ikValue, entity, toJSON doc)
-
     where
         upsertQ = "BEGIN; DELETE FROM retcon_initial WHERE entity = ? AND id = ?; INSERT INTO retcon_initial (id, entity, document) values (?, ?, ?); COMMIT;"
 
--- | Delete the initial document
-
+-- | Delete the initial document for an 'InternalKey'.
 deleteInitialDocument :: forall entity. (RetconEntity entity)
         => InternalKey entity
         -> RetconHandler ()
