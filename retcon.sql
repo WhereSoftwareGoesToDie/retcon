@@ -48,6 +48,7 @@ CREATE TABLE retcon_diff (
     source    VARCHAR(64) NOT NULL,
     diff_id   SERIAL NOT NULL,
     submitted TIMESTAMP NOT NULL,
+    processed BOOLEAN NOT NULL,
 
     PRIMARY KEY (diff_id),
     FOREIGN KEY (entity, id, source) REFERENCES retcon_fk (entity, id, source), 
@@ -63,7 +64,7 @@ CREATE TABLE retcon_diff_portion (
     diff_id    INTEGER NOT NULL,
     portion_id SERIAL NOT NULL,
     portion    JSON NOT NULL,
-    status     BOOLEAN NOT NULL,
+    accepted   BOOLEAN NOT NULL,
 
     PRIMARY KEY (portion_id),
     FOREIGN KEY (diff_id) REFERENCES retcon_diff (diff_id),

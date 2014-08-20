@@ -23,10 +23,28 @@ propogated or reverted, depending on configuration.
 ## Comparing and resolving conflicting diffs from different sources
 
 A record receives updates to the same fields from *local* and *upstream* at
-the same time, and the changes conflict.
+the same time, and the changes conflict. These will need to be resolved
+manually.
 
-Instead of propagating the conflicting change, both changes are recorded in
-the Retcon database, and system maintainers are notified of a data conflict.
-The maintainers can then use an interface to Retcon, web or otherwise, to view
-the conflicting diffs, and select the diff portion that should be
-propagated to both *local* and *upstream*.
+### Send out notifications of conflicts
+
+Current conflicts should be assembled in a listable form and then distributed
+to system maintainers via a notification interface defined by Retcon's
+configuration.
+
+### Display original document and available pending diffs
+
+The administrative interface will need to display the original document, and
+offer a selection of diff operations that can be applied to update the
+document. To do this, we'll need to be able to display the original document
+as JSON, and we'll also a list of diff operations that apply to the document.
+The document and list of diffs can then be displayed in a web (or other)
+interface for staff to use and update.
+
+### Submit selection of diffs to apply to the document
+
+The administrative interface will submit a series of diff portion IDs to
+apply to the document. Retcon will then retrieve the diff portions from the
+database, perform the operations that each portion defines against the
+original document, and then propagate the updated document to *local* and
+*upstream*.
