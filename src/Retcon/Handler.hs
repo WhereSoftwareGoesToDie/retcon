@@ -36,6 +36,7 @@ import GHC.TypeLits
 
 import Retcon.Config
 import Retcon.DataSource
+import Retcon.Diff
 import Retcon.Document
 import Retcon.Error
 import Retcon.Monad
@@ -243,7 +244,6 @@ putInitialDocument ik doc = do
         upsertQ = "BEGIN; DELETE FROM retcon_initial WHERE entity = ? AND id = ?; INSERT INTO retcon_initial (id, entity, document) values (?, ?, ?); COMMIT;"
 
 -- | Delete the initial document
-
 deleteInitialDocument :: forall entity. (RetconEntity entity)
         => InternalKey entity
         -> RetconHandler ()
@@ -252,3 +252,53 @@ deleteInitialDocument ik = do
     void $ liftIO $ execute conn deleteQ (internalKeyValue ik)
     where
         deleteQ = "DELETE FROM retcon_initial WHERE entity = ? AND id = ?"
+
+-- | Get all diffs for a Document
+-- Use for displaying diffs
+getInitialDocumentDiffs :: forall entity. (RetconEntity entity)
+       => InternalKey entity
+       -> RetconHandler ([Diff Int])
+getInitialDocumentDiffs ik = do
+    conn <- asks snd
+    (results :: [(Only Int)]) <- liftIO $ query conn selectQ (internalKeyValue ik)
+    let ids = map fromOnly results
+    let rawDiffs = map (\d -> Diff d []) ids
+    d <- sequence $ map completeDiff rawDiffs
+    return d
+    where
+        selectQ = "SELECT diff_id FROM retcon_diff WHERE entity = ? AND id = ?"
+
+-- | Build a Diff object from a Diff ID
+-- Use for displaying diffs
+completeDiff :: Diff Int -> RetconHandler (Diff Int)
+completeDiff (Diff diff_id _) = do
+    diffOps <- getDbDiffOps diff_id
+    return $ Diff diff_id diffOps
+
+-- | Get DiffOp objects belonging to a Diff ID
+-- Use for displaying diffs
+getDbDiffOps :: (FromJSON l) => Int -> RetconHandler ([DiffOp l])
+getDbDiffOps diff_id = do
+    conn <- asks snd
+    (results :: [(Only Value)]) <- liftIO $ query conn selectQ (Only diff_id)
+    return $ map fromJust $ filter isJust $ map constructDiffOpFromDb $ map fromOnly results
+    where
+        selectQ = "SELECT portion FROM retcon_diff_portion WHERE diff_id = ?"
+
+constructDiffOpFromDb :: (FromJSON l) => Value -> Maybe (DiffOp l)
+constructDiffOpFromDb v =
+    case (fromJSON v :: (FromJSON l) => Result (DiffOp l)) of
+        Error e   -> Nothing
+        Success d -> Just d
+
+-- | Set application flags on diff in DB
+-- To be used when a chosen diff portion is applied to the original document
+setDbAppliedFlagDiff :: Int -> Int -> RetconHandler ()
+setDbAppliedFlagDiff diff_id diff_portion_id = do
+    conn <- asks snd
+    void $ liftIO $ execute conn updatePortionQ (Only diff_portion_id)
+    void $ liftIO $ execute conn updateDiffQ (Only diff_id)
+    where
+        updatePortionQ = "UPDATE retcon_diff_portion SET accepted = TRUE WHERE portion_id = ?"
+        updateDiffQ = "UPDATE retcon_diff SET processed = TRUE WHERE diff_id = ?"
+
