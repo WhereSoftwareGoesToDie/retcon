@@ -8,6 +8,7 @@ import Control.Exception
 -- 'DataSourceAction' monads.
 data RetconError =
       RetconFailed --
+    | RetconDBError String -- ^ Describes an error with the retcon database.
     | RetconError SomeException --
   deriving (Show)
 
