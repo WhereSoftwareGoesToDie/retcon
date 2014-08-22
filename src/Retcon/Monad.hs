@@ -48,8 +48,15 @@ carefully = handleAny (throwError . RetconError)
 -- $ Retcon handlers (i.e. actions which process and response to an event) are
 -- actions in the 'RetconHandler' monad.
 
+-- | State held in the reader part of the 'RetconHandler' monad.
+data RetconState = RetconState
+    { retconOptions    :: RetconOptions
+    , retconConfig     :: RetconConfig
+    , retconConnection :: Connection
+    }
+
 -- | Monad transformer stack used in the 'RetconHandler' monad.
-type RetconHandlerStack = ExceptT RetconError (LoggingT (ReaderT (RetconConfig, Connection) IO))
+type RetconHandlerStack = ExceptT RetconError (LoggingT (ReaderT RetconState IO))
 
 -- | Monad for the retcon system.
 --
@@ -61,7 +68,7 @@ newtype RetconHandler a =
         unRetconHandler :: RetconHandlerStack a
     }
   deriving (Functor, Applicative, Monad, MonadIO, MonadLogger,
-  MonadReader (RetconConfig,Connection), MonadError RetconError, MonadBase IO)
+  MonadReader RetconState, MonadError RetconError, MonadBase IO)
 
 -- | MonadBaseControl used to catch IO exceptions
 instance MonadBaseControl IO RetconHandler where
@@ -83,7 +90,7 @@ runRetconHandler :: RetconOptions
                  -> RetconHandler a
                  -> IO (Either RetconError a)
 runRetconHandler opt cfg conn (RetconHandler a) =
-    flip runReaderT (cfg,conn) . runLogging . runExceptT $ a
+    flip runReaderT (RetconState opt cfg conn) . runLogging . runExceptT $ a
   where
     runLogging = case optLogging opt of
       LogStderr -> runStderrLoggingT
