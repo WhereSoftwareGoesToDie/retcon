@@ -253,6 +253,47 @@ deleteInitialDocument ik = do
     where
         deleteQ = "DELETE FROM retcon_initial WHERE entity = ? AND id = ?"
 
+-- | Insert a diff into the database
+putDiffIntoDb :: forall l entity source. (RetconDataSource entity source, ToJSON l)
+       => ForeignKey entity source
+       -> Diff l
+       -> RetconHandler (Maybe Int)
+putDiffIntoDb fk (Diff _ diffOps) = do
+    conn <- asks snd
+    ik <- lookupInternalKey fk
+    case ik of
+        Nothing  -> return Nothing
+        Just ik' -> do
+            let toInsert = insertT (foreignKeyValue fk) ik'
+            (results :: [(Only Int)]) <- liftIO $ returning conn insertQ [toInsert]
+            case results of
+                Only did:_ -> do
+                    let postedDiffs = map (putDiffOpIntoDb fk did) diffOps
+                    return $ Just did
+                []         -> return Nothing
+    where
+        insertQ = "INSERT INTO retcon_diff (entity, source, id, submitted, processed) VALUES (?, ?, ?, now, FALSE) RETURNING diff_id"
+        insertT (entity, source, key) ik = (entity, source, show $ docId ik)
+        docId i = snd $ internalKeyValue i
+
+-- | Insert a single DiffOp into the database
+putDiffOpIntoDb :: forall l entity source. (RetconDataSource entity source, ToJSON l)
+       => ForeignKey entity source
+       -> Int
+       -> DiffOp l
+       -> RetconHandler ()
+putDiffOpIntoDb fk did diffOp = do
+    conn <- asks snd
+    ik <- lookupInternalKey fk
+    case ik of
+        Nothing  -> error "No internal key"
+        Just ik' -> do
+            let toInsert = insertT (foreignKeyValue fk) (internalKeyValue ik') did diffOp
+            void $ liftIO $ execute conn insertQ toInsert
+    where
+        insertQ = "INSERT INTO retcon_diff_portion (entity, source, id, diff_id, portion, accepted) VALUES (?, ?, ?, ?, ?, FALSE)"
+        insertT (entity, source, key) (_, ident) did diffOp = (entity, source, ident, did, toJSON diffOp)
+
 -- | Get all diffs for a Document
 -- Use for displaying diffs
 getInitialDocumentDiffs :: forall entity. (RetconEntity entity)
@@ -290,15 +331,3 @@ constructDiffOpFromDb v =
     case (fromJSON v :: (FromJSON l) => Result (DiffOp l)) of
         Error e   -> Nothing
         Success d -> Just d
-
--- | Set application flags on diff in DB
--- To be used when a chosen diff portion is applied to the original document
-setDbAppliedFlagDiff :: Int -> Int -> RetconHandler ()
-setDbAppliedFlagDiff diff_id diff_portion_id = do
-    conn <- asks snd
-    void $ liftIO $ execute conn updatePortionQ (Only diff_portion_id)
-    void $ liftIO $ execute conn updateDiffQ (Only diff_id)
-    where
-        updatePortionQ = "UPDATE retcon_diff_portion SET accepted = TRUE WHERE portion_id = ?"
-        updateDiffQ = "UPDATE retcon_diff SET processed = TRUE WHERE diff_id = ?"
-
