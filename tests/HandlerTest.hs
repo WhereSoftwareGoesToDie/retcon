@@ -20,6 +20,7 @@ import Test.Hspec
 
 import Retcon.Config
 import Retcon.DataSource
+import Retcon.Diff
 import Retcon.Document
 import Retcon.Error
 import Retcon.Handler
@@ -367,6 +368,47 @@ initialDocumentSuite = around prepareDatabase $ do
                     maybe_del `shouldBe` ()
                     maybe_get `shouldBe` Nothing
 
+
+-- | Test suite for diff database handling.
+diffDatabaseSuite :: Spec
+diffDatabaseSuite = around prepareDatabase $ do
+    let opts = defaultOptions {
+          optDB = testConnection
+        , optLogging = LogStdout -- Avoid messy console colourisation.
+        }
+
+    describe "Database diffs" $ do
+        it "writes a diff to database and reads it" $ do
+            let testDiff = Diff 1 [InsertOp 1 [T.pack "a",T.pack "b",T.pack "c"] (T.pack "foo")]
+
+            result <- testHandler $ do
+                conn <- asks retconConnection
+
+                -- Do some super rough db scaffolding
+                [(Only (ik_base::Int))] <- liftIO $ query conn "INSERT INTO retcon (entity) VALUES (?) RETURNING id" (Only $ T.pack "alicorn_invoice")
+
+                void $ liftIO $ execute conn "INSERT INTO retcon_fk (entity, id, source, fk) VALUES (?, ?, ?, ?)" (T.pack "alicorn_invoice", T.pack $ show ik_base, T.pack "alicorn_source", T.pack "1")
+
+                let fk = ForeignKey "1" :: ForeignKey "alicorn_invoice" "alicorn_source"
+
+                -- Add the diff
+                mid <- putDiffIntoDb fk testDiff
+
+                -- Check IK results
+                let ik = InternalKey 1 :: InternalKey "alicorn_invoice"
+                all_diffs <- getInitialDocumentDiffs ik
+
+                return (ik_base, mid, diffChanges $ head $ all_diffs)
+
+            case result of
+                Left e                          -> error (show e)
+                Right (ik_base, mid, all_diffops) -> do
+                    ik_base `shouldBe` 1
+                    mid `shouldBe` (Just 1)
+                    (all_diffops) `shouldBe` (diffChanges testDiff)
+                _                               -> error "Didn't get anticipated results"
+
+
 testHandler :: RetconHandler a -> IO (Either RetconError a)
 testHandler a = bracket setupConn closeConn run
     where
@@ -381,3 +423,4 @@ main :: IO ()
 main = hspec $ do
     dispatchSuite
     initialDocumentSuite
+    diffDatabaseSuite
