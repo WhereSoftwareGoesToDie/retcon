@@ -408,7 +408,7 @@ deleteInternalKey ik = do
     liftIO $ execute conn "DELETE FROM retcon WHERE entity = ? AND id = ?" $ internalKeyValue ik
 
 -- | Insert a diff into the database
-putDiffIntoDb :: forall l entity source. (RetconDataSource entity source, ToJSON l)
+putDiffIntoDb :: forall l entity source. (RetconDataSource entity source, ToJSON l, Show l)
        => ForeignKey entity source
        -> Diff l
        -> RetconHandler (Maybe Int)
@@ -418,20 +418,23 @@ putDiffIntoDb fk (Diff _ diffOps) = do
     case ik of
         Nothing  -> return Nothing
         Just ik' -> do
-            let toInsert = insertT (foreignKeyValue fk) ik'
-            (results :: [Only Int]) <- liftIO $ returning conn insertQ [toInsert]
+            let toInsert = packDiffInsertParams (foreignKeyValue fk) ik'
+            (results :: [(Only Int)]) <- liftIO $ query conn insertQ toInsert
             case results of
                 Only did:_ -> do
-                    let postedDiffs = map (putDiffOpIntoDb fk did) diffOps
+                    sequence_ $ map (putDiffOpIntoDb fk did) diffOps
                     return $ Just did
                 []         -> return Nothing
     where
-        insertQ = "INSERT INTO retcon_diff (entity, source, id, submitted, processed) VALUES (?, ?, ?, now, FALSE) RETURNING diff_id"
-        insertT (entity, source, key) ik = (entity, source, show $ docId ik)
+        insertQ = "INSERT INTO retcon_diff (entity, source, id, submitted, processed) VALUES (?, ?, ?, NOW(), FALSE) RETURNING diff_id"
+
+packDiffInsertParams :: forall entity. (RetconEntity entity) => (String, String, String) -> InternalKey entity -> (String, String, String)
+packDiffInsertParams (entity, source, _) ik = (entity, source, show $ docId ik)
+    where
         docId i = snd $ internalKeyValue i
 
 -- | Insert a single DiffOp into the database
-putDiffOpIntoDb :: forall l entity source. (RetconDataSource entity source, ToJSON l)
+putDiffOpIntoDb :: forall l entity source. (RetconDataSource entity source, ToJSON l, Show l)
        => ForeignKey entity source
        -> Int
        -> DiffOp l
