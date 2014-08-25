@@ -38,7 +38,7 @@ suite = do
     it "should be empty whenever an empty is input" $ do
       test1 <- testLoad "01-diff-source.json"
       test2 <- testLoad "01-diff-target.json"
-      let documents = mempty:(catMaybes [test1, test2])
+      let documents = mempty:catMaybes [test1, test2]
       calculateInitialDocument documents `shouldBe` mempty
 
     it "should result in diffs with no deletions from the inputs" $ do

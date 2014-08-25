@@ -33,16 +33,17 @@ import Control.Exception
 import Control.Monad.Error.Class
 import Control.Monad.Reader
 import Data.Aeson
+import Data.Bifunctor
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BS
+import Data.Either
 import qualified Data.HashMap.Strict as HM
 import Data.IORef
-import Data.Either
-import Data.Bifunctor
 import Data.Map (Map)
 import qualified Data.Map as M
+import Data.Maybe
+import Data.Monoid
 import Data.Proxy
-import Data.Text (Text)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Database.PostgreSQL.Simple
@@ -76,7 +77,7 @@ newTestDocument :: Text
                 -> IORef (Map Text Value)
                 -> IO (Text, Value)
 newTestDocument n doc' ref = do
-    doc <- return $ maybe (Object HM.empty) id doc'
+    let doc = fromMaybe (Object HM.empty) doc'
     key <- atomicModifyIORef ref (\store ->
         let key = n `T.append` ( T.pack . show $ M.size store)
         in (M.insert key doc store, key))
@@ -116,7 +117,7 @@ getDocumentIORef :: (RetconDataSource entity source)
                  -> ForeignKey entity source
                  -> DataSourceAction Document
 getDocumentIORef ref (ForeignKey fk') = do
-    let key = T.pack $ fk'
+    let key = T.pack fk'
     doc' <- liftIO $ atomicModifyIORef ref
         (\m -> (m, M.lookup key m))
     case doc' of
@@ -208,8 +209,13 @@ dispatchSuite = around (prepareDatabase . prepareDispatchSuite) $ do
         -- OLD and EXISTS
         it "should update when old id and source has the document" $
             withConfiguration opts $ \(conn, opts) -> do
-                -- Create a new document in both data sources
-                (fk1, doc) <- newTestDocument "dispatch1-" Nothing dispatch1Data
+                -- Create a document, with changes in dispatch1.
+                let change = Diff () [ InsertOp () ["name"] "INSERT ONE"
+                                     , InsertOp () ["address"] " 201 Elizabeth"
+                                     ]
+                let doc  = toJSON (mempty :: Document)
+                let doc' = toJSON $ applyDiff change mempty
+                (fk1, _) <- newTestDocument "dispatch1-" (Just doc') dispatch1Data
                 (fk2, _) <- newTestDocument "dispatch2-" (Just doc) dispatch2Data
 
                 -- Add a new InternalKey and ForeignKeys for both data sources.
@@ -225,12 +231,12 @@ dispatchSuite = around (prepareDatabase . prepareDispatchSuite) $ do
                 let input = show ("dispatchtest", "dispatch1", fk1)
                 res <- retcon opts' dispatchConfig conn input
 
-                -- Check that update was dispatched?
-                -- Check that the document is in dispatch1.
-                -- Check that the document is in dispatch2.
-                -- Check that the key for dispatch2 is in retcon_fk.
-                -- Check that the key for dispatch1 is in retcon_fk.
-                pendingWith "Setup and teardown will be horrible."
+                -- Check that the documents are now the same.
+                d1 <- atomicModifyIORef dispatch1Data (\m->(m,M.lookup fk1 m))
+                d2 <- atomicModifyIORef dispatch2Data (\m->(m,M.lookup fk2 m))
+                [Only (n::Int)] <- query_ conn "SELECT COUNT(*) FROM retcon_fk"
+
+                (n, d1, d2) `shouldBe` (2, Just doc', Just doc')
 
         -- OLD and NO EXIST
         it "should delete when old id and source hasn't the document" $
@@ -249,9 +255,9 @@ dispatchSuite = around (prepareDatabase . prepareDispatchSuite) $ do
 
                 let opts' = opts { optArgs = ["dispatchtest", "dispatch1", fk1] }
                 let input = show ("dispatchtest", "dispatch1", fk1)
-                res <- first (show) <$> retcon opts' dispatchConfig conn input
+                res <- first show <$> retcon opts' dispatchConfig conn input
 
-                either (error . show) (const . return $ ()) $ res
+                either (error . show) (const . return $ ()) res
 
                 -- Both stores should be empty, along with both the retcon and
                 -- retcon_fk tables.
@@ -338,13 +344,13 @@ initialDocumentSuite = around prepareDatabase $ do
 
                         maybePut <- putInitialDocument ik testDoc
                         maybeGet <- getInitialDocument ik
-                        return $ (maybePut, maybeGet)
+                        return (maybePut, maybeGet)
                     _ -> error "I have no idea what happened here"
             case result of
                 Left e -> error (show e)
                 Right (maybe_put, maybe_get) -> do
                     maybe_put `shouldBe` ()
-                    maybe_get `shouldBe` (Just testDoc)
+                    maybe_get `shouldBe` Just testDoc
 
         it "deletes initial documents" $ do
             let testDoc = Document [(["isThisGoingToGetDeleted"], "yes")]
@@ -359,7 +365,7 @@ initialDocumentSuite = around prepareDatabase $ do
                         maybePut <- putInitialDocument ik testDoc
                         maybeDel <- deleteInitialDocument ik
                         maybeGet <- getInitialDocument ik
-                        return $ (maybePut, maybeDel, maybeGet)
+                        return (maybePut, maybeDel, maybeGet)
                     _ -> error "I have no idea what happened here"
             case result of
                 Left e -> error (show e)
@@ -416,8 +422,7 @@ testHandler a = bracket setupConn closeConn run
         closeConn = close
         run conn = do
             let cfg = RetconConfig []
-            result <- runRetconHandler defaultOptions cfg conn a
-            return result
+            runRetconHandler defaultOptions cfg conn a
 
 main :: IO ()
 main = hspec $ do
