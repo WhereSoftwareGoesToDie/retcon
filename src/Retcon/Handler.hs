@@ -475,7 +475,7 @@ getDbDiffOps :: (FromJSON l) => Int -> RetconHandler [DiffOp l]
 getDbDiffOps diff_id = do
     conn <- asks retconConnection
     (results :: [Only Value]) <- liftIO $ query conn selectQ (Only diff_id)
-    return $ map fromJust $ filter isJust $ map (constructDiffOpFromDb . fromOnly) results
+    return . catMaybes . map (constructDiffOpFromDb . fromOnly) $ results
     where
         selectQ = "SELECT portion FROM retcon_diff_portion WHERE diff_id = ?"
 

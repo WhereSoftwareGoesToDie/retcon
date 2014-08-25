@@ -41,6 +41,7 @@ import qualified Data.HashMap.Strict as HM
 import Data.IORef
 import Data.Map (Map)
 import qualified Data.Map as M
+import Data.Maybe
 import Data.Monoid
 import Data.Proxy
 import Data.Text (Text)
