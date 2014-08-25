@@ -406,3 +406,81 @@ deleteInternalKey ik = do
     conn <- asks retconConnection
     liftIO $ execute conn "DELETE FROM retcon WHERE entity = ? AND id = ?" $ internalKeyValue ik
 
+-- | Insert a diff into the database
+putDiffIntoDb :: forall l entity source. (RetconDataSource entity source, ToJSON l)
+       => ForeignKey entity source
+       -> Diff l
+       -> RetconHandler (Maybe Int)
+putDiffIntoDb fk (Diff _ diffOps) = do
+    conn <- asks snd
+    ik <- lookupInternalKey fk
+    case ik of
+        Nothing  -> return Nothing
+        Just ik' -> do
+            let toInsert = insertT (foreignKeyValue fk) ik'
+            (results :: [(Only Int)]) <- liftIO $ returning conn insertQ [toInsert]
+            case results of
+                Only did:_ -> do
+                    let postedDiffs = map (putDiffOpIntoDb fk did) diffOps
+                    return $ Just did
+                []         -> return Nothing
+    where
+        insertQ = "INSERT INTO retcon_diff (entity, source, id, submitted, processed) VALUES (?, ?, ?, now, FALSE) RETURNING diff_id"
+        insertT (entity, source, key) ik = (entity, source, show $ docId ik)
+        docId i = snd $ internalKeyValue i
+
+-- | Insert a single DiffOp into the database
+putDiffOpIntoDb :: forall l entity source. (RetconDataSource entity source, ToJSON l)
+       => ForeignKey entity source
+       -> Int
+       -> DiffOp l
+       -> RetconHandler ()
+putDiffOpIntoDb fk did diffOp = do
+    conn <- asks snd
+    ik <- lookupInternalKey fk
+    case ik of
+        Nothing  -> error "No internal key"
+        Just ik' -> do
+            let toInsert = insertT (foreignKeyValue fk) (internalKeyValue ik') did diffOp
+            void $ liftIO $ execute conn insertQ toInsert
+    where
+        insertQ = "INSERT INTO retcon_diff_portion (entity, source, id, diff_id, portion, accepted) VALUES (?, ?, ?, ?, ?, FALSE)"
+        insertT (entity, source, key) (_, ident) did diffOp = (entity, source, ident, did, toJSON diffOp)
+
+-- | Get all diffs for a Document
+-- Use for displaying diffs
+getInitialDocumentDiffs :: forall entity. (RetconEntity entity)
+       => InternalKey entity
+       -> RetconHandler ([Diff Int])
+getInitialDocumentDiffs ik = do
+    conn <- asks snd
+    (results :: [(Only Int)]) <- liftIO $ query conn selectQ (internalKeyValue ik)
+    let ids = map fromOnly results
+    let rawDiffs = map (\d -> Diff d []) ids
+    d <- sequence $ map completeDiff rawDiffs
+    return d
+    where
+        selectQ = "SELECT diff_id FROM retcon_diff WHERE entity = ? AND id = ?"
+
+-- | Build a Diff object from a Diff ID
+-- Use for displaying diffs
+completeDiff :: Diff Int -> RetconHandler (Diff Int)
+completeDiff (Diff diff_id _) = do
+    diffOps <- getDbDiffOps diff_id
+    return $ Diff diff_id diffOps
+
+-- | Get DiffOp objects belonging to a Diff ID
+-- Use for displaying diffs
+getDbDiffOps :: (FromJSON l) => Int -> RetconHandler ([DiffOp l])
+getDbDiffOps diff_id = do
+    conn <- asks snd
+    (results :: [(Only Value)]) <- liftIO $ query conn selectQ (Only diff_id)
+    return $ map fromJust $ filter isJust $ map constructDiffOpFromDb $ map fromOnly results
+    where
+        selectQ = "SELECT portion FROM retcon_diff_portion WHERE diff_id = ?"
+
+constructDiffOpFromDb :: (FromJSON l) => Value -> Maybe (DiffOp l)
+constructDiffOpFromDb v =
+    case (fromJSON v :: (FromJSON l) => Result (DiffOp l)) of
+        Error e   -> Nothing
+        Success d -> Just d
