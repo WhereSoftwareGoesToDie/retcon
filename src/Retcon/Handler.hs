@@ -414,7 +414,7 @@ putDiffIntoDb :: forall l entity source. (RetconDataSource entity source, ToJSON
        -> Diff l
        -> RetconHandler (Maybe Int)
 putDiffIntoDb fk (Diff _ diffOps) = do
-    conn <- asks snd
+    conn <- asks retconConnection
     ik <- lookupInternalKey fk
     case ik of
         Nothing  -> return Nothing
@@ -438,7 +438,7 @@ putDiffOpIntoDb :: forall l entity source. (RetconDataSource entity source, ToJS
        -> DiffOp l
        -> RetconHandler ()
 putDiffOpIntoDb fk did diffOp = do
-    conn <- asks snd
+    conn <- asks retconConnection
     ik <- lookupInternalKey fk
     case ik of
         Nothing  -> error "No internal key"
@@ -455,7 +455,7 @@ getInitialDocumentDiffs :: forall entity. (RetconEntity entity)
        => InternalKey entity
        -> RetconHandler ([Diff Int])
 getInitialDocumentDiffs ik = do
-    conn <- asks snd
+    conn <- asks retconConnection
     (results :: [(Only Int)]) <- liftIO $ query conn selectQ (internalKeyValue ik)
     let ids = map fromOnly results
     let rawDiffs = map (\d -> Diff d []) ids
@@ -475,7 +475,7 @@ completeDiff (Diff diff_id _) = do
 -- Use for displaying diffs
 getDbDiffOps :: (FromJSON l) => Int -> RetconHandler ([DiffOp l])
 getDbDiffOps diff_id = do
-    conn <- asks snd
+    conn <- asks retconConnection
     (results :: [(Only Value)]) <- liftIO $ query conn selectQ (Only diff_id)
     return $ map fromJust $ filter isJust $ map constructDiffOpFromDb $ map fromOnly results
     where
