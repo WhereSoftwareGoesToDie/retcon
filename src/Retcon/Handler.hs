@@ -200,7 +200,7 @@ process fk = do
     case ik' of
         Nothing -> create fk
         Just ik -> do
-            doc' <- first RetconError <$> tryAny
+            doc' <- join . first RetconError <$> tryAny
                 (liftIO . runDataSourceAction $ getDocument fk)
             case doc' of
                 Left _ -> delete ik
@@ -329,8 +329,8 @@ deleteDocuments ik =
             join . first RetconError <$> tryAny (do
                 (fk' :: Maybe (ForeignKey entity source)) <- lookupForeignKey ik
                 val <- case fk' of
-                  Nothing -> return $ Right ()
-                  Just fk -> liftIO $ runDataSourceAction $ deleteDocument fk
+                    Nothing -> return $ Right ()
+                    Just fk -> liftIO $ runDataSourceAction $ deleteDocument fk
                 return val
             )
 
@@ -339,9 +339,24 @@ deleteState :: forall entity. (RetconEntity entity)
             => InternalKey entity
             -> RetconHandler ()
 deleteState ik = do
-    $logInfo "DELETE state"
+    let key = T.pack . show . internalKeyValue $ ik
+    opt <- asks retconOptions
+
+    $logInfo $ T.concat ["DELETE state for ", key]
 
     deleteInitialDocument ik
+    n_fk <- deleteForeignKeys ik
+    n_ik <- deleteInternalKey ik
+
+    when (optVerbose opt) $ do
+        $logDebug $ T.concat [ "Deleted foreign key/s for ", key, ": "
+                             , T.pack . show $ n_fk
+                             ]
+        $logDebug $ T.concat [ "Deleted internal key/s for ", key, ": "
+                             , T.pack . show $ n_ik
+                             ]
+
+    return ()
 
 -- | Fetch the initial document, if any, last used for an 'InternalKey'.
 getInitialDocument :: forall entity. (RetconEntity entity)
@@ -382,3 +397,12 @@ deleteInitialDocument ik = do
     void $ liftIO $ execute conn deleteQ (internalKeyValue ik)
     where
         deleteQ = "DELETE FROM retcon_initial WHERE entity = ? AND id = ?"
+
+deleteForeignKeys ik = do
+    conn <- asks retconConnection
+    liftIO $ execute conn "DELETE FROM retcon_fk WHERE entity = ? AND id = ?" $ internalKeyValue ik
+
+deleteInternalKey ik = do
+    conn <- asks retconConnection
+    liftIO $ execute conn "DELETE FROM retcon WHERE entity = ? AND id = ?" $ internalKeyValue ik
+

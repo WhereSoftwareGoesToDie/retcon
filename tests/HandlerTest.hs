@@ -100,11 +100,12 @@ setDocumentIORef name ref doc (Nothing) = do
     k <- liftIO $ atomicModifyIORef ref
         (\m -> let k = T.pack $ name ++ (show . M.size $ m)
                in (M.insert k (toJSON doc) m, k))
-    liftIO . print $ "Creating a new document: " ++ T.unpack k
+    liftIO . print $ "Setting a new document in " ++ name ++ " " ++ T.unpack k
     return $ ForeignKey $ T.unpack k
+
 setDocumentIORef name ref doc (Just (ForeignKey fk')) = do
     let fk = T.pack fk'
-    liftIO . print $ "Setting a document in " ++ name ++ ": " ++ fk'
+    liftIO . print $ "Setting a document in " ++ name ++ " " ++ fk'
     k <- liftIO $ atomicModifyIORef ref
         (\m -> (M.insert fk (toJSON doc) m, fk))
     return $ ForeignKey $ T.unpack k
@@ -236,20 +237,20 @@ dispatchSuite = around (prepareDatabase . prepareDispatchSuite) $ do
         -- OLD and NO EXIST
         it "should delete when old id and source hasn't the document" $
             withConfiguration opts $ \(conn, opts) -> do
-                -- Check that delete was dispatched.
-                -- Check that the document is not in dispatch1.
-                -- Check that the document is in dispatch2.
-                -- Check that the key for disptach1 is in retcon_fk.
-                -- Check that the key for dispatch2 is in retcon_fk.
+                -- Foreign keys are presents for dispatch1 and dispatch2, but only
+                -- dispatch2 contains a document.
+                let fk1 = "dispatch1-lolno"
                 (fk2, doc) <- newTestDocument "dispatch2-" Nothing dispatch2Data
-                let ik = 123
-                -- INSERT INTO retcon VALUES ('dispatchtest', ik)
-                -- INSERT INTO retcon_fk VALUES ('dispatchtest', ik, 'dispatch1', fk1)
-                -- INSERT INTO retcon_fk VALUES ('dispatchtest', ik, 'dispatch2', fk2)
 
-                -- Dispatch the event.
-                let opts' = opts { optArgs = ["dispatchtest", "dispatch2", fk2] }
-                let input = show ("dispatchtest", "dispatch2", fk2)
+                [Only (ik :: Int)] <- query_ conn "INSERT INTO retcon (entity) VALUES ('dispatchtest') RETURNING id"
+                executeMany conn
+                    "INSERT INTO retcon_fk (entity, id, source, fk) VALUES (?, ?, ?, ?)"
+                    ([ ("dispatchtest", ik, "dispatch1", fk1)
+                     , ("dispatchtest", ik, "dispatch2", fk2)
+                     ] :: [(String, Int, String, Text)])
+
+                let opts' = opts { optArgs = ["dispatchtest", "dispatch1", fk1] }
+                let input = show ("dispatchtest", "dispatch1", fk1)
                 res <- retcon opts' dispatchConfig conn input
 
                 -- Check that delete was dispatched.
@@ -257,7 +258,18 @@ dispatchSuite = around (prepareDatabase . prepareDispatchSuite) $ do
                 -- dispatch2Data == M.empty
                 -- SELECT COUNT(*) FROM retcon_fk; == 0
                 -- SELECT COUNT(*) FROM retcon; == 0
-                pendingWith "Setup and teardown will be horrible."
+
+                -- Both stores should be empty, along with both the retcon and
+                -- retcon_fk tables.
+                d1 <- readIORef dispatch1Data
+                d2 <- readIORef dispatch2Data
+
+                [Only (n_ik::Int)] <- query_ conn "SELECT COUNT(*) FROM retcon"
+                [Only (n_fk::Int)] <- query_ conn "SELECT COUNT(*) FROM retcon_fk"
+
+                (M.size d1, M.size d2, n_ik, n_fk) `shouldBe` (0,0,0,0)
+
+
 
 -- | Setup and teardown for the initial document tests.
 prepareDatabase :: IO () -> IO ()
