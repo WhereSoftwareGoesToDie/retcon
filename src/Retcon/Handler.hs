@@ -229,20 +229,11 @@ process :: forall entity source. (RetconDataSource entity source)
         => ForeignKey entity source
         -> RetconHandler ()
 process fk = do
-    $logDebug $ T.concat ["EVENT against ", T.pack $ show $ length sources, " sources"]
+    $logDebug . T.pack . concat $ [ "EVENT against ", show $ length sources
+                                  , " sources"
+                                  ]
 
-    -- If we can't find an InternalKey: it's a CREATE.
-    -- If we can't get the upstream Document: it's a DELETE.
-    -- Otherwise: it's an UPDATE.
-    ik' <- lookupInternalKey fk
-    case ik' of
-        Nothing -> create fk
-        Just ik -> do
-            doc' <- join . first RetconError <$> tryAny
-                (liftIO . runDataSourceAction $ getDocument fk)
-            case doc' of
-                Left _ -> delete ik
-                Right _ -> update ik
+    determineOperation fk >>= runOperation
   where
     sources = entitySources (Proxy :: Proxy entity)
 
