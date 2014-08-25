@@ -36,16 +36,16 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.HashMap.Strict as HM
 import Data.IORef
+import Data.Either
+import Data.Bifunctor
 import Data.Map (Map)
 import qualified Data.Map as M
 import Data.Proxy
-import Data.String
 import Data.Text (Text)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Database.PostgreSQL.Simple
-import GHC.TypeLits
-import System.IO
+import GHC.TypeLits ()
 import System.IO.Unsafe
 import System.Process
 
@@ -74,8 +74,8 @@ newTestDocument :: Text
                 -> Maybe Value
                 -> IORef (Map Text Value)
                 -> IO (Text, Value)
-newTestDocument n doc ref = do
-    doc <- return $ maybe (Object HM.empty) id doc
+newTestDocument n doc' ref = do
+    doc <- return $ maybe (Object HM.empty) id doc'
     key <- atomicModifyIORef ref (\store ->
         let key = n `T.append` ( T.pack . show $ M.size store)
         in (M.insert key doc store, key))
@@ -100,12 +100,12 @@ setDocumentIORef name ref doc (Nothing) = do
     k <- liftIO $ atomicModifyIORef ref
         (\m -> let k = T.pack $ name ++ (show . M.size $ m)
                in (M.insert k (toJSON doc) m, k))
-    liftIO . print $ "Setting a new document in " ++ name ++ " " ++ T.unpack k
+    liftIO . print $ "Setting a new document " ++ T.unpack k
     return $ ForeignKey $ T.unpack k
 
 setDocumentIORef name ref doc (Just (ForeignKey fk')) = do
     let fk = T.pack fk'
-    liftIO . print $ "Setting a document in " ++ name ++ " " ++ fk'
+    liftIO . print $ "Setting a document in " ++ fk'
     k <- liftIO $ atomicModifyIORef ref
         (\m -> (M.insert fk (toJSON doc) m, fk))
     return $ ForeignKey $ T.unpack k
@@ -124,6 +124,8 @@ getDocumentIORef ref (ForeignKey fk') = do
             _         -> throwError RetconFailed
         Nothing  -> throwError RetconFailed
 
+-- | Configuration to use when testing retcon event dispatch.
+dispatchConfig :: RetconConfig
 dispatchConfig = RetconConfig [ SomeEntity (Proxy :: Proxy "dispatchtest") ]
 
 instance RetconEntity "dispatchtest" where
@@ -150,17 +152,13 @@ dispatchSuite :: Spec
 dispatchSuite = around (prepareDatabase . prepareDispatchSuite) $ do
     let opts = defaultOptions {
           optDB = testConnection
-        , optVerbose = True
-        , optLogging = LogStderr
+        , optLogging = LogStdout -- Avoid messy console colourisation.
         }
 
     describe "Dispatching changes" $ do
         -- NEW and EXISTS
         it "should create when new id and source has the document" $
             withConfiguration opts $ \(conn, opts) -> do
-
-                readIORef dispatch1Data >>= print
-                readIORef dispatch2Data >>= print
 
                 -- Create a document in dispatch1; leave dispatch2 and the
                 -- database tables empty.
@@ -191,21 +189,20 @@ dispatchSuite = around (prepareDatabase . prepareDispatchSuite) $ do
                 -- Dispatch the event.
                 let opts' = opts { optArgs = ["dispatchtest", "dispatch1", "999"] }
                 let input = show ("dispatchtest", "dispatch1", "999")
-                -- TODO catch!
                 res <- retcon opts' dispatchConfig conn input
 
-                -- Check that the data sets are still empty.
+                -- Check an error was reported.
+                case res of
+                    Left (RetconSourceError _) -> return ()
+                    Right _ -> error "Should not process new key with no document."
+
+                -- Check that there are still no InternalKey or ForeignKey
+                -- details in the database.
                 d1 <- readIORef dispatch1Data
                 d2 <- readIORef dispatch2Data
-                (d1, d2) `shouldBe` (M.empty, M.empty)
-
-                -- Check that there are still no InternalKey or ForeignKey details
-                -- in the database.
-                (n_ik :: [Only Int]) <- liftIO $ query_ conn "SELECT COUNT(*) FROM retcon;"
-                (n_fk :: [Only Int]) <- liftIO $ query_ conn "SELECT COUNT(*) FROM retcon_fk;"
-                (n_ik, n_fk) `shouldBe` ([Only 0], [Only 0])
-
-                pendingWith "Setup and teardown will be horrible."
+                [Only (n_ik :: Int)] <- liftIO $ query_ conn "SELECT COUNT(*) FROM retcon;"
+                [Only (n_fk :: Int)] <- liftIO $ query_ conn "SELECT COUNT(*) FROM retcon_fk;"
+                (M.size d1, M.size d2, n_ik, n_fk) `shouldBe` (0, 0, 0, 0)
 
         -- OLD and EXISTS
         it "should update when old id and source has the document" $
@@ -251,13 +248,9 @@ dispatchSuite = around (prepareDatabase . prepareDispatchSuite) $ do
 
                 let opts' = opts { optArgs = ["dispatchtest", "dispatch1", fk1] }
                 let input = show ("dispatchtest", "dispatch1", fk1)
-                res <- retcon opts' dispatchConfig conn input
+                res <- first (show) <$> retcon opts' dispatchConfig conn input
 
-                -- Check that delete was dispatched.
-                -- dispatch1Data == M.empty
-                -- dispatch2Data == M.empty
-                -- SELECT COUNT(*) FROM retcon_fk; == 0
-                -- SELECT COUNT(*) FROM retcon; == 0
+                either (error . show) (const . return $ ()) $ res
 
                 -- Both stores should be empty, along with both the retcon and
                 -- retcon_fk tables.
@@ -268,8 +261,6 @@ dispatchSuite = around (prepareDatabase . prepareDispatchSuite) $ do
                 [Only (n_fk::Int)] <- query_ conn "SELECT COUNT(*) FROM retcon_fk"
 
                 (M.size d1, M.size d2, n_ik, n_fk) `shouldBe` (0,0,0,0)
-
-
 
 -- | Setup and teardown for the initial document tests.
 prepareDatabase :: IO () -> IO ()
@@ -302,10 +293,6 @@ prepareDispatchSuite action = bracket setup teardown (const action)
         -- Empty the data sources.
         writeIORef dispatch1Data M.empty
         writeIORef dispatch2Data M.empty
-        -- Empty the tables.
-        -- DELETE FROM retcon_initial;
-        -- DELETE FROM retcon_fk;
-        -- DELETE FROM rtcon;
         return ()
 
     -- Clean up the database and data sources.

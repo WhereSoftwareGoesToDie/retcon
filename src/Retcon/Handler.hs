@@ -223,7 +223,9 @@ create fk = do
     doc' <- join . first RetconError <$> tryAny (liftIO $ runDataSourceAction $ getDocument fk)
 
     case doc' of
-        Left _ -> error "Nein!"
+        Left _ -> do
+            deleteState ik
+            throwError (RetconSourceError "Notification of a new document which doesn't exist")
         Right doc -> do
             putInitialDocument ik doc
             setDocuments ik . map (const doc) $ entitySources (Proxy :: Proxy entity)
