@@ -44,7 +44,6 @@ import qualified Data.Map as M
 import Data.Monoid
 import Data.Proxy
 import Data.Text (Text)
-import Data.Text (Text)
 import qualified Data.Text as T
 import Database.PostgreSQL.Simple
 import GHC.TypeLits ()
@@ -77,7 +76,7 @@ newTestDocument :: Text
                 -> IORef (Map Text Value)
                 -> IO (Text, Value)
 newTestDocument n doc' ref = do
-    doc <- return $ maybe (Object HM.empty) id doc'
+    let doc = fromMaybe (Object HM.empty) doc'
     key <- atomicModifyIORef ref (\store ->
         let key = n `T.append` ( T.pack . show $ M.size store)
         in (M.insert key doc store, key))
@@ -117,7 +116,7 @@ getDocumentIORef :: (RetconDataSource entity source)
                  -> ForeignKey entity source
                  -> DataSourceAction Document
 getDocumentIORef ref (ForeignKey fk') = do
-    let key = T.pack $ fk'
+    let key = T.pack fk'
     doc' <- liftIO $ atomicModifyIORef ref
         (\m -> (m, M.lookup key m))
     case doc' of
@@ -213,7 +212,7 @@ dispatchSuite = around (prepareDatabase . prepareDispatchSuite) $ do
                 let change = Diff () [ InsertOp () ["name"] "INSERT ONE"
                                      , InsertOp () ["address"] " 201 Elizabeth"
                                      ]
-                let doc  = toJSON $ (mempty :: Document)
+                let doc  = toJSON (mempty :: Document)
                 let doc' = toJSON $ applyDiff change mempty
                 (fk1, _) <- newTestDocument "dispatch1-" (Just doc') dispatch1Data
                 (fk2, _) <- newTestDocument "dispatch2-" (Just doc) dispatch2Data
@@ -255,9 +254,9 @@ dispatchSuite = around (prepareDatabase . prepareDispatchSuite) $ do
 
                 let opts' = opts { optArgs = ["dispatchtest", "dispatch1", fk1] }
                 let input = show ("dispatchtest", "dispatch1", fk1)
-                res <- first (show) <$> retcon opts' dispatchConfig conn input
+                res <- first show <$> retcon opts' dispatchConfig conn input
 
-                either (error . show) (const . return $ ()) $ res
+                either (error . show) (const . return $ ()) res
 
                 -- Both stores should be empty, along with both the retcon and
                 -- retcon_fk tables.
@@ -344,13 +343,13 @@ initialDocumentSuite = around prepareDatabase $ do
 
                         maybePut <- putInitialDocument ik testDoc
                         maybeGet <- getInitialDocument ik
-                        return $ (maybePut, maybeGet)
+                        return (maybePut, maybeGet)
                     _ -> error "I have no idea what happened here"
             case result of
                 Left e -> error (show e)
                 Right (maybe_put, maybe_get) -> do
                     maybe_put `shouldBe` ()
-                    maybe_get `shouldBe` (Just testDoc)
+                    maybe_get `shouldBe` Just testDoc
 
         it "deletes initial documents" $ do
             let testDoc = Document [(["isThisGoingToGetDeleted"], "yes")]
@@ -365,7 +364,7 @@ initialDocumentSuite = around prepareDatabase $ do
                         maybePut <- putInitialDocument ik testDoc
                         maybeDel <- deleteInitialDocument ik
                         maybeGet <- getInitialDocument ik
-                        return $ (maybePut, maybeDel, maybeGet)
+                        return (maybePut, maybeDel, maybeGet)
                     _ -> error "I have no idea what happened here"
             case result of
                 Left e -> error (show e)
@@ -381,8 +380,7 @@ testHandler a = bracket setupConn closeConn run
         closeConn = close
         run conn = do
             let cfg = RetconConfig []
-            result <- runRetconHandler defaultOptions cfg conn a
-            return result
+            runRetconHandler defaultOptions cfg conn a
 
 main :: IO ()
 main = hspec $ do

@@ -59,7 +59,7 @@ instance Monoid l => Monoid (Diff l) where
     mappend = error "unimplemented mappend for Diff"
 
 instance FromJSON l => FromJSON (DiffOp l) where
-    parseJSON (Object v) = case (HM.lookup "op" v) of
+    parseJSON (Object v) = case HM.lookup "op" v of
         Just "Insert" -> InsertOp <$> v .: "op_label" <*> v .: "keys" <*> v .: "text"
         Just "Delete" -> DeleteOp <$> v .: "op_label" <*> v .: "keys"
         _ -> mzero

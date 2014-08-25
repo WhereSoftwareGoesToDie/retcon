@@ -54,11 +54,11 @@ prop_applyDiffIdem doc1 doc2 = doc2 == applyDiff patch (applyDiff patch doc1)
 
 -- | Proposition: Diff objects can be converted into JSON form and back again.
 prop_diffJsonSerialisable :: Diff Text -> Bool
-prop_diffJsonSerialisable diff = (decode $ encode diff) == (Just diff)
+prop_diffJsonSerialisable diff = decode (encode diff) == Just diff
 
 -- | Proposition: DiffOp objects can be converted into JSON form and back again.
 prop_diffopJsonSerialisable :: DiffOp Text -> Bool
-prop_diffopJsonSerialisable diffop = (decode $ encode diffop) == (Just diffop)
+prop_diffopJsonSerialisable diffop = decode (encode diffop) == Just diffop
 
 -- | Hspec test suite for the 'Retcon.Diff' module.
 suite :: Spec
