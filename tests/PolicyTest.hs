@@ -26,7 +26,7 @@ suite = do
                          , DeleteOp () ["food"]]
 
         it "should ignore all changes which conflict" $ do
-            let d' = mergeWithPolicy ignoreConflicts d1 d2
+            let d' = mergeWithPolicy ignoreConflicts [d1,d2]
             d' `shouldBe` Diff () [ InsertOp () ["pet"] "cat"
                                   , DeleteOp () ["food"]]
 
@@ -35,7 +35,7 @@ suite = do
         let d2 = Diff () [InsertOp () ["value"] "two"]
 
         it "should ignore all changes" $ do
-            let d' = mergeWithPolicy rejectAll d1 d2
+            let d' = mergeWithPolicy rejectAll [d1,d2]
             d' `shouldBe` mempty
 
     describe "acceptAll merge policy" $ do
@@ -43,7 +43,7 @@ suite = do
         let d2 = Diff () [InsertOp () ["value"] "two"]
 
         it "should include all changes" $ do
-            let d' = mergeWithPolicy acceptAll d1 d2
+            let d' = mergeWithPolicy acceptAll [d1,d2]
             d' `shouldBe` Diff () [ InsertOp () ["value"] "one"
                                   , InsertOp () ["value"] "two"
                                   ]
@@ -62,14 +62,14 @@ brokenSuite = do
                             , InsertOp label ["dogs"] "no"]
 
         it "should ignore single change to value" $ do
-            let d' = mergeWithPolicy policy d1 d3
+            let d' = mergeWithPolicy policy [d1,d3]
             d' `shouldBe` Diff label [ InsertOp label ["cats"] "ceiling"
                                      , InsertOp label ["favourite"] "giraffe"
                                      , InsertOp label ["dogs"] "no"
                                      ]
 
         it "should ignore multiple changes to value" $ do
-            let d' = mergeWithPolicy policy d1 d2
+            let d' = mergeWithPolicy policy [d1,d2]
             d' `shouldBe` Diff label [ InsertOp label ["cats"] "ceiling"
                                      , InsertOp label ["cats"] "long"
                                      ]

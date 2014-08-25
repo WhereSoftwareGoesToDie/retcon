@@ -37,15 +37,15 @@ import Retcon.Document
 data MergePolicy l =
     MergePolicy { extractLabel :: Document -> l
                 -- ^ Extract the label information needed to apply this policy.
-                , mergeDiffs   :: Diff l -> Diff l -> (Diff l, Diff l)
-                -- ^ Combine two diffs. The values are acc, new, (acc', new').
+                , mergeDiffs   :: [Diff l] -> (Diff l, [Diff l])
+                -- ^ Combine a collection of diffs; returning a merged diff and left-over fragments.
                 }
 
 -- * Using policies
 
 -- | Merge two diffs by applying a 'MergePolicy'.
-mergeWithPolicy :: MergePolicy l -> Diff l -> Diff l -> Diff l
-mergeWithPolicy policy d1 d2 = fst $ mergeDiffs policy d1 d2
+mergeWithPolicy :: MergePolicy l -> [Diff l] -> Diff l
+mergeWithPolicy policy ds = fst $ mergeDiffs policy ds
 
 -- * Basic policies
 
@@ -56,7 +56,7 @@ mergeWithPolicy policy d1 d2 = fst $ mergeDiffs policy d1 d2
 rejectAll :: MergePolicy ()
 rejectAll = MergePolicy (const ()) merge
   where
-    merge (Diff ll opl) (Diff lr opr) = (Diff ll [], Diff lr (opl ++ opr))
+    merge ds = (Diff () [], ds)
 
 -- | Policy: accept all changes.
 --
@@ -64,20 +64,19 @@ rejectAll = MergePolicy (const ()) merge
 acceptAll :: MergePolicy ()
 acceptAll = MergePolicy (const ()) merge
   where
-    merge (Diff ll opl) (Diff lr opr) = (Diff ll (opl ++ opr), Diff lr [])
+    merge ds = (Diff () $ concatMap diffChanges ds, [])
 
 -- | Policy: reject all conflicting changes.
 ignoreConflicts :: MergePolicy ()
 ignoreConflicts = MergePolicy (const ()) merge
   where
-    merge (Diff ll opl) (Diff lr opr) =
-        let keysl = nub $ map diffOpTarget opl
-            keysr = nub $ map diffOpTarget opr
-            keyconflicts = intersect keysl keysr
-            changes = opl ++ opr
-            clash = filter (flip diffOpAffects keyconflicts) changes
-            noclash = filter (not . flip diffOpAffects keyconflicts) changes
-        in (Diff ll noclash, Diff lr clash)
+    merge ds =
+        let ops = concatMap diffChanges ds
+            keys = group . sort . map diffOpTarget $ ops
+            keyconflicts = map head . filter (\l -> length l > 1) $ keys
+            noclash = filter (not . flip diffOpAffects keyconflicts) ops
+            scraps = map (\(Diff l ops) -> Diff l $ filter (flip diffOpAffects keyconflicts) ops) ds
+        in (Diff () noclash, scraps)
 
 -- | TODO: sources should *not* be identified by their strings.
 type Source = SomeSymbol
@@ -107,12 +106,8 @@ onField _field policy = policy
 
 -- | Combine two policies.
 combine :: MergePolicy l -> MergePolicy r -> MergePolicy (l,r)
-combine (MergePolicy el ml) (MergePolicy er mr) = MergePolicy extract merge
+combine (MergePolicy el _) (MergePolicy er _) = MergePolicy extract merge
   where
     extract doc = (el doc, er doc)
-    merge d1 d2 = error "combine: not implemented"
-
-test1 =
-  onField ["payment", "status"] $ trustSource (someSymbolVal "accounts") `combine`
-  ignoreConflicts
+    merge _ = error "combine: not implemented"
 

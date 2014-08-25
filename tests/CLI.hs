@@ -133,9 +133,9 @@ instance RetconDataSource "event" "exchange" where
 
 -- | Make file path
 fp :: String -> String -> IO FilePath
-fp source entity = do
+fp entity source = do
     cwd <- getCurrentDirectory
-    return $ joinPath [cwd, "tests", "data", source, entity]
+    return $ joinPath [cwd, "tests", "data", entity, source]
 
 -- * Retcon configuration
 

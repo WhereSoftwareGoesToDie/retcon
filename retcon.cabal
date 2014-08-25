@@ -207,16 +207,17 @@ test-suite             handler-test
   main-is:             HandlerTest.hs
   other-modules:       TestHelpers, TreeHelpers
   build-depends:       base
+                     , aeson
+                     , bifunctors
                      , bytestring
                      , containers
-                     , hspec
-                     , postgresql-simple
-                     , retcon
-                     , aeson
                      , directory
                      , filepath
+                     , hspec
                      , mtl
+                     , postgresql-simple
                      , process
+                     , retcon
                      , text
                      , transformers
                      , unordered-containers

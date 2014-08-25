@@ -7,38 +7,317 @@
 -- the 3-clause BSD licence.
 --
 
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE OverloadedLists #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedLists       #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
 
 module Main where
 
 import Test.Hspec
 
-import TestHelpers
 import Retcon.Config
 import Retcon.DataSource
+import Retcon.Diff
 import Retcon.Document
 import Retcon.Error
 import Retcon.Handler
 import Retcon.Monad
 import Retcon.Options
+import TestHelpers
 
 import Control.Applicative
 import Control.Exception
+import Control.Monad.Error.Class
 import Control.Monad.Reader
 import Data.Aeson
+import Data.Bifunctor
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BS
+import Data.Either
+import qualified Data.HashMap.Strict as HM
+import Data.IORef
+import Data.Map (Map)
+import qualified Data.Map as M
+import Data.Maybe
+import Data.Monoid
 import Data.Proxy
-import Data.String
-import Database.PostgreSQL.Simple
-import GHC.TypeLits
-import System.IO
-import System.Process
 import Data.Text (Text)
+import qualified Data.Text as T
+import Database.PostgreSQL.Simple
+import GHC.TypeLits ()
+import System.IO.Unsafe
+import System.Process
+
+testDBName :: ByteString
+testDBName = "retcon_handler_test"
+
+testConnection :: ByteString
+testConnection = BS.concat [BS.pack "dbname='", testDBName, BS.pack "'"]
+
+-- * Dispatching Tests
+--
+-- $ These tests exercise the logic used in handling events appropriately.
+
+-- | Data to be used by '"dispatch1"' below.
+dispatch1Data :: IORef (Map Text Value)
+dispatch1Data = unsafePerformIO $ newIORef M.empty
+{-# NOINLINE dispatch1Data #-}
+
+-- | Data to be used by '"dispatch2"' below.
+dispatch2Data :: IORef (Map Text Value)
+dispatch2Data = unsafePerformIO $ newIORef M.empty
+{-# NOINLINE dispatch2Data #-}
+
+-- | Create a new document in one of these stores.
+newTestDocument :: Text
+                -> Maybe Value
+                -> IORef (Map Text Value)
+                -> IO (Text, Value)
+newTestDocument n doc' ref = do
+    let doc = fromMaybe (Object HM.empty) doc'
+    key <- atomicModifyIORef ref (\store ->
+        let key = n `T.append` ( T.pack . show $ M.size store)
+        in (M.insert key doc store, key))
+    return (key, doc)
+
+-- | In-memory data source delete operation
+deleteDocumentIORef :: (RetconDataSource entity source)
+                    => IORef (Map Text Value)
+                    -> ForeignKey entity source
+                    -> DataSourceAction ()
+deleteDocumentIORef ref (ForeignKey fk') = do
+    let k = T.pack fk'
+    liftIO $ atomicModifyIORef ref (\m -> (M.delete k m, ()))
+
+setDocumentIORef :: (RetconDataSource entity source)
+                 => String
+                 -> IORef (Map Text Value)
+                 -> Document
+                 -> Maybe (ForeignKey entity source)
+                 -> DataSourceAction (ForeignKey entity source)
+setDocumentIORef name ref doc (Nothing) = do
+    k <- liftIO $ atomicModifyIORef ref
+        (\m -> let k = T.pack $ name ++ (show . M.size $ m)
+               in (M.insert k (toJSON doc) m, k))
+    liftIO . print $ "Setting a new document " ++ T.unpack k
+    return $ ForeignKey $ T.unpack k
+
+setDocumentIORef name ref doc (Just (ForeignKey fk')) = do
+    let fk = T.pack fk'
+    liftIO . print $ "Setting a document in " ++ fk'
+    k <- liftIO $ atomicModifyIORef ref
+        (\m -> (M.insert fk (toJSON doc) m, fk))
+    return $ ForeignKey $ T.unpack k
+
+getDocumentIORef :: (RetconDataSource entity source)
+                 => IORef (Map Text Value)
+                 -> ForeignKey entity source
+                 -> DataSourceAction Document
+getDocumentIORef ref (ForeignKey fk') = do
+    let key = T.pack fk'
+    doc' <- liftIO $ atomicModifyIORef ref
+        (\m -> (m, M.lookup key m))
+    case doc' of
+        Just doc -> case fromJSON doc of
+            Success r -> return r
+            _         -> throwError RetconFailed
+        Nothing  -> throwError RetconFailed
+
+-- | Configuration to use when testing retcon event dispatch.
+dispatchConfig :: RetconConfig
+dispatchConfig = RetconConfig [ SomeEntity (Proxy :: Proxy "dispatchtest") ]
+
+instance RetconEntity "dispatchtest" where
+    entitySources _ = [ SomeDataSource (Proxy :: Proxy "dispatch1")
+                      , SomeDataSource (Proxy :: Proxy "dispatch2")
+                      ]
+
+instance RetconDataSource "dispatchtest" "dispatch1" where
+    getDocument = getDocumentIORef dispatch1Data
+
+    setDocument = setDocumentIORef "dispatch1-" dispatch1Data
+
+    deleteDocument = deleteDocumentIORef dispatch1Data
+
+instance RetconDataSource "dispatchtest" "dispatch2" where
+    getDocument = getDocumentIORef dispatch2Data
+
+    setDocument = setDocumentIORef "dispatch2-" dispatch2Data
+
+    deleteDocument = deleteDocumentIORef dispatch2Data
+
+-- | Test suite for dispatching logic.
+dispatchSuite :: Spec
+dispatchSuite = around (prepareDatabase . prepareDispatchSuite) $ do
+    let opts = defaultOptions {
+          optDB = testConnection
+        , optLogging = LogStdout -- Avoid messy console colourisation.
+        }
+
+    describe "Dispatching changes" $ do
+        -- NEW and EXISTS
+        it "should create when new id and source has the document" $
+            withConfiguration opts $ \(conn, opts) -> do
+
+                -- Create a document in dispatch1; leave dispatch2 and the
+                -- database tables empty.
+                (fk, doc) <- newTestDocument "dispatch1-" Nothing dispatch1Data
+
+                -- Dispatch the event.
+                let opts' = opts { optArgs = ["dispatchtest", "dispatch1", fk] }
+                let input = show ("dispatchtest", "dispatch1", fk)
+                res <- retcon opts' dispatchConfig conn input
+
+                -- The document should be present in both stores, with an
+                -- InternalKey and two ForeignKeys.
+
+                d1 <- readIORef dispatch1Data
+                d2 <- readIORef dispatch2Data
+
+                [Only (n_ik::Int)] <- query_ conn "SELECT COUNT(*) FROM retcon"
+                [Only (n_fk::Int)] <- query_ conn "SELECT COUNT(*) FROM retcon_fk"
+
+                (M.size d1, M.size d2, n_ik, n_fk) `shouldBe` (1, 1, 1, 2)
+
+        -- NEW and NO EXIST
+        it "should error when new id and source hasn't the document" $
+            withConfiguration opts $ \(conn, opts) -> do
+                -- Both dispatch1 and dispatch2, and the database tables are
+                -- still empty.
+
+                -- Dispatch the event.
+                let opts' = opts { optArgs = ["dispatchtest", "dispatch1", "999"] }
+                let input = show ("dispatchtest", "dispatch1", "999")
+                res <- retcon opts' dispatchConfig conn input
+
+                -- Check an error was reported.
+                case res of
+                    Left (RetconSourceError _) -> return ()
+                    Right _ -> error "Should not process new key with no document."
+
+                -- Check that there are still no InternalKey or ForeignKey
+                -- details in the database.
+                d1 <- readIORef dispatch1Data
+                d2 <- readIORef dispatch2Data
+                [Only (n_ik :: Int)] <- liftIO $ query_ conn "SELECT COUNT(*) FROM retcon;"
+                [Only (n_fk :: Int)] <- liftIO $ query_ conn "SELECT COUNT(*) FROM retcon_fk;"
+                (M.size d1, M.size d2, n_ik, n_fk) `shouldBe` (0, 0, 0, 0)
+
+        -- OLD and EXISTS
+        it "should update when old id and source has the document" $
+            withConfiguration opts $ \(conn, opts) -> do
+                -- Create a document, with changes in dispatch1.
+                let change = Diff () [ InsertOp () ["name"] "INSERT ONE"
+                                     , InsertOp () ["address"] " 201 Elizabeth"
+                                     ]
+                let doc  = toJSON (mempty :: Document)
+                let doc' = toJSON $ applyDiff change mempty
+                (fk1, _) <- newTestDocument "dispatch1-" (Just doc') dispatch1Data
+                (fk2, _) <- newTestDocument "dispatch2-" (Just doc) dispatch2Data
+
+                -- Add a new InternalKey and ForeignKeys for both data sources.
+                [Only (ik :: Int)] <- query_ conn "INSERT INTO retcon (entity) VALUES ('dispatchtest') RETURNING id"
+                executeMany conn
+                    "INSERT INTO retcon_fk (entity, id, source, fk) VALUES (?, ?, ?, ?)"
+                    ([ ("dispatchtest", ik, "dispatch1", fk1)
+                     , ("dispatchtest", ik, "dispatch2", fk2)
+                     ] :: [(String, Int, String, Text)])
+
+                -- Dispatch the event.
+                let opts' = opts { optArgs = ["dispatchtest", "dispatch1", fk1] }
+                let input = show ("dispatchtest", "dispatch1", fk1)
+                res <- retcon opts' dispatchConfig conn input
+
+                -- Check that the documents are now the same.
+                d1 <- atomicModifyIORef dispatch1Data (\m->(m,M.lookup fk1 m))
+                d2 <- atomicModifyIORef dispatch2Data (\m->(m,M.lookup fk2 m))
+                [Only (n::Int)] <- query_ conn "SELECT COUNT(*) FROM retcon_fk"
+
+                (n, d1, d2) `shouldBe` (2, Just doc', Just doc')
+
+        -- OLD and NO EXIST
+        it "should delete when old id and source hasn't the document" $
+            withConfiguration opts $ \(conn, opts) -> do
+                -- Foreign keys are presents for dispatch1 and dispatch2, but only
+                -- dispatch2 contains a document.
+                let fk1 = "dispatch1-lolno"
+                (fk2, doc) <- newTestDocument "dispatch2-" Nothing dispatch2Data
+
+                [Only (ik :: Int)] <- query_ conn "INSERT INTO retcon (entity) VALUES ('dispatchtest') RETURNING id"
+                executeMany conn
+                    "INSERT INTO retcon_fk (entity, id, source, fk) VALUES (?, ?, ?, ?)"
+                    ([ ("dispatchtest", ik, "dispatch1", fk1)
+                     , ("dispatchtest", ik, "dispatch2", fk2)
+                     ] :: [(String, Int, String, Text)])
+
+                let opts' = opts { optArgs = ["dispatchtest", "dispatch1", fk1] }
+                let input = show ("dispatchtest", "dispatch1", fk1)
+                res <- first show <$> retcon opts' dispatchConfig conn input
+
+                either (error . show) (const . return $ ()) res
+
+                -- Both stores should be empty, along with both the retcon and
+                -- retcon_fk tables.
+                d1 <- readIORef dispatch1Data
+                d2 <- readIORef dispatch2Data
+
+                [Only (n_ik::Int)] <- query_ conn "SELECT COUNT(*) FROM retcon"
+                [Only (n_fk::Int)] <- query_ conn "SELECT COUNT(*) FROM retcon_fk"
+
+                (M.size d1, M.size d2, n_ik, n_fk) `shouldBe` (0,0,0,0)
+
+-- | Setup and teardown for the initial document tests.
+prepareDatabase :: IO () -> IO ()
+prepareDatabase action = bracket setupSuite teardownSuite (const action)
+  where
+    dbname :: String
+    dbname = BS.unpack testDBName
+
+    setupSuite :: IO ()
+    setupSuite = do
+        _ <- system $ concat [ "dropdb --if-exists ", dbname , " >/dev/null 2>&1"
+                             , " && createdb ", dbname
+                             , " && psql --quiet --file=retcon.sql ", dbname
+                             ]
+        return ()
+
+    teardownSuite :: () -> IO ()
+    teardownSuite () = do
+        _ <- system $ concat [ "dropdb --if-exists ", dbname, " >/dev/null 2>&1"
+                             ]
+        return ()
+
+-- | Setup and teardown for the dispatch test suite.
+prepareDispatchSuite :: IO () -> IO ()
+prepareDispatchSuite action = bracket setup teardown (const action)
+  where
+    -- Create and initialise the database and data sources.
+    setup :: IO ()
+    setup = do
+        -- Empty the data sources.
+        writeIORef dispatch1Data M.empty
+        writeIORef dispatch2Data M.empty
+        return ()
+
+    -- Clean up the database and data sources.
+    teardown :: () -> IO ()
+    teardown = return
+
+-- | Open a connection to the configured database.
+withConfiguration cfg = bracket openConnection closeConnection
+  where
+    openConnection = do
+        conn <- connectPostgreSQL $ optDB cfg
+        return (conn, cfg)
+    closeConnection (conn, cfg) = close conn
+
+-- * Initial Document Tests
+--
+-- $ These tests exercise the storage of initial documents in the retcon
+-- database.
 
 instance RetconEntity "alicorn_invoice" where
     entitySources _ = [ SomeDataSource (Proxy :: Proxy "alicorn_source") ]
@@ -48,13 +327,15 @@ instance RetconDataSource "alicorn_invoice" "alicorn_source" where
     setDocument doc key = error "We're not calling this"
     deleteDocument key = error "We're not calling this"
 
-suite :: Spec
-suite = do
-    describe "Retcon handling" $ do
+
+-- | Test suite for initial document.
+initialDocumentSuite :: Spec
+initialDocumentSuite = around prepareDatabase $ do
+    describe "Initial documents" $ do
         it "reads and writes initial documents" $ do
             let testDoc = Document [(["key"], "value")]
             result <- testHandler $ do
-                conn <- asks snd
+                conn <- asks retconConnection
 
                 result <- liftIO $ query conn "INSERT INTO retcon (entity) VALUES (?) RETURNING id" (Only "alicorn_invoice" :: Only String)
                 case result of
@@ -63,18 +344,18 @@ suite = do
 
                         maybePut <- putInitialDocument ik testDoc
                         maybeGet <- getInitialDocument ik
-                        return $ (maybePut, maybeGet)
+                        return (maybePut, maybeGet)
                     _ -> error "I have no idea what happened here"
             case result of
                 Left e -> error (show e)
                 Right (maybe_put, maybe_get) -> do
                     maybe_put `shouldBe` ()
-                    maybe_get `shouldBe` (Just testDoc)
+                    maybe_get `shouldBe` Just testDoc
 
         it "deletes initial documents" $ do
             let testDoc = Document [(["isThisGoingToGetDeleted"], "yes")]
             result <- testHandler $ do
-                conn <- asks snd
+                conn <- asks retconConnection
 
                 result <- liftIO $ query conn "INSERT INTO retcon (entity) VALUES (?) RETURNING id" (Only "alicorn_invoice" :: Only String)
                 case result of
@@ -84,7 +365,7 @@ suite = do
                         maybePut <- putInitialDocument ik testDoc
                         maybeDel <- deleteInitialDocument ik
                         maybeGet <- getInitialDocument ik
-                        return $ (maybePut, maybeDel, maybeGet)
+                        return (maybePut, maybeDel, maybeGet)
                     _ -> error "I have no idea what happened here"
             case result of
                 Left e -> error (show e)
@@ -99,31 +380,10 @@ testHandler a = bracket setupConn closeConn run
         setupConn = connectPostgreSQL testConnection
         closeConn = close
         run conn = do
-            dbschema <- fromString <$> readFile "retcon.sql"
-            _ <- execute_ conn dbschema
             let cfg = RetconConfig []
-            result <- runRetconHandler defaultOptions cfg conn a
-            return result
-
-testDBName :: ByteString
-testDBName = "retcon_handler_test"
-
-testConnection :: ByteString
-testConnection = BS.concat [BS.pack "dbname='", testDBName, BS.pack "'"]
-
-setupSuite :: IO ()
-setupSuite = do
-    _ <- system $ concat ["dropdb --if-exists ", BS.unpack testDBName, " && createdb ", BS.unpack testDBName]
-    return ()
-
-teardownSuite :: () -> IO ()
-teardownSuite () = do
-    _ <- system $ concat ["dropdb ", BS.unpack testDBName]
-    return ()
-
-prepMe :: IO () -> IO ()
-prepMe action = bracket setupSuite teardownSuite (const action)
+            runRetconHandler defaultOptions cfg conn a
 
 main :: IO ()
-main = hspec $ around prepMe $ do
-    suite
+main = hspec $ do
+    dispatchSuite
+    initialDocumentSuite
