@@ -20,6 +20,7 @@ import Test.Hspec
 
 import Retcon.Config
 import Retcon.DataSource
+import Retcon.Diff
 import Retcon.Document
 import Retcon.Error
 import Retcon.Handler
@@ -32,14 +33,15 @@ import Control.Exception
 import Control.Monad.Error.Class
 import Control.Monad.Reader
 import Data.Aeson
+import Data.Bifunctor
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BS
+import Data.Either
 import qualified Data.HashMap.Strict as HM
 import Data.IORef
-import Data.Either
-import Data.Bifunctor
 import Data.Map (Map)
 import qualified Data.Map as M
+import Data.Monoid
 import Data.Proxy
 import Data.Text (Text)
 import Data.Text (Text)
@@ -207,8 +209,13 @@ dispatchSuite = around (prepareDatabase . prepareDispatchSuite) $ do
         -- OLD and EXISTS
         it "should update when old id and source has the document" $
             withConfiguration opts $ \(conn, opts) -> do
-                -- Create a new document in both data sources
-                (fk1, doc) <- newTestDocument "dispatch1-" Nothing dispatch1Data
+                -- Create a document, with changes in dispatch1.
+                let change = Diff () [ InsertOp () ["name"] "INSERT ONE"
+                                     , InsertOp () ["address"] " 201 Elizabeth"
+                                     ]
+                let doc  = toJSON $ (mempty :: Document)
+                let doc' = toJSON $ applyDiff change mempty
+                (fk1, _) <- newTestDocument "dispatch1-" (Just doc') dispatch1Data
                 (fk2, _) <- newTestDocument "dispatch2-" (Just doc) dispatch2Data
 
                 -- Add a new InternalKey and ForeignKeys for both data sources.
@@ -224,12 +231,12 @@ dispatchSuite = around (prepareDatabase . prepareDispatchSuite) $ do
                 let input = show ("dispatchtest", "dispatch1", fk1)
                 res <- retcon opts' dispatchConfig conn input
 
-                -- Check that update was dispatched?
-                -- Check that the document is in dispatch1.
-                -- Check that the document is in dispatch2.
-                -- Check that the key for dispatch2 is in retcon_fk.
-                -- Check that the key for dispatch1 is in retcon_fk.
-                pendingWith "Setup and teardown will be horrible."
+                -- Check that the documents are now the same.
+                d1 <- atomicModifyIORef dispatch1Data (\m->(m,M.lookup fk1 m))
+                d2 <- atomicModifyIORef dispatch2Data (\m->(m,M.lookup fk2 m))
+                [Only (n::Int)] <- query_ conn "SELECT COUNT(*) FROM retcon_fk"
+
+                (n, d1, d2) `shouldBe` (2, Just doc', Just doc')
 
         -- OLD and NO EXIST
         it "should delete when old id and source hasn't the document" $
