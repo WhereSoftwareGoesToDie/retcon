@@ -167,6 +167,13 @@ data RetconOperation entity source =
     | RetconProblem (ForeignKey entity source) RetconError -- ^ Record an error.
     deriving (Show)
 
+instance Eq (RetconOperation entity source) where
+    (RetconCreate fk1) == (RetconCreate fk2) = fk1 == fk2
+    (RetconDelete ik1) == (RetconDelete ik2) = ik1 == ik2
+    (RetconUpdate ik1) == (RetconUpdate ik2) = ik1 == ik2
+    (RetconProblem fk1 _) == (RetconProblem fk2 _) = fk1 == fk2
+    _ == _ = False
+
 -- | Interact with the data source which triggered in an event to identify
 -- the operation to be performed.
 --
@@ -177,14 +184,13 @@ determineOperation :: (RetconDataSource entity source)
                    -> RetconHandler (RetconOperation entity source)
 determineOperation fk = do
     ik' <- lookupInternalKey fk
-    case ik' of
-        Nothing -> return $ RetconCreate fk
-        Just ik -> do
-            doc' <- join . first RetconError <$> tryAny
-                (liftIO . runDataSourceAction $ getDocument fk)
-            return $ case doc' of
-                Left  _ -> RetconDelete ik
-                Right _ -> RetconUpdate ik
+    doc' <- join . first RetconError <$> tryAny
+        (liftIO . runDataSourceAction $ getDocument fk)
+    return $ case (ik', doc') of
+        (Nothing, Left  _) -> RetconProblem fk (RetconSourceError "Unknown key, no document")
+        (Nothing, Right _) -> RetconCreate fk
+        (Just ik, Left  _) -> RetconDelete ik
+        (Just ik, Right _) -> RetconUpdate ik
 
 -- | Perform the action/s described by a 'RetconOperation' value.
 runOperation :: (RetconDataSource entity source)

@@ -15,3 +15,13 @@ data RetconError =
     | RetconUnknown String -- ^ Unknown entity, source, or document.
   deriving (Show)
 
+instance Eq RetconError where
+
+    (RetconFailed)          == (RetconFailed)          = True
+    (RetconError e1)        == (RetconError e2)        = False
+    (RetconDBError s1)      == (RetconDBError s2)      = s1 == s2
+    (RetconSourceError s1)  == (RetconSourceError s2)  = s1 == s2
+    (RetconNotSupported s1) == (RetconNotSupported s2) = s1 == s2
+    (RetconUnknown s1)      == (RetconUnknown s2)      = s1 == s2
+    _ == _ = False
+
