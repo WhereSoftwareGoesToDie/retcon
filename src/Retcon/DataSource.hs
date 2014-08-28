@@ -84,12 +84,6 @@ class (KnownSymbol source, RetconEntity entity) => RetconDataSource entity sourc
     deleteDocument :: ForeignKey entity source
                    -> DataSourceAction ()
 
--- | The unique identifier used by the 'source' data source to refer to an
--- 'entity' it stores.
-newtype RetconDataSource entity source => ForeignKey entity source =
-    ForeignKey { unForeignKey :: String }
-  deriving (Eq, Ord, Show)
-
 -- * Wrapper types
 --
 -- $ 'Proxy' values for instances of our 'RetconEntity' and 'RetconDataSource'
@@ -150,3 +144,26 @@ internalKeyValue :: forall entity. (RetconEntity entity)
 internalKeyValue (InternalKey key) =
     let entity = symbolVal (Proxy :: Proxy entity)
     in (entity, key)
+
+-- | The unique identifier used by the 'source' data source to refer to an
+-- 'entity' it stores.
+newtype RetconDataSource entity source => ForeignKey entity source =
+    ForeignKey { unForeignKey :: String }
+  deriving (Eq, Ord, Show)
+
+-- | Extract the type-level information from a 'ForeignKey'.
+--
+-- The triple contains the entity, data source, and key in that order.
+foreignKeyValue :: forall entity source. (RetconDataSource entity source)
+                => ForeignKey entity source
+                -> (String, String, String)
+foreignKeyValue (ForeignKey key) =
+    let entity = symbolVal (Proxy :: Proxy entity)
+        source = symbolVal (Proxy :: Proxy source)
+    in (entity, source, key)
+
+-- | Encode a 'ForeignKey' as a 'String'.
+encodeForeignKey :: forall entity source. (RetconDataSource entity source)
+                 => ForeignKey entity source
+                 -> String
+encodeForeignKey = show . foreignKeyValue

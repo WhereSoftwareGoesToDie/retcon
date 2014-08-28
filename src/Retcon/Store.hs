@@ -7,6 +7,9 @@
 -- the 3-clause BSD licence.
 --
 
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE Rank2Types #-}
+
 -- | Description: Abstract storage for retcon operational data.
 --
 -- Retcon maintains quite a lot of operational data. This module defines an
@@ -17,8 +20,9 @@
 module Retcon.Store where
 
 import Retcon.DataSource
-import Retcon.Document
 import Retcon.Diff
+import Retcon.Document
+import Retcon.Options
 
 -- | A storage backend for retcon operational data
 --
@@ -32,10 +36,11 @@ class RetconStore s where
     -- | Initialise a handle to the storage backend.
     --
     -- (E.g. connect to the database server, etc.)
-    initialiseStorage :: IO s
+    initialiseStorage :: RetconOptions
+                      -> IO s
 
     -- | Allocate and return a new 'InternalKey'.
-    createInternalKey :: (RetconEntity entity)
+    createInternalKey :: forall entity. (RetconEntity entity)
                       => s
                       -> IO (InternalKey entity)
 
@@ -62,6 +67,12 @@ class RetconStore s where
     deleteForeignKey :: (RetconDataSource e d)
                      => s
                      -> ForeignKey e d
+                     -> IO ()
+
+    -- | Delete all 'ForeignKey's associated with an 'InternalKey'.
+    deleteForeignKeys :: (RetconEntity e)
+                     => s
+                     -> InternalKey e
                      -> IO ()
 
     -- | Find the 'ForeignKey' corresponding to an 'InternalKey' in a particular

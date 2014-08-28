@@ -15,9 +15,9 @@
 module Retcon.Store.Memory where
 
 import Data.Functor
+import Data.IORef
 import Data.Map.Strict (Map)
 import Data.Map.Strict as M
-import Data.IORef
 
 import Retcon.Store
 
@@ -28,7 +28,7 @@ newtype MemStorage = MemStorage { unwrapMemStorage :: IORef State }
 
 instance RetconStore MemStorage where
 
-    initialiseStorage = MemStorage <$> newIORef (M.empty)
+    initialiseStorage _ = MemStorage <$> newIORef (M.empty)
 
     createInternalKey conn = return undefined
 
@@ -38,10 +38,12 @@ instance RetconStore MemStorage where
 
     recordForeignKey conn ik fk = return ()
 
+    lookupForeignKey conn ik = return Nothing
+
     deleteForeignKey conn fk = return ()
 
-    lookupForeignKey conn ik = return Nothing
-    
+    deleteForeignKeys conn ik = return ()
+
     recordInitialDocument conn ik doc = return ()
 
     lookupInitialDocument conn ik = return Nothing
