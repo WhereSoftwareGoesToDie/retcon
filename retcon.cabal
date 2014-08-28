@@ -29,6 +29,8 @@ library
                      , Retcon.Monad
                      , Retcon.Options
                      , Retcon.Store
+                     , Retcon.Store.PostgreSQL
+                     , Retcon.Store.Memory
                      , Data.Tree.GenericTrie
   -- other-modules:       
   build-depends:       base >=4.7 && <4.8

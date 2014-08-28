@@ -12,8 +12,8 @@
 -- Retcon maintains quite a lot of operational data. This module defines an
 -- interface which can be implemented against various data storage backends.
 --
--- The library includes type implementations of this interface using PostgreSQL
--- for production deployments and IORef-containing-Data.*-values for testing.
+-- The library includes type implementations of this interface in the
+-- 'Retcon.Store.PostgreSQL' and 'Retcon.Store.Memory' modules.
 module Retcon.Store where
 
 import Retcon.DataSource
@@ -28,6 +28,11 @@ import Retcon.Diff
 --
 -- All operations must be implemented.
 class RetconStore s where
+
+    -- | Initialise a handle to the storage backend.
+    --
+    -- (E.g. connect to the database server, etc.)
+    initialiseStorage :: IO s
 
     -- | Allocate and return a new 'InternalKey'.
     createInternalKey :: (RetconEntity entity)
