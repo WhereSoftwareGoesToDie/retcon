@@ -159,6 +159,50 @@ lookupForeignKey (InternalKey key) = do
         Only key:_ -> Just (ForeignKey key :: ForeignKey entity source)
         []         -> Nothing
 
+-- | Operations to be performed in response to data source events.
+data RetconOperation entity source =
+      RetconCreate (ForeignKey entity source) -- ^ Create a new document.
+    | RetconDelete (InternalKey entity)       -- ^ Delete an existing document.
+    | RetconUpdate (InternalKey entity)       -- ^ Update an existing document.
+    | RetconProblem (ForeignKey entity source) RetconError -- ^ Record an error.
+    deriving (Show)
+
+instance Eq (RetconOperation entity source) where
+    (RetconCreate fk1) == (RetconCreate fk2) = fk1 == fk2
+    (RetconDelete ik1) == (RetconDelete ik2) = ik1 == ik2
+    (RetconUpdate ik1) == (RetconUpdate ik2) = ik1 == ik2
+    (RetconProblem fk1 _) == (RetconProblem fk2 _) = fk1 == fk2
+    _ == _ = False
+
+-- | Interact with the data source which triggered in an event to identify
+-- the operation to be performed.
+--
+-- This function should be able to return a 'RetconProblem' value, but currently
+-- doesn't.
+determineOperation :: (RetconDataSource entity source)
+                   => ForeignKey entity source
+                   -> RetconHandler (RetconOperation entity source)
+determineOperation fk = do
+    ik' <- lookupInternalKey fk
+    doc' <- join . first RetconError <$> tryAny
+        (liftIO . runDataSourceAction $ getDocument fk)
+    return $ case (ik', doc') of
+        (Nothing, Left  _) -> RetconProblem fk (RetconSourceError "Unknown key, no document")
+        (Nothing, Right _) -> RetconCreate fk
+        (Just ik, Left  _) -> RetconDelete ik
+        (Just ik, Right _) -> RetconUpdate ik
+
+-- | Perform the action/s described by a 'RetconOperation' value.
+runOperation :: (RetconDataSource entity source)
+             => RetconOperation entity source
+             -> RetconHandler ()
+runOperation event =
+    case event of
+        RetconCreate  fk -> create fk
+        RetconDelete  ik -> delete ik
+        RetconUpdate  ik -> update ik
+        RetconProblem fk err -> reportError fk err
+
 -- | Parse a request string and handle an event.
 dispatch :: String -> RetconHandler ()
 dispatch work = do
@@ -191,20 +235,11 @@ process :: forall entity source. (RetconDataSource entity source)
         => ForeignKey entity source
         -> RetconHandler ()
 process fk = do
-    $logDebug $ T.concat ["EVENT against ", T.pack $ show $ length sources, " sources"]
+    $logDebug . T.pack . concat $ [ "EVENT against ", show $ length sources
+                                  , " sources"
+                                  ]
 
-    -- If we can't find an InternalKey: it's a CREATE.
-    -- If we can't get the upstream Document: it's a DELETE.
-    -- Otherwise: it's an UPDATE.
-    ik' <- lookupInternalKey fk
-    case ik' of
-        Nothing -> create fk
-        Just ik -> do
-            doc' <- join . first RetconError <$> tryAny
-                (liftIO . runDataSourceAction $ getDocument fk)
-            case doc' of
-                Left _ -> delete ik
-                Right _ -> update ik
+    determineOperation fk >>= runOperation
   where
     sources = entitySources (Proxy :: Proxy entity)
 
@@ -280,6 +315,20 @@ update ik = do
 
     -- TODO: Log all the failures.
 
+    return ()
+
+-- | Report an error in determining the operation, communicating with the data
+-- source or similar.
+reportError :: (RetconDataSource entity source)
+            => ForeignKey entity source
+            -> RetconError
+            -> RetconHandler ()
+reportError fk err = do
+    $logError . T.pack . concat $ [ "Could not process event for "
+                                  , show . foreignKeyValue $ fk
+                                  , ". "
+                                  , show err
+                                  ]
     return ()
 
 -- | Get 'Document's corresponding to an 'InternalKey' for all sources for an

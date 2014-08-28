@@ -102,12 +102,10 @@ setDocumentIORef name ref doc (Nothing) = do
     k <- liftIO $ atomicModifyIORef ref
         (\m -> let k = T.pack $ name ++ (show . M.size $ m)
                in (M.insert k (toJSON doc) m, k))
-    liftIO . print $ "Setting a new document " ++ T.unpack k
     return $ ForeignKey $ T.unpack k
 
 setDocumentIORef name ref doc (Just (ForeignKey fk')) = do
     let fk = T.pack fk'
-    liftIO . print $ "Setting a document in " ++ fk'
     k <- liftIO $ atomicModifyIORef ref
         (\m -> (M.insert fk (toJSON doc) m, fk))
     return $ ForeignKey $ T.unpack k
@@ -149,12 +147,143 @@ instance RetconDataSource "dispatchtest" "dispatch2" where
 
     deleteDocument = deleteDocumentIORef dispatch2Data
 
+-- | Tests for code determining and applying retcon operations.
+operationSuite :: Spec
+operationSuite = around (prepareDatabase . prepareDispatchSuite) $ do
+    let opt = defaultOptions {
+          optDB = testConnection
+        , optLogging = LogNone
+        }
+
+    describe "Determining operations" $ do
+        it "should result in a create when new key is seen, with document." $ do
+            -- Create a document in dispatch1; leave dispatch2 and the
+            -- database tables empty.
+            (fk', doc) <- newTestDocument "dispatch1-" Nothing dispatch1Data
+            let fk = ForeignKey (T.unpack fk') :: ForeignKey "dispatchtest" "dispatch1"
+            op <- run opt $ determineOperation fk
+            op `shouldBe` (Right $ RetconCreate fk)
+
+        it "should result in an error when new key is seen, but no document." $ do
+            let fk = ForeignKey "this is new" :: ForeignKey "dispatchtest" "dispatch1"
+            op <- run opt $ determineOperation fk
+            op `shouldBe` (Right $ RetconProblem fk RetconFailed)
+
+        it "should result in a update when old key is seen, with document." $
+            withConfiguration opt $ \(conn, opts) -> do
+                -- Insert a key into the database, with a document in the store.
+                let entity = "dispatchtest" :: String
+                let ds = "dispatch1" :: String
+                (fk', doc) <- newTestDocument "dispatch1-" Nothing dispatch1Data
+                [Only (ik'::Int)] <- query_ conn "INSERT INTO retcon (entity) VALUES ('dispatchtest') RETURNING id"
+                execute conn "INSERT INTO retcon_fk (entity,id,source,fk) VALUES (?,?,?,?)" (entity, ik', ds, fk')
+
+                let fk = ForeignKey (T.unpack fk') :: ForeignKey "dispatchtest" "dispatch1"
+                let ik = InternalKey ik' :: InternalKey "dispatchtest"
+
+                -- Determine the operation to perform.
+                op <- run opt $ determineOperation fk
+                op `shouldBe` (Right $ RetconUpdate ik)
+
+        it "should result in a delete when old key is seen, but no document." $
+            withConfiguration opt $ \(conn, opts) -> do
+                -- Insert a key into the database, but no document in the store.
+                let ent = "dispatchtest" :: String
+                let ds = "dispatch1" :: String
+                let fk1 = "dispatch1-deleted-docid" :: String
+                [Only (ik'::Int)] <- query_ conn "INSERT INTO retcon (entity) VALUES ('dispatchtest') RETURNING id"
+                execute conn "INSERT INTO retcon_fk (entity, id, source, fk) VALUES (?, ?, ?, ?)" (ent, ik', ds, fk1)
+
+                let fk = ForeignKey fk1 :: ForeignKey "dispatchtest" "dispatch1"
+                let ik = InternalKey ik' :: InternalKey "dispatchtest"
+                op <- run opts $ determineOperation fk
+                op `shouldBe` (Right $ RetconDelete ik)
+
+    describe "Evaluating operations" $ do
+        it "should process a create operation." $
+            withConfiguration opt $ \(conn, opts) -> do
+                (fk', _) <- newTestDocument "dispatch1-" Nothing dispatch1Data
+                let fk = ForeignKey (T.unpack fk')
+
+                let op = RetconCreate fk :: RetconOperation "dispatchtest" "dispatch1"
+                res <- run opt $ runOperation op
+
+                [Only (n_ik :: Int)] <- query_ conn "SELECT COUNT(*) FROM retcon"
+                [Only (n_fk :: Int)] <- query_ conn "SELECT COUNT(*) FROM retcon_fk"
+
+                (n_ik, n_fk) `shouldBe` (1, 2)
+
+        it "should process an error operation." $
+            withConfiguration opt $ \(conn, opts) -> do
+                (fk', _) <- newTestDocument "dispatch1-" Nothing dispatch1Data
+                let fk = ForeignKey (T.unpack fk')
+                let op = RetconProblem fk (RetconUnknown "Testing error reporting.") :: RetconOperation "dispatchtest" "dispatch1"
+                res <- run opt $ runOperation op
+                res `shouldBe` (Right ())
+
+        it "should process an update operation." $
+            withConfiguration opt $ \(conn, opts) -> do
+
+                let change = Diff () [ InsertOp () ["name"] "INSERT ONE"
+                                     , InsertOp () ["address"] " 201 Elizabeth"
+                                     ]
+                let doc  = toJSON (mempty :: Document)
+                let doc' = toJSON $ applyDiff change mempty
+                (fk1, _) <- newTestDocument "dispatch1-" (Just doc) dispatch1Data
+                (fk2, _) <- newTestDocument "dispatch2-" (Just doc') dispatch2Data
+                [Only (ik' :: Int)] <- query_ conn "INSERT INTO retcon (entity) VALUES ('dispatchtest') RETURNING id"
+                executeMany conn
+                    "INSERT INTO retcon_fk (entity, id, source, fk) VALUES (?, ?, ?, ?)"
+                    ([ ("dispatchtest", ik', "dispatch1", fk1)
+                     , ("dispatchtest", ik', "dispatch2", fk2)
+                     ] :: [(String, Int, String, Text)])
+                let ik = InternalKey ik' :: InternalKey "dispatchtest"
+
+                -- Perform the operation.
+                let op = RetconUpdate ik :: RetconOperation "dispatchtest" "dispatch1"
+                res <- run opt $ runOperation op
+
+                -- Check the things.
+                d1 <- readIORef dispatch1Data
+                d2 <- readIORef dispatch2Data
+                [Only (n_ik::Int)] <- query_ conn "SELECT COUNT(*) FROM retcon"
+                [Only (n_fk::Int)] <- query_ conn "SELECT COUNT(*) FROM retcon_fk"
+                (M.size d1, M.size d2, n_ik, n_fk) `shouldBe` (1, 1, 1, 2)
+
+        it "should process a delete operation." $
+            withConfiguration opt $ \(conn, opts) -> do
+                let fk1 = "dispatch1-lolno"
+                (fk2, doc) <- newTestDocument "dispatch2-" Nothing dispatch2Data
+                [Only (ik' :: Int)] <- query_ conn "INSERT INTO retcon (entity) VALUES ('dispatchtest') RETURNING id"
+                executeMany conn
+                    "INSERT INTO retcon_fk (entity, id, source, fk) VALUES (?, ?, ?, ?)"
+                    ([ ("dispatchtest", ik', "dispatch1", fk1)
+                     , ("dispatchtest", ik', "dispatch2", fk2)
+                     ] :: [(String, Int, String, Text)])
+                let ik = InternalKey ik'
+
+                -- Perform the operation.
+                let op = RetconDelete ik :: RetconOperation "dispatchtest" "dispatch1"
+                res <- run opt $ runOperation op
+
+                -- Check the things.
+                d1 <- readIORef dispatch1Data
+                d2 <- readIORef dispatch2Data
+                [Only (n_ik::Int)] <- query_ conn "SELECT COUNT(*) FROM retcon"
+                [Only (n_fk::Int)] <- query_ conn "SELECT COUNT(*) FROM retcon_fk"
+                (M.size d1, M.size d2, n_ik, n_fk) `shouldBe` (0, 0, 0, 0)
+
+  where
+    run opt action = do
+        withConfiguration opt $ \(conn, opts) ->
+            runRetconHandler opts dispatchConfig conn $ action
+
 -- | Test suite for dispatching logic.
 dispatchSuite :: Spec
 dispatchSuite = around (prepareDatabase . prepareDispatchSuite) $ do
     let opts = defaultOptions {
           optDB = testConnection
-        , optLogging = LogStdout -- Avoid messy console colourisation.
+        , optLogging = LogNone
         }
 
     describe "Dispatching changes" $ do
@@ -192,11 +321,6 @@ dispatchSuite = around (prepareDatabase . prepareDispatchSuite) $ do
                 let opts' = opts { optArgs = ["dispatchtest", "dispatch1", "999"] }
                 let input = show ("dispatchtest", "dispatch1", "999")
                 res <- retcon opts' dispatchConfig conn input
-
-                -- Check an error was reported.
-                case res of
-                    Left (RetconSourceError _) -> return ()
-                    Right _ -> error "Should not process new key with no document."
 
                 -- Check that there are still no InternalKey or ForeignKey
                 -- details in the database.
@@ -380,7 +504,7 @@ diffDatabaseSuite :: Spec
 diffDatabaseSuite = around prepareDatabase $ do
     let opts = defaultOptions {
           optDB = testConnection
-        , optLogging = LogStdout -- Avoid messy console colourisation.
+        , optLogging = LogNone
         }
 
     describe "Database diffs" $ do
@@ -412,7 +536,6 @@ diffDatabaseSuite = around prepareDatabase $ do
                     ik_base `shouldBe` 1
                     mid `shouldBe` (Just 1)
                     (all_diffops) `shouldBe` (diffChanges testDiff)
-                _                               -> error "Didn't get anticipated results"
 
 
 testHandler :: RetconHandler a -> IO (Either RetconError a)
@@ -426,6 +549,7 @@ testHandler a = bracket setupConn closeConn run
 
 main :: IO ()
 main = hspec $ do
+    operationSuite
     dispatchSuite
     initialDocumentSuite
     diffDatabaseSuite
