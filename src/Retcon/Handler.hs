@@ -96,11 +96,6 @@ lookupInternalKey fk = do
     case results of
       Only key:_ -> return $ Just (InternalKey key)
       []         -> return Nothing
-    -- If it exists, return it
-    -- Otherwise:
-    --     Allocate a new internal key.
-    --     Record it in the database.
-    --     Return it.
 
 -- | Record a 'ForeignKey' associated with an 'InternalKey'.
 recordForeignKey :: forall entity source. (RetconDataSource entity source)
