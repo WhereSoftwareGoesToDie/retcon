@@ -64,22 +64,6 @@ encodeForeignKey :: forall entity source. (RetconDataSource entity source)
                  -> String
 encodeForeignKey = show . foreignKeyValue
 
--- | The unique identifier used to identify a unique 'entity' document within
--- retcon.
-newtype RetconEntity entity => InternalKey entity =
-    InternalKey { unInternalKey :: Int }
-  deriving (Eq, Ord, Show)
-
--- | Extract the type-level information from an 'InternalKey'.
---
--- The pair contains the entity, and the key in that order.
-internalKeyValue :: forall entity. RetconEntity entity
-                 => InternalKey entity
-                 -> (String, Int)
-internalKeyValue (InternalKey key) =
-    let entity = symbolVal (Proxy :: Proxy entity)
-    in (entity, key)
-
 -- | Create a new 'InternalKey' for an entity.
 --
 -- The new 'InternalKey' is recorded in the database.
