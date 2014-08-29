@@ -26,6 +26,9 @@ import Retcon.Error
 import Retcon.Handler
 import Retcon.Monad
 import Retcon.Options
+import Retcon.Store (RetconStore)
+import Retcon.Store.PostgreSQL
+
 import TestHelpers
 
 import Control.Applicative
@@ -276,7 +279,7 @@ operationSuite = around (prepareDatabase . prepareDispatchSuite) $ do
   where
     run opt action = do
         withConfiguration opt $ \(conn, opts) ->
-            runRetconHandler opts dispatchConfig conn $ action
+            runRetconHandler opts dispatchConfig (PGStore conn) $ action
 
 -- | Test suite for dispatching logic.
 dispatchSuite :: Spec
@@ -298,7 +301,7 @@ dispatchSuite = around (prepareDatabase . prepareDispatchSuite) $ do
                 -- Dispatch the event.
                 let opts' = opts { optArgs = ["dispatchtest", "dispatch1", fk] }
                 let input = show ("dispatchtest", "dispatch1", fk)
-                res <- retcon opts' dispatchConfig conn input
+                res <- retcon opts' dispatchConfig (PGStore conn) input
 
                 -- The document should be present in both stores, with an
                 -- InternalKey and two ForeignKeys.
@@ -320,7 +323,7 @@ dispatchSuite = around (prepareDatabase . prepareDispatchSuite) $ do
                 -- Dispatch the event.
                 let opts' = opts { optArgs = ["dispatchtest", "dispatch1", "999"] }
                 let input = show ("dispatchtest", "dispatch1", "999")
-                res <- retcon opts' dispatchConfig conn input
+                res <- retcon opts' dispatchConfig (PGStore conn) input
 
                 -- Check that there are still no InternalKey or ForeignKey
                 -- details in the database.
@@ -353,7 +356,7 @@ dispatchSuite = around (prepareDatabase . prepareDispatchSuite) $ do
                 -- Dispatch the event.
                 let opts' = opts { optArgs = ["dispatchtest", "dispatch1", fk1] }
                 let input = show ("dispatchtest", "dispatch1", fk1)
-                res <- retcon opts' dispatchConfig conn input
+                res <- retcon opts' dispatchConfig (PGStore conn) input
 
                 -- Check that the documents are now the same.
                 d1 <- atomicModifyIORef dispatch1Data (\m->(m,M.lookup fk1 m))
@@ -379,7 +382,7 @@ dispatchSuite = around (prepareDatabase . prepareDispatchSuite) $ do
 
                 let opts' = opts { optArgs = ["dispatchtest", "dispatch1", fk1] }
                 let input = show ("dispatchtest", "dispatch1", fk1)
-                res <- first show <$> retcon opts' dispatchConfig conn input
+                res <- first show <$> retcon opts' dispatchConfig (PGStore conn) input
 
                 either (error . show) (const . return $ ()) res
 
@@ -459,7 +462,7 @@ initialDocumentSuite = around prepareDatabase $ do
         it "reads and writes initial documents" $ do
             let testDoc = Document [(["key"], "value")]
             result <- testHandler $ do
-                conn <- asks retconConnection
+                (PGStore conn) <- asks retconStore
 
                 result <- liftIO $ query conn "INSERT INTO retcon (entity) VALUES (?) RETURNING id" (Only "alicorn_invoice" :: Only String)
                 case result of
@@ -479,7 +482,7 @@ initialDocumentSuite = around prepareDatabase $ do
         it "deletes initial documents" $ do
             let testDoc = Document [(["isThisGoingToGetDeleted"], "yes")]
             result <- testHandler $ do
-                conn <- asks retconConnection
+                (PGStore conn) <- asks retconStore
 
                 result <- liftIO $ query conn "INSERT INTO retcon (entity) VALUES (?) RETURNING id" (Only "alicorn_invoice" :: Only String)
                 case result of
@@ -512,7 +515,7 @@ diffDatabaseSuite = around prepareDatabase $ do
             let testDiff = Diff 1 [InsertOp 1 [T.pack "a",T.pack "b",T.pack "c"] (T.pack "foo")]
 
             result <- testHandler $ do
-                conn <- asks retconConnection
+                (PGStore conn) <- asks retconStore
 
                 -- Do some super rough db scaffolding
                 [(Only (ik_base::Int))] <- liftIO $ query conn "INSERT INTO retcon (entity) VALUES (?) RETURNING id" (Only $ T.pack "alicorn_invoice")
@@ -538,14 +541,14 @@ diffDatabaseSuite = around prepareDatabase $ do
                     (all_diffops) `shouldBe` (diffChanges testDiff)
 
 
-testHandler :: RetconHandler a -> IO (Either RetconError a)
+testHandler :: RetconHandler PGStorage a -> IO (Either RetconError a)
 testHandler a = bracket setupConn closeConn run
     where
         setupConn = connectPostgreSQL testConnection
         closeConn = close
         run conn = do
             let cfg = RetconConfig []
-            runRetconHandler defaultOptions cfg conn a
+            runRetconHandler defaultOptions cfg (PGStore conn) a
 
 main :: IO ()
 main = hspec $ do
