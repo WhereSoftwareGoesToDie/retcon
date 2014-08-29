@@ -512,6 +512,7 @@ diffDatabaseSuite = around prepareDatabase $ do
 
     describe "Database diffs" $ do
         it "writes a diff to database and reads it" $ do
+            pendingWith "Data storage API changes."
             let testDiff = Diff 1 [InsertOp 1 [T.pack "a",T.pack "b",T.pack "c"] (T.pack "foo")]
 
             result <- testHandler $ do
@@ -539,7 +540,6 @@ diffDatabaseSuite = around prepareDatabase $ do
                     ik_base `shouldBe` 1
                     mid `shouldBe` (Just 1)
                     (all_diffops) `shouldBe` (diffChanges testDiff)
-
 
 testHandler :: RetconHandler PGStorage a -> IO (Either RetconError a)
 testHandler a = bracket setupConn closeConn run

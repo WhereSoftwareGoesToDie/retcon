@@ -426,7 +426,7 @@ putDiffOpIntoDb fk did diffOp = do
 
 -- | Get all diffs for a Document
 -- Use for displaying diffs
-getInitialDocumentDiffs :: forall store entity. (RetconStore store,RetconEntity entity)
+getInitialDocumentDiffs :: forall store entity. (RetconStore store, RetconEntity entity)
        => InternalKey entity
        -> RetconHandler store [Diff Int]
 getInitialDocumentDiffs ik = do
