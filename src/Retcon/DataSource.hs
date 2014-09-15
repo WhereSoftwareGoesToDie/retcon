@@ -15,6 +15,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE PolyKinds                  #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 
 module Retcon.DataSource where
 
@@ -83,12 +84,6 @@ class (KnownSymbol source, RetconEntity entity) => RetconDataSource entity sourc
     deleteDocument :: ForeignKey entity source
                    -> DataSourceAction ()
 
--- | The unique identifier used by the 'source' data source to refer to an
--- 'entity' it stores.
-newtype RetconDataSource entity source => ForeignKey entity source =
-    ForeignKey { unForeignKey :: String }
-  deriving (Eq, Ord, Show)
-
 -- * Wrapper types
 --
 -- $ 'Proxy' values for instances of our 'RetconEntity' and 'RetconDataSource'
@@ -127,3 +122,48 @@ runDataSourceAction =
     . runExceptT
     . unDataSourceAction
 
+-- * Keys
+--
+-- $ The various parts of retcon refer to documents using two types of key
+-- values: an 'InternalKey entity' identifies a 'Document' for a whole entity
+-- and a 'ForeignKey entity source' identifies a 'Document' in a particular
+-- data source.
+
+-- | The unique identifier used to identify a unique 'entity' document within
+-- retcon.
+newtype RetconEntity entity => InternalKey entity =
+    InternalKey { unInternalKey :: Int }
+  deriving (Eq, Ord, Show)
+
+-- | Extract the type-level information from an 'InternalKey'.
+--
+-- The pair contains the entity, and the key in that order.
+internalKeyValue :: forall entity. (RetconEntity entity)
+                 => InternalKey entity
+                 -> (String, Int)
+internalKeyValue (InternalKey key) =
+    let entity = symbolVal (Proxy :: Proxy entity)
+    in (entity, key)
+
+-- | The unique identifier used by the 'source' data source to refer to an
+-- 'entity' it stores.
+newtype RetconDataSource entity source => ForeignKey entity source =
+    ForeignKey { unForeignKey :: String }
+  deriving (Eq, Ord, Show)
+
+-- | Extract the type-level information from a 'ForeignKey'.
+--
+-- The triple contains the entity, data source, and key in that order.
+foreignKeyValue :: forall entity source. (RetconDataSource entity source)
+                => ForeignKey entity source
+                -> (String, String, String)
+foreignKeyValue (ForeignKey key) =
+    let entity = symbolVal (Proxy :: Proxy entity)
+        source = symbolVal (Proxy :: Proxy source)
+    in (entity, source, key)
+
+-- | Encode a 'ForeignKey' as a 'String'.
+encodeForeignKey :: forall entity source. (RetconDataSource entity source)
+                 => ForeignKey entity source
+                 -> String
+encodeForeignKey = show . foreignKeyValue

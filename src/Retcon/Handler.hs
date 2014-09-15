@@ -41,123 +41,13 @@ import Retcon.Document
 import Retcon.Error
 import Retcon.MergePolicy
 import Retcon.Monad
+import Retcon.Store (RetconStore)
+import qualified Retcon.Store as S
 import Retcon.Options
 
 -- | Check that two symbols are the same.
 same :: (KnownSymbol a, KnownSymbol b) => Proxy a -> Proxy b -> Bool
 same a b = isJust (sameSymbol a b)
-
--- | Extract the type-level information from a 'ForeignKey'.
---
--- The triple contains the entity, data source, and key in that order.
-foreignKeyValue :: forall entity source. (RetconDataSource entity source)
-                => ForeignKey entity source
-                -> (String, String, String)
-foreignKeyValue (ForeignKey key) =
-    let entity = symbolVal (Proxy :: Proxy entity)
-        source = symbolVal (Proxy :: Proxy source)
-    in (entity, source, key)
-
--- | Encode a 'ForeignKey' as a 'String'.
-encodeForeignKey :: forall entity source. (RetconDataSource entity source)
-                 => ForeignKey entity source
-                 -> String
-encodeForeignKey = show . foreignKeyValue
-
--- | The unique identifier used to identify a unique 'entity' document within
--- retcon.
-newtype RetconEntity entity => InternalKey entity =
-    InternalKey { unInternalKey :: Int }
-  deriving (Eq, Ord, Show)
-
--- | Extract the type-level information from an 'InternalKey'.
---
--- The pair contains the entity, and the key in that order.
-internalKeyValue :: forall entity. RetconEntity entity
-                 => InternalKey entity
-                 -> (String, Int)
-internalKeyValue (InternalKey key) =
-    let entity = symbolVal (Proxy :: Proxy entity)
-    in (entity, key)
-
--- | Create a new 'InternalKey' for an entity.
---
--- The new 'InternalKey' is recorded in the database.
-createInternalKey :: forall entity. (RetconEntity entity)
-                  => RetconHandler (InternalKey entity)
-createInternalKey = do
-    conn <- asks retconConnection
-    let entity = symbolVal (Proxy :: Proxy entity)
-
-    res <- liftIO $ query conn "INSERT INTO retcon (entity) VALUES (?) RETURNING id" (Only entity)
-
-    case res of
-        []  -> throwError $ RetconDBError "Cannot create new internal key."
-        (Only key:_) -> do
-            opt <- asks retconOptions
-            when (optVerbose opt) $ $logDebug $ "Created internal key"
-            return $ InternalKey key
-
--- | Translate a 'ForeignKey' to an 'InternalKey'
---
--- This involves looking for the specific @entity@, @source@, and 'ForeignKey'
--- in a translation table in the database.
-lookupInternalKey :: (RetconDataSource entity source)
-                  => ForeignKey entity source
-                  -> RetconHandler (Maybe (InternalKey entity))
-lookupInternalKey fk = do
-    conn <- asks retconConnection
-
-    (results :: [Only Int]) <- liftIO $ query conn "SELECT id FROM retcon_fk WHERE entity = ? AND source = ? AND fk = ? LIMIT 1" $ foreignKeyValue fk
-    case results of
-      Only key:_ -> return $ Just (InternalKey key)
-      []         -> return Nothing
-    -- If it exists, return it
-    -- Otherwise:
-    --     Allocate a new internal key.
-    --     Record it in the database.
-    --     Return it.
-
--- | Record a 'ForeignKey' associated with an 'InternalKey'.
-recordForeignKey :: forall entity source. (RetconDataSource entity source)
-                 => InternalKey entity
-                 -> ForeignKey entity source
-                 -> RetconHandler ()
-recordForeignKey ik fk = do
-    conn <- asks retconConnection
-    opt <- asks retconOptions
-
-    let (entity, source, fid) = foreignKeyValue fk
-    let (entity', iid) = internalKeyValue ik
-    let values = (entity, iid, source, fid)
-    let sql = "INSERT INTO retcon_fk (entity, id, source, fk) VALUES (?, ?, ?, ?)"
-
-    liftIO $ execute conn sql values
-    when (optVerbose opt) $ $logDebug $ T.pack $ concat
-        [ "Recorded "
-        , show fk
-        , " for "
-        , show ik
-        ]
-
-    return ()
-
--- | Resolve the 'ForeignKey' associated with an 'InternalKey' for a given data
--- source.
-lookupForeignKey :: forall entity source. (RetconDataSource entity source)
-                 => InternalKey entity
-                 -> RetconHandler (Maybe (ForeignKey entity source))
-lookupForeignKey (InternalKey key) = do
-    conn <- asks retconConnection
-
-    let entity = symbolVal (Proxy :: Proxy entity)
-    let source = symbolVal (Proxy :: Proxy source)
-
-    (results::[Only String]) <- liftIO $ query conn "SELECT fk FROM retcon_fk WHERE entity = ? AND source = ? AND id = ?" (entity, source, key)
-
-    return $ case results of
-        Only key:_ -> Just (ForeignKey key :: ForeignKey entity source)
-        []         -> Nothing
 
 -- | Operations to be performed in response to data source events.
 data RetconOperation entity source =
@@ -179,9 +69,9 @@ instance Eq (RetconOperation entity source) where
 --
 -- This function should be able to return a 'RetconProblem' value, but currently
 -- doesn't.
-determineOperation :: (RetconDataSource entity source)
+determineOperation :: (RetconStore s, RetconDataSource entity source)
                    => ForeignKey entity source
-                   -> RetconHandler (RetconOperation entity source)
+                   -> RetconHandler s (RetconOperation entity source)
 determineOperation fk = do
     ik' <- lookupInternalKey fk
     doc' <- join . first RetconError <$> tryAny
@@ -193,9 +83,9 @@ determineOperation fk = do
         (Just ik, Right _) -> RetconUpdate ik
 
 -- | Perform the action/s described by a 'RetconOperation' value.
-runOperation :: (RetconDataSource entity source)
+runOperation :: (RetconStore store, RetconDataSource entity source)
              => RetconOperation entity source
-             -> RetconHandler ()
+             -> RetconHandler store ()
 runOperation event =
     case event of
         RetconCreate  fk -> create fk
@@ -204,7 +94,7 @@ runOperation event =
         RetconProblem fk err -> reportError fk err
 
 -- | Parse a request string and handle an event.
-dispatch :: String -> RetconHandler ()
+dispatch :: RetconStore store => String -> RetconHandler store ()
 dispatch work = do
     let (entity_str, source_str, key) = read work :: (String, String, String)
     entities <- asks (retconEntities . retconConfig)
@@ -218,22 +108,23 @@ dispatch work = do
                           when (same source sp) (process fk)
 
 -- | Run the retcon process on an event.
-retcon :: RetconOptions
+retcon :: RetconStore s
+       => RetconOptions
        -> RetconConfig
-       -> Connection
+       -> s
        -> String -- ^ Key to use.
        -> IO (Either RetconError ())
-retcon opts config conn key = do
-    runRetconHandler opts config conn . dispatch $ key
+retcon opts config store key = do
+    runRetconHandler opts config store . dispatch $ key
 
 -- | Process an event on a specified 'ForeignKey'.
 --
 -- This function is responsible for determining the type of event which has
 -- occured and invoking the correct 'RetconDataSource' actions and retcon
 -- algorithms to handle it.
-process :: forall entity source. (RetconDataSource entity source)
+process :: forall store entity source. (RetconStore store, RetconDataSource entity source)
         => ForeignKey entity source
-        -> RetconHandler ()
+        -> RetconHandler store ()
 process fk = do
     $logDebug . T.pack . concat $ [ "EVENT against ", show $ length sources
                                   , " sources"
@@ -244,15 +135,16 @@ process fk = do
     sources = entitySources (Proxy :: Proxy entity)
 
 -- | Process a creation event.
-create :: forall entity source. (RetconDataSource entity source)
+create :: forall store entity source. (RetconStore store, RetconDataSource entity source)
        => ForeignKey entity source
-       -> RetconHandler ()
+       -> RetconHandler store ()
 create fk = do
+    store <- asks retconStore
     $logDebug "CREATE"
 
     -- Allocate a new InternalKey to represent this entity.
-    ik <- createInternalKey
-    recordForeignKey ik fk
+    ik <- liftIO $ S.createInternalKey store
+    liftIO $ S.recordForeignKey store ik fk
 
     -- Use the new Document as the initial document.
     doc' <- join . first RetconError <$> tryAny (liftIO $ runDataSourceAction $ getDocument fk)
@@ -267,9 +159,9 @@ create fk = do
     return ()
 
 -- | Process a deletion event.
-delete :: (RetconEntity entity)
+delete :: (RetconStore store, RetconEntity entity)
        => InternalKey entity
-       -> RetconHandler ()
+       -> RetconHandler store ()
 delete ik = do
     $logDebug "DELETE"
 
@@ -282,9 +174,9 @@ delete ik = do
     deleteState ik
 
 -- | Process an update event.
-update :: RetconEntity entity
+update :: (RetconStore store, RetconEntity entity)
        => InternalKey entity
-       -> RetconHandler ()
+       -> RetconHandler store ()
 update ik = do
     $logDebug "UPDATE"
 
@@ -322,7 +214,7 @@ update ik = do
 reportError :: (RetconDataSource entity source)
             => ForeignKey entity source
             -> RetconError
-            -> RetconHandler ()
+            -> RetconHandler store ()
 reportError fk err = do
     $logError . T.pack . concat $ [ "Could not process event for "
                                   , show . foreignKeyValue $ fk
@@ -331,11 +223,16 @@ reportError fk err = do
                                   ]
     return ()
 
+-- * Data source wrappers
+--
+-- $ These actions wrap the operations for a single data source and apply them
+-- lists of arbitrary data sources.
+
 -- | Get 'Document's corresponding to an 'InternalKey' for all sources for an
 -- entity.
-getDocuments :: forall entity. (RetconEntity entity)
+getDocuments :: forall store entity. (RetconStore store, RetconEntity entity)
              => InternalKey entity
-             -> RetconHandler [Either RetconError Document]
+             -> RetconHandler store [Either RetconError Document]
 getDocuments ik =
     forM (entitySources (Proxy :: Proxy entity)) $
         \(SomeDataSource (Proxy :: Proxy source)) ->
@@ -352,10 +249,10 @@ getDocuments ik =
 
 -- | Set 'Document's corresponding to an 'InternalKey' for all sources for an
 -- entity.
-setDocuments :: forall entity. (RetconEntity entity)
+setDocuments :: forall store entity. (RetconStore store, RetconEntity entity)
              => InternalKey entity
              -> [Document]
-             -> RetconHandler [Either RetconError ()]
+             -> RetconHandler store [Either RetconError ()]
 setDocuments ik docs =
     forM (zip docs (entitySources (Proxy :: Proxy entity))) $
         \(doc, SomeDataSource (Proxy :: Proxy source)) ->
@@ -371,9 +268,9 @@ setDocuments ik docs =
             )
 
 -- | Delete a document.
-deleteDocuments :: forall entity. (RetconEntity entity)
+deleteDocuments :: forall store entity. (RetconStore store, RetconEntity entity)
                 => InternalKey entity
-                -> RetconHandler [Either RetconError ()]
+                -> RetconHandler store [Either RetconError ()]
 deleteDocuments ik =
     forM (entitySources (Proxy :: Proxy entity)) $
         \(SomeDataSource (Proxy :: Proxy source)) ->
@@ -384,10 +281,15 @@ deleteDocuments ik =
                     Just fk -> liftIO $ runDataSourceAction $ deleteDocument fk
             )
 
+-- * Storage backend wrappers
+--
+-- $ These actions wrap the data storage backend operations and lift them into
+-- the RetconHandler monad.
+
 -- | Delete the internal state associated with an 'InternalKey'.
-deleteState :: forall entity. (RetconEntity entity)
+deleteState :: forall store entity. (RetconStore store, RetconEntity entity)
             => InternalKey entity
-            -> RetconHandler ()
+            -> RetconHandler store ()
 deleteState ik = do
     let key = T.pack . show . internalKeyValue $ ik
     opt <- asks retconOptions
@@ -408,61 +310,82 @@ deleteState ik = do
 
     return ()
 
--- | Fetch the initial document, if any, last used for an 'InternalKey'.
-getInitialDocument :: forall entity. (RetconEntity entity)
-       => InternalKey entity
-       -> RetconHandler (Maybe Document)
-getInitialDocument ik = do
-    conn <- asks retconConnection
+createInternalKey :: (RetconStore store, RetconEntity entity)
+                  => RetconHandler store (InternalKey entity)
+createInternalKey = do
+    store <- asks retconStore
+    liftIO $ S.createInternalKey store
 
-    results <- liftIO $ query conn selectQ (internalKeyValue ik)
-    case results of
-        Only v:_ ->
-          case fromJSON v of
-            Error err   -> return Nothing
-            Success doc -> return (Just doc)
-        []       -> return Nothing
-    where
-        selectQ = "SELECT document FROM retcon_initial WHERE entity = ? AND id = ?"
+lookupInternalKey :: (RetconStore store, RetconDataSource entity source)
+                  => ForeignKey entity source
+                  -> RetconHandler store (Maybe (InternalKey entity))
+lookupInternalKey fk = do
+    store <- asks retconStore
+    liftIO $ S.lookupInternalKey store fk
+
+recordForeignKey :: (RetconStore store, RetconDataSource entity source)
+                 => InternalKey entity
+                 -> ForeignKey entity source
+                 -> RetconHandler store ()
+recordForeignKey ik fk = do
+    store <- asks retconStore
+    liftIO $ S.recordForeignKey store ik fk
+    return ()
+
+lookupForeignKey :: (RetconStore store, RetconDataSource entity source)
+                 => InternalKey entity
+                 -> RetconHandler store (Maybe (ForeignKey entity source))
+lookupForeignKey ik = do
+    store <- asks retconStore
+    liftIO $ S.lookupForeignKey store ik
+
+-- | Fetch the initial document, if any, last used for an 'InternalKey'.
+getInitialDocument :: forall store entity. (RetconStore store, RetconEntity entity)
+       => InternalKey entity
+       -> RetconHandler store (Maybe Document)
+getInitialDocument ik = do
+    store <- asks retconStore
+    liftIO $ S.lookupInitialDocument store ik
 
 -- | Write the initial document associated with an 'InternalKey' to the database.
-putInitialDocument :: forall entity. (RetconEntity entity)
+putInitialDocument :: forall store entity. (RetconStore store, RetconEntity entity)
         => InternalKey entity
         -> Document
-        -> RetconHandler ()
+        -> RetconHandler store ()
 putInitialDocument ik doc = do
-    conn <- asks retconConnection
-
-    let (entity, ikValue) = internalKeyValue ik
-    void $ liftIO $ execute conn upsertQ (entity, ikValue, ikValue, entity, toJSON doc)
-    where
-        upsertQ = "BEGIN; DELETE FROM retcon_initial WHERE entity = ? AND id = ?; INSERT INTO retcon_initial (id, entity, document) values (?, ?, ?); COMMIT;"
+    store <- asks retconStore
+    liftIO $ S.recordInitialDocument store ik doc
 
 -- | Delete the initial document for an 'InternalKey'.
-deleteInitialDocument :: forall entity. (RetconEntity entity)
+deleteInitialDocument :: forall store entity. (RetconStore store, RetconEntity entity)
         => InternalKey entity
-        -> RetconHandler ()
+        -> RetconHandler store ()
 deleteInitialDocument ik = do
-    conn <- asks retconConnection
-    void $ liftIO $ execute conn deleteQ (internalKeyValue ik)
-    where
-        deleteQ = "DELETE FROM retcon_initial WHERE entity = ? AND id = ?"
+    store <- asks retconStore
+    liftIO $ S.deleteInitialDocument store ik
 
+deleteForeignKeys :: (RetconStore store, RetconEntity entity)
+                  => InternalKey entity
+                  -> RetconHandler store ()
 deleteForeignKeys ik = do
-    conn <- asks retconConnection
-    liftIO $ execute conn "DELETE FROM retcon_fk WHERE entity = ? AND id = ?" $ internalKeyValue ik
+    store <- asks retconStore
+    liftIO $ S.deleteForeignKeys store ik
 
+deleteInternalKey :: (RetconStore store, RetconEntity entity)
+                  => InternalKey entity
+                  -> RetconHandler store ()
 deleteInternalKey ik = do
-    conn <- asks retconConnection
-    liftIO $ execute conn "DELETE FROM retcon WHERE entity = ? AND id = ?" $ internalKeyValue ik
+    store <- asks retconStore
+    liftIO $ S.deleteInternalKey store ik
 
 -- | Insert a diff into the database
-putDiffIntoDb :: forall l entity source. (RetconDataSource entity source, ToJSON l, Show l)
+putDiffIntoDb :: forall store l entity source. (RetconStore store, RetconDataSource entity source, ToJSON l, Show l)
        => ForeignKey entity source
        -> Diff l
-       -> RetconHandler (Maybe Int)
+       -> RetconHandler store (Maybe Int)
 putDiffIntoDb fk (Diff _ diffOps) = do
-    conn <- asks retconConnection
+    -- conn <- asks retconConnection
+    let conn = undefined
     ik <- lookupInternalKey fk
     case ik of
         Nothing  -> return Nothing
@@ -483,13 +406,14 @@ packDiffInsertParams (entity, source, _) ik = (entity, source, show $ docId ik)
         docId i = snd $ internalKeyValue i
 
 -- | Insert a single DiffOp into the database
-putDiffOpIntoDb :: forall l entity source. (RetconDataSource entity source, ToJSON l, Show l)
+putDiffOpIntoDb :: forall store l entity source. (RetconStore store, RetconDataSource entity source, ToJSON l, Show l)
        => ForeignKey entity source
        -> Int
        -> DiffOp l
-       -> RetconHandler ()
+       -> RetconHandler store ()
 putDiffOpIntoDb fk did diffOp = do
-    conn <- asks retconConnection
+    -- conn <- asks retconConnection
+    let conn = undefined
     ik <- lookupInternalKey fk
     case ik of
         Nothing  -> error "No internal key"
@@ -502,11 +426,12 @@ putDiffOpIntoDb fk did diffOp = do
 
 -- | Get all diffs for a Document
 -- Use for displaying diffs
-getInitialDocumentDiffs :: forall entity. (RetconEntity entity)
+getInitialDocumentDiffs :: forall store entity. (RetconStore store, RetconEntity entity)
        => InternalKey entity
-       -> RetconHandler [Diff Int]
+       -> RetconHandler store [Diff Int]
 getInitialDocumentDiffs ik = do
-    conn <- asks retconConnection
+    -- conn <- asks retconConnection
+    let conn = undefined
     (results :: [Only Int]) <- liftIO $ query conn selectQ (internalKeyValue ik)
     let ids = map fromOnly results
     let rawDiffs = map (\d -> Diff d []) ids
@@ -516,16 +441,17 @@ getInitialDocumentDiffs ik = do
 
 -- | Build a Diff object from a Diff ID
 -- Use for displaying diffs
-completeDiff :: Diff Int -> RetconHandler (Diff Int)
+completeDiff :: (RetconStore store) => Diff Int -> RetconHandler store (Diff Int)
 completeDiff (Diff diff_id _) = do
     diffOps <- getDbDiffOps diff_id
     return $ Diff diff_id diffOps
 
 -- | Get DiffOp objects belonging to a Diff ID
 -- Use for displaying diffs
-getDbDiffOps :: (FromJSON l) => Int -> RetconHandler [DiffOp l]
+getDbDiffOps :: (RetconStore store, FromJSON l) => Int -> RetconHandler store [DiffOp l]
 getDbDiffOps diff_id = do
-    conn <- asks retconConnection
+    -- conn <- asks retconConnection
+    let conn = undefined
     (results :: [Only Value]) <- liftIO $ query conn selectQ (Only diff_id)
     return . catMaybes . map (constructDiffOpFromDb . fromOnly) $ results
     where

@@ -35,6 +35,7 @@ import Retcon.DataSource
 import Retcon.DataSource.JsonDirectory
 import Retcon.Handler
 import Retcon.Options
+import Retcon.Store.PostgreSQL
 
 -- * Entity definitions
 
@@ -155,6 +156,6 @@ main = do
 
     let (entity:source:key:_) = optArgs
 
-    res <- retcon opts cfg conn $ show (entity, source, key)
+    res <- retcon opts cfg (PGStore conn) $ show (entity, source, key)
     print res
 
