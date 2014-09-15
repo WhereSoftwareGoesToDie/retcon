@@ -71,26 +71,27 @@ optionsParser RetconOptions{..} =
                   <*> parseDB
                   <*> parseID
   where
+    parseVerbose :: O.Parser Bool
     parseVerbose = switch $
            long "verbose"
         <> short 'v'
         <> help "Produce verbose output"
-    parseDB = nullOption $
+    parseDB :: O.Parser ByteString
+    parseDB = O.option (return . BS.pack) $
            long "db"
         <> short 'd'
         <> metavar "DATABASE"
-        <> value optDB
+        <> O.value optDB
         <> showDefault
         <> help "PostgreSQL connection string"
-        <> reader (return . BS.pack)
-    parseLogging = nullOption $
+    parseLogging :: O.Parser Logging
+    parseLogging = O.option readLog $
            long "log"
         <> short 'l'
         <> metavar "stderr|stdout|none"
         <> help "Log messages to an output"
-        <> value optLogging
+        <> O.value optLogging
         <> showDefault
-        <> reader readLog
     parseID = (\x y z -> [x,y,z])
         <$> argument (return . T.pack) (metavar "ENTITY")
         <*> argument (return . T.pack) (metavar "SOURCE")
