@@ -41,9 +41,9 @@ import Retcon.Document
 import Retcon.Error
 import Retcon.MergePolicy
 import Retcon.Monad
+import Retcon.Options
 import Retcon.Store (RetconStore)
 import qualified Retcon.Store as S
-import Retcon.Options
 
 -- | Check that two symbols are the same.
 same :: (KnownSymbol a, KnownSymbol b) => Proxy a -> Proxy b -> Bool
@@ -70,12 +70,13 @@ instance Eq (RetconOperation entity source) where
 -- This function should be able to return a 'RetconProblem' value, but currently
 -- doesn't.
 determineOperation :: (RetconStore s, RetconDataSource entity source)
-                   => ForeignKey entity source
+                   => DataSourceState entity source
+                   -> ForeignKey entity source
                    -> RetconHandler s (RetconOperation entity source)
-determineOperation fk = do
+determineOperation state fk = do
     ik' <- lookupInternalKey fk
     doc' <- join . first RetconError <$> tryAny
-        (liftIO . runDataSourceAction $ getDocument fk)
+        (liftIO . runDataSourceAction state $ getDocument fk)
     return $ case (ik', doc') of
         (Nothing, Left  _) -> RetconProblem fk (RetconSourceError "Unknown key, no document")
         (Nothing, Right _) -> RetconCreate fk
@@ -84,14 +85,15 @@ determineOperation fk = do
 
 -- | Perform the action/s described by a 'RetconOperation' value.
 runOperation :: (RetconStore store, RetconDataSource entity source)
-             => RetconOperation entity source
+             => DataSourceState entity source
+             -> RetconOperation entity source
              -> RetconHandler store ()
-runOperation event =
+runOperation state event =
     case event of
-        RetconCreate  fk -> create fk
-        RetconDelete  ik -> delete ik
-        RetconUpdate  ik -> update ik
-        RetconProblem fk err -> reportError fk err
+        RetconCreate  fk -> create state fk
+        RetconDelete  ik -> delete state ik
+        RetconUpdate  ik -> update state ik
+        RetconProblem fk err -> reportError state fk err
 
 -- | Parse a request string and handle an event.
 dispatch :: RetconStore store => String -> RetconHandler store ()
@@ -123,22 +125,24 @@ retcon opts config store key = do
 -- occured and invoking the correct 'RetconDataSource' actions and retcon
 -- algorithms to handle it.
 process :: forall store entity source. (RetconStore store, RetconDataSource entity source)
-        => ForeignKey entity source
+        => DataSourceState entity source
+        -> ForeignKey entity source
         -> RetconHandler store ()
-process fk = do
+process state fk = do
     $logDebug . T.pack . concat $ [ "EVENT against ", show $ length sources
                                   , " sources"
                                   ]
 
-    determineOperation fk >>= runOperation
+    determineOperation state fk >>= runOperation state
   where
     sources = entitySources (Proxy :: Proxy entity)
 
 -- | Process a creation event.
 create :: forall store entity source. (RetconStore store, RetconDataSource entity source)
-       => ForeignKey entity source
+       => DataSourceState entity source
+       -> ForeignKey entity source
        -> RetconHandler store ()
-create fk = do
+create state fk = do
     store <- asks retconStore
     $logDebug "CREATE"
 
@@ -147,7 +151,7 @@ create fk = do
     liftIO $ S.recordForeignKey store ik fk
 
     -- Use the new Document as the initial document.
-    doc' <- join . first RetconError <$> tryAny (liftIO $ runDataSourceAction $ getDocument fk)
+    doc' <- join . first RetconError <$> tryAny (liftIO $ runDataSourceAction state $ getDocument fk)
 
     case doc' of
         Left _ -> do
@@ -160,9 +164,10 @@ create fk = do
 
 -- | Process a deletion event.
 delete :: (RetconStore store, RetconEntity entity)
-       => InternalKey entity
+       => state
+       -> InternalKey entity
        -> RetconHandler store ()
-delete ik = do
+delete state ik = do
     $logDebug "DELETE"
 
     -- Delete from data sources.
@@ -175,9 +180,10 @@ delete ik = do
 
 -- | Process an update event.
 update :: (RetconStore store, RetconEntity entity)
-       => InternalKey entity
+       => state
+       -> InternalKey entity
        -> RetconHandler store ()
-update ik = do
+update state ik = do
     $logDebug "UPDATE"
 
     -- Fetch documents.
@@ -212,10 +218,11 @@ update ik = do
 -- | Report an error in determining the operation, communicating with the data
 -- source or similar.
 reportError :: (RetconDataSource entity source)
-            => ForeignKey entity source
+            => state
+            -> ForeignKey entity source
             -> RetconError
             -> RetconHandler store ()
-reportError fk err = do
+reportError state fk err = do
     $logError . T.pack . concat $ [ "Could not process event for "
                                   , show . foreignKeyValue $ fk
                                   , ". "
@@ -243,7 +250,7 @@ getDocuments ik =
                 -- If there was a key, use it to fetch the document.
                 case mkey of
                     Just (fk :: ForeignKey entity source) ->
-                        liftIO . runDataSourceAction $ getDocument fk
+                        liftIO . runDataSourceAction () $ getDocument fk
                     Nothing ->
                         return . Left $ RetconFailed)
 

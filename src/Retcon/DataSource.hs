@@ -16,17 +16,15 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeFamilies               #-}
 
 module Retcon.DataSource where
 
 import Control.Applicative
-import Control.Exception
-import Control.Exception.Enclosed
 import Control.Monad.Base
 import Control.Monad.Except
 import Control.Monad.Logger
 import Control.Monad.Reader
-import Control.Monad.Trans.Control
 import Data.Proxy
 import GHC.TypeLits
 
@@ -58,6 +56,22 @@ class (KnownSymbol entity) => RetconEntity entity where
 -- 'Document' values of the appropriate sort from the external system.
 class (KnownSymbol source, RetconEntity entity) => RetconDataSource entity source where
 
+    -- | Type of state used by the data source.
+    type DataSourceState entity source
+
+    -- | Initialise the state to be used by the data source.
+    --
+    -- This is called during startup to, for example, open a connection to a
+    -- datasource-specific database server.
+    initialiseState :: DataSourceAction () (DataSourceState entity source)
+
+    -- | Finalise the state used by the data source.
+    --
+    -- This is called during a clean shutdown to, for example, cleanly close a
+    -- database connection, etc.
+    finaliseState :: (DataSourceState entity source)
+                  -> DataSourceAction () ()
+
     -- | Put a document into a data source.
     --
     -- If the 'ForeignKey' is not known, it will be omitted and the data source
@@ -68,21 +82,21 @@ class (KnownSymbol source, RetconEntity entity) => RetconDataSource entity sourc
     -- monad.
     setDocument :: Document
                 -> Maybe (ForeignKey entity source)
-                -> DataSourceAction (ForeignKey entity source)
+                -> DataSourceAction (DataSourceState entity source) (ForeignKey entity source)
 
     -- | Retrieve a document from a data source.
     --
     -- If the document cannot be retrieved an error is returned in the 'Retcon'
     -- monad.
     getDocument :: ForeignKey entity source
-                -> DataSourceAction Document
+                -> DataSourceAction (DataSourceState entity source) Document
 
     -- | Delete a document from a data source.
     --
     -- If the document cannot be deleted an error is returned in the 'Retcon'
     -- monad.
     deleteDocument :: ForeignKey entity source
-                   -> DataSourceAction ()
+                   -> DataSourceAction (DataSourceState entity source) ()
 
 -- * Wrapper types
 --
@@ -102,24 +116,26 @@ data SomeDataSource e = forall s. RetconDataSource e s => SomeDataSource (Proxy 
 -- implemented in the 'DataSourceAction' monad.
 
 -- | Monad transformer stack used in the 'DataSourceAction' monad.
-type DataSourceActionStack = ExceptT RetconError (LoggingT IO)
+type DataSourceActionStack s = ReaderT s (ExceptT RetconError (LoggingT IO))
 
 -- | Monad for interactions with data sources.
 --
 -- This monad provides error handling, logging, and I/O facilities.
-newtype DataSourceAction a =
+newtype DataSourceAction s a =
     DataSourceAction {
-        unDataSourceAction :: DataSourceActionStack a
+        unDataSourceAction :: DataSourceActionStack s a
     }
   deriving (Functor, Applicative, Monad, MonadBase IO, MonadIO, MonadLogger,
   MonadError RetconError)
 
 -- | Run a 'DataSourceAction' action.
-runDataSourceAction :: DataSourceAction a
+runDataSourceAction :: state
+                    -> DataSourceAction state a
                     -> IO (Either RetconError a)
-runDataSourceAction =
+runDataSourceAction s =
     runStderrLoggingT
     . runExceptT
+    . flip runReaderT s
     . unDataSourceAction
 
 -- * Keys

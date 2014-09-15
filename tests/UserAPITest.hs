@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PolyKinds             #-}
+{-# LANGUAGE TypeFamilies          #-}
 
 module Main where
 
@@ -37,6 +38,13 @@ instance RetconEntity "customer" where
         ]
 
 instance RetconDataSource "customer" "data" where
+
+    type DataSourceState "customer" "data" = ()
+
+    initialiseState = return ()
+
+    finaliseState () = return ()
+
     getDocument key = liftIO $ do
         res <- getJsonDirDocument customerDataPath key
         either (error . show) return res
@@ -53,6 +61,13 @@ instance RetconDataSource "customer" "data" where
         either (error . show) return res
 
 instance RetconDataSource "customer" "test-results" where
+
+    type DataSourceState "customer" "test-results" = ()
+
+    initialiseState = return ()
+
+    finaliseState () = return ()
+
     getDocument key = liftIO $ do
         res <- getJsonDirDocument customerTestResultsPath key
         either (error . show) return res

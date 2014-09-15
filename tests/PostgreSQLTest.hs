@@ -12,6 +12,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE PolyKinds             #-}
+{-# LANGUAGE TypeFamilies          #-}
 
 module Main where
 
@@ -34,6 +35,13 @@ instance RetconEntity "customer" where
         ]
 
 instance RetconDataSource "customer" "db1" where
+
+    type DataSourceState "customer" "db1" = ()
+
+    initialiseState = return ()
+
+    finaliseState () = return ()
+
     getDocument key = liftIO $ do
         res <- getPgDocument sourceDb key
         either (error . show) return res
@@ -50,6 +58,14 @@ instance RetconDataSource "customer" "db1" where
         either (error . show) return res
 
 instance RetconDataSource "customer" "db2" where
+
+    type DataSourceState "customer" "db2" = ()
+
+    initialiseState = return ()
+
+    finaliseState () = return ()
+
+
     getDocument key = liftIO $ do
         res <- getPgDocument targetDb key
         either (error . show) return res

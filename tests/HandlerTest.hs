@@ -13,6 +13,7 @@
 {-# LANGUAGE OverloadedLists       #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeFamilies          #-}
 
 module Main where
 
@@ -90,7 +91,7 @@ newTestDocument n doc' ref = do
 deleteDocumentIORef :: (RetconDataSource entity source)
                     => IORef (Map Text Value)
                     -> ForeignKey entity source
-                    -> DataSourceAction ()
+                    -> DataSourceAction (DataSourceState entity source) ()
 deleteDocumentIORef ref (ForeignKey fk') = do
     let k = T.pack fk'
     liftIO $ atomicModifyIORef ref (\m -> (M.delete k m, ()))
@@ -100,7 +101,7 @@ setDocumentIORef :: (RetconDataSource entity source)
                  -> IORef (Map Text Value)
                  -> Document
                  -> Maybe (ForeignKey entity source)
-                 -> DataSourceAction (ForeignKey entity source)
+                 -> DataSourceAction (DataSourceState entity source) (ForeignKey entity source)
 setDocumentIORef name ref doc (Nothing) = do
     k <- liftIO $ atomicModifyIORef ref
         (\m -> let k = T.pack $ name ++ (show . M.size $ m)
@@ -116,7 +117,7 @@ setDocumentIORef name ref doc (Just (ForeignKey fk')) = do
 getDocumentIORef :: (RetconDataSource entity source)
                  => IORef (Map Text Value)
                  -> ForeignKey entity source
-                 -> DataSourceAction Document
+                 -> DataSourceAction (DataSourceState entity source) Document
 getDocumentIORef ref (ForeignKey fk') = do
     let key = T.pack fk'
     doc' <- liftIO $ atomicModifyIORef ref
@@ -137,6 +138,13 @@ instance RetconEntity "dispatchtest" where
                       ]
 
 instance RetconDataSource "dispatchtest" "dispatch1" where
+
+    type DataSourceState "dispatchtest" "dispatch1" = ()
+
+    initialiseState = return ()
+
+    finaliseState () = return ()
+
     getDocument = getDocumentIORef dispatch1Data
 
     setDocument = setDocumentIORef "dispatch1-" dispatch1Data
@@ -144,6 +152,13 @@ instance RetconDataSource "dispatchtest" "dispatch1" where
     deleteDocument = deleteDocumentIORef dispatch1Data
 
 instance RetconDataSource "dispatchtest" "dispatch2" where
+
+    type DataSourceState "dispatchtest" "dispatch2" = ()
+
+    initialiseState = return ()
+
+    finaliseState () = return ()
+
     getDocument = getDocumentIORef dispatch2Data
 
     setDocument = setDocumentIORef "dispatch2-" dispatch2Data
@@ -450,6 +465,11 @@ instance RetconEntity "alicorn_invoice" where
     entitySources _ = [ SomeDataSource (Proxy :: Proxy "alicorn_source") ]
 
 instance RetconDataSource "alicorn_invoice" "alicorn_source" where
+
+    type DataSourceState "alicorn_invoice" "alicorn_source" = ()
+    initialiseState = return ()
+    finaliseState () = return ()
+
     getDocument key = error "We're not calling this"
     setDocument doc key = error "We're not calling this"
     deleteDocument key = error "We're not calling this"
