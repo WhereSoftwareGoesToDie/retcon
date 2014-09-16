@@ -139,11 +139,11 @@ instance RetconEntity "dispatchtest" where
 
 instance RetconDataSource "dispatchtest" "dispatch1" where
 
-    type DataSourceState "dispatchtest" "dispatch1" = ()
+    data DataSourceState "dispatchtest" "dispatch1" = Dispatch1
 
-    initialiseState = return ()
+    initialiseState = return Dispatch1
 
-    finaliseState () = return ()
+    finaliseState Dispatch1 = return ()
 
     getDocument = getDocumentIORef dispatch1Data
 
@@ -153,11 +153,11 @@ instance RetconDataSource "dispatchtest" "dispatch1" where
 
 instance RetconDataSource "dispatchtest" "dispatch2" where
 
-    type DataSourceState "dispatchtest" "dispatch2" = ()
+    data DataSourceState "dispatchtest" "dispatch2" = Dispatch2
 
-    initialiseState = return ()
+    initialiseState = return Dispatch2
 
-    finaliseState () = return ()
+    finaliseState Dispatch2 = return ()
 
     getDocument = getDocumentIORef dispatch2Data
 
@@ -179,12 +179,15 @@ operationSuite = around (prepareDatabase . prepareDispatchSuite) $ do
             -- database tables empty.
             (fk', doc) <- newTestDocument "dispatch1-" Nothing dispatch1Data
             let fk = ForeignKey (T.unpack fk') :: ForeignKey "dispatchtest" "dispatch1"
-            op <- run opt $ determineOperation fk
+            state <- initialiseState
+            op <- run opt $ determineOperation state fk
             op `shouldBe` (Right $ RetconCreate fk)
 
         it "should result in an error when new key is seen, but no document." $ do
             let fk = ForeignKey "this is new" :: ForeignKey "dispatchtest" "dispatch1"
-            op <- run opt $ determineOperation fk
+            state <- initialiseState
+            op <- run opt $ determineOperation state fk
+            finaliseState state
             op `shouldBe` (Right $ RetconProblem fk RetconFailed)
 
         it "should result in a update when old key is seen, with document." $
@@ -200,7 +203,9 @@ operationSuite = around (prepareDatabase . prepareDispatchSuite) $ do
                 let ik = InternalKey ik' :: InternalKey "dispatchtest"
 
                 -- Determine the operation to perform.
-                op <- run opt $ determineOperation fk
+                state <- initialiseState
+                op <- run opt $ determineOperation state fk
+                finaliseState state
                 op `shouldBe` (Right $ RetconUpdate ik)
 
         it "should result in a delete when old key is seen, but no document." $
@@ -214,7 +219,9 @@ operationSuite = around (prepareDatabase . prepareDispatchSuite) $ do
 
                 let fk = ForeignKey fk1 :: ForeignKey "dispatchtest" "dispatch1"
                 let ik = InternalKey ik' :: InternalKey "dispatchtest"
-                op <- run opts $ determineOperation fk
+                state <- initialiseState
+                op <- run opts $ determineOperation state fk
+                finaliseState state
                 op `shouldBe` (Right $ RetconDelete ik)
 
     describe "Evaluating operations" $ do
@@ -224,7 +231,10 @@ operationSuite = around (prepareDatabase . prepareDispatchSuite) $ do
                 let fk = ForeignKey (T.unpack fk')
 
                 let op = RetconCreate fk :: RetconOperation "dispatchtest" "dispatch1"
-                res <- run opt $ runOperation op
+
+                state <- initialiseState
+                res <- run opt $ runOperation state op
+                finaliseState state
 
                 [Only (n_ik :: Int)] <- query_ conn "SELECT COUNT(*) FROM retcon"
                 [Only (n_fk :: Int)] <- query_ conn "SELECT COUNT(*) FROM retcon_fk"
@@ -236,7 +246,10 @@ operationSuite = around (prepareDatabase . prepareDispatchSuite) $ do
                 (fk', _) <- newTestDocument "dispatch1-" Nothing dispatch1Data
                 let fk = ForeignKey (T.unpack fk')
                 let op = RetconProblem fk (RetconUnknown "Testing error reporting.") :: RetconOperation "dispatchtest" "dispatch1"
-                res <- run opt $ runOperation op
+
+                state <- initialiseState
+                res <- run opt $ runOperation state op
+                finaliseState state
                 res `shouldBe` (Right ())
 
         it "should process an update operation." $
@@ -259,7 +272,9 @@ operationSuite = around (prepareDatabase . prepareDispatchSuite) $ do
 
                 -- Perform the operation.
                 let op = RetconUpdate ik :: RetconOperation "dispatchtest" "dispatch1"
-                res <- run opt $ runOperation op
+                state <- initialiseState
+                res <- run opt $ runOperation state op
+                finaliseState state
 
                 -- Check the things.
                 d1 <- readIORef dispatch1Data
@@ -282,7 +297,9 @@ operationSuite = around (prepareDatabase . prepareDispatchSuite) $ do
 
                 -- Perform the operation.
                 let op = RetconDelete ik :: RetconOperation "dispatchtest" "dispatch1"
-                res <- run opt $ runOperation op
+                state <- initialiseState
+                res <- run opt $ runOperation state op
+                finaliseState state
 
                 -- Check the things.
                 d1 <- readIORef dispatch1Data
@@ -466,9 +483,10 @@ instance RetconEntity "alicorn_invoice" where
 
 instance RetconDataSource "alicorn_invoice" "alicorn_source" where
 
-    type DataSourceState "alicorn_invoice" "alicorn_source" = ()
-    initialiseState = return ()
-    finaliseState () = return ()
+    data DataSourceState "alicorn_invoice" "alicorn_source" = Alicorn
+
+    initialiseState = return Alicorn
+    finaliseState Alicorn = return ()
 
     getDocument key = error "We're not calling this"
     setDocument doc key = error "We're not calling this"

@@ -39,11 +39,11 @@ instance RetconEntity "customer" where
 
 instance RetconDataSource "customer" "data" where
 
-    type DataSourceState "customer" "data" = ()
+    data DataSourceState "customer" "data" = Nowt
 
-    initialiseState = return ()
+    initialiseState = return Nowt
 
-    finaliseState () = return ()
+    finaliseState Nowt = return ()
 
     getDocument key = liftIO $ do
         res <- getJsonDirDocument customerDataPath key
@@ -62,11 +62,11 @@ instance RetconDataSource "customer" "data" where
 
 instance RetconDataSource "customer" "test-results" where
 
-    type DataSourceState "customer" "test-results" = ()
+    data DataSourceState "customer" "test-results" = Blarg
 
-    initialiseState = return ()
+    initialiseState = return Blarg
 
-    finaliseState () = return ()
+    finaliseState Blarg = return ()
 
     getDocument key = liftIO $ do
         res <- getJsonDirDocument customerTestResultsPath key
@@ -88,32 +88,49 @@ suite :: Spec
 suite = do
     describe "JSON directory marshalling" $ do
         it "can load 01-diff-source" $ do
-            res <- runDataSourceAction $ do
+            state <- initialiseState
+            _ <- runDataSourceAction state $ do
                 getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "data")
+            finaliseState state
             pass
 
         it "can load 01-diff-target" $ do
-            res <- runDataSourceAction $ do
+            state <- initialiseState
+            _ <- runDataSourceAction state $ do
                 getDocument (ForeignKey "01-diff-target" :: ForeignKey "customer" "data")
+            finaliseState state
             pass
 
         it "can write 01-diff-source to another source with that key" $ do
-            runDataSourceAction $ do
-                doc3 <- getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "data")
-                test3Key <- setDocument doc3 (Just (ForeignKey "01-diff-source" :: ForeignKey "customer" "test-results"))
-                return ()
+            state1 <- initialiseState
+            Right doc3 <- runDataSourceAction state1 $ do
+                getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "data")
+            finaliseState state1
+
+            state2 <- initialiseState
+            _ <- runDataSourceAction state2 $ do
+                setDocument doc3 (Just (ForeignKey "01-diff-source" :: ForeignKey "customer" "test-results"))
+            finaliseState state2
             pass
 
         it "can write 01-diff-source to another source with new key" $ do
-            res <- runDataSourceAction $ do
-                doc4 <- getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "data")
+            state <- initialiseState
+            Right doc4 <- runDataSourceAction state $ do
+                getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "data")
+            finaliseState state
+
+            state2 <- initialiseState
+            _ <- runDataSourceAction state2 $ do
                 setDocument doc4 (Nothing :: Maybe (ForeignKey "customer" "test-results"))
+            finaliseState state2
             pass
 
         it "can delete 01-diff-source from the test source" $ do
-            res <- runDataSourceAction $ do
-                getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "test-results")
+            state <- initialiseState
+            _ <- runDataSourceAction state $ do
+                _ <- getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "test-results")
                 deleteDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "test-results")
+            finaliseState state
             pass
 
 -- | This test is mainly to make sure that the types line up in the

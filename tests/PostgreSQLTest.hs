@@ -36,11 +36,11 @@ instance RetconEntity "customer" where
 
 instance RetconDataSource "customer" "db1" where
 
-    type DataSourceState "customer" "db1" = ()
+    data DataSourceState "customer" "db1" = CustDB1
 
-    initialiseState = return ()
+    initialiseState = return CustDB1
 
-    finaliseState () = return ()
+    finaliseState CustDB1 = return ()
 
     getDocument key = liftIO $ do
         res <- getPgDocument sourceDb key
@@ -59,11 +59,11 @@ instance RetconDataSource "customer" "db1" where
 
 instance RetconDataSource "customer" "db2" where
 
-    type DataSourceState "customer" "db2" = ()
+    data DataSourceState "customer" "db2" = CustDB2
 
-    initialiseState = return ()
+    initialiseState = return CustDB2
 
-    finaliseState () = return ()
+    finaliseState CustDB2 = return ()
 
 
     getDocument key = liftIO $ do
@@ -85,31 +85,48 @@ suite :: Spec
 suite = do
     describe "PostgreSQL marshalling" $ do
         it "can load row 1 from db1" $ do
-            res <- runDataSourceAction $ do
+            state <- initialiseState
+            _ <- runDataSourceAction state $ do
                 getDocument (ForeignKey "1" :: ForeignKey "customer" "db1")
+            finaliseState state
             pass
 
         it "can load row 2 from db1" $ do
-            res <- runDataSourceAction $ do
+            state <- initialiseState
+            _ <- runDataSourceAction state $ do
                 getDocument (ForeignKey "2" :: ForeignKey "customer" "db1")
+            finaliseState state
             pass
 
         it "can write db1/row1 to db2 with new key" $ do
-            res <- runDataSourceAction $ do
-                doc3 <- getDocument (ForeignKey "1" :: ForeignKey "customer" "db1")
+            state <- initialiseState
+            Right doc3 <- runDataSourceAction state $ do
+                getDocument (ForeignKey "1" :: ForeignKey "customer" "db1")
+            finaliseState state
+
+            state2 <- initialiseState
+            _ <- runDataSourceAction state2 $ do
                 setDocument doc3 (Nothing :: Maybe (ForeignKey "customer" "db2"))
+            finaliseState state2
             pass
 
         it "can write db1/row2 to db2 with existing key row1" $ do
-            res <- runDataSourceAction $ do
-                doc4 <- getDocument (ForeignKey "2" :: ForeignKey "customer" "db1")
+            state <- initialiseState
+            Right doc4 <- runDataSourceAction state $ do
+                getDocument (ForeignKey "2" :: ForeignKey "customer" "db1")
+            finaliseState state
+            state2 <- initialiseState
+            _ <- runDataSourceAction state2 $ do
                 setDocument doc4 (Just $ ForeignKey "1" :: Maybe (ForeignKey "customer" "db2"))
+            finaliseState state2
             pass
 
         it "can delete db2/row1" $ do
-            res <- runDataSourceAction $ do
+            state <- initialiseState
+            res <- runDataSourceAction state $ do
                 doc5 <- getDocument (ForeignKey "1" :: ForeignKey "customer" "db2")
                 deleteDocument (ForeignKey "1" :: ForeignKey "customer" "db2")
+            finaliseState state
             pass
 
 -- | get source file path

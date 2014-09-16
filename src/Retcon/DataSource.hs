@@ -57,20 +57,20 @@ class (KnownSymbol entity) => RetconEntity entity where
 class (KnownSymbol source, RetconEntity entity) => RetconDataSource entity source where
 
     -- | Type of state used by the data source.
-    type DataSourceState entity source
+    data DataSourceState entity source
 
     -- | Initialise the state to be used by the data source.
     --
     -- This is called during startup to, for example, open a connection to a
     -- datasource-specific database server.
-    initialiseState :: DataSourceAction () (DataSourceState entity source)
+    initialiseState :: IO (DataSourceState entity source)
 
     -- | Finalise the state used by the data source.
     --
     -- This is called during a clean shutdown to, for example, cleanly close a
     -- database connection, etc.
     finaliseState :: (DataSourceState entity source)
-                  -> DataSourceAction () ()
+                  -> IO ()
 
     -- | Put a document into a data source.
     --
