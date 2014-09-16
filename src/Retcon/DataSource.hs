@@ -103,12 +103,71 @@ class (KnownSymbol source, RetconEntity entity) => RetconDataSource entity sourc
 -- $ 'Proxy' values for instances of our 'RetconEntity' and 'RetconDataSource'
 -- type classes can be wrapped with existential types, allowing us to put them
 -- into data structures like lists easily.
+--
+-- We also have wrappers which include the initialised 'DataSourceState' values
+-- associated with each data source.
 
 -- | Wrap an arbitrary 'RetconEntity'.
-data SomeEntity = forall e. (KnownSymbol e, RetconEntity e) => SomeEntity (Proxy e)
+data SomeEntity = forall e. (KnownSymbol e, RetconEntity e) =>
+    SomeEntity (Proxy e)
 
 -- | Wrap an arbitrary 'RetconDataSource' for some entity 'e'.
-data SomeDataSource e = forall s. RetconDataSource e s => SomeDataSource (Proxy s)
+data SomeDataSource e = forall s. RetconDataSource e s =>
+    SomeDataSource (Proxy s)
+
+-- | Wrap an arbitrary 'RetconEntity', together with the initialised state for
+-- it's sources.
+data InitialisedEntity = forall e. (RetconEntity e) =>
+    InitialisedEntity { entityProxy :: Proxy e
+                      , entityState :: [InitialisedSource e]
+                      }
+
+-- | Wrap an arbitrary 'RetconDataSource' for some entity 'e', together with
+-- it's initialised state.
+data InitialisedSource e = forall s. RetconDataSource e s =>
+    InitialisedSource { sourceProxy :: Proxy s
+                      , sourceState :: DataSourceState e s
+                      }
+
+-- | Initialise the states for a collection of entities.
+initialiseEntities :: [SomeEntity]
+                   -> IO [InitialisedEntity]
+initialiseEntities = mapM initialiseEntity
+  where
+    initialiseEntity :: SomeEntity -> IO (InitialisedEntity)
+    initialiseEntity (SomeEntity (p :: Proxy e)) = do
+        ss <- initialiseSources $ entitySources p
+        return $ InitialisedEntity p ss
+
+-- | Finalise the states for a collection of entities.
+finaliseEntities :: [InitialisedEntity]
+                 -> IO [SomeEntity]
+finaliseEntities = mapM finaliseEntity
+  where
+    finaliseEntity (InitialisedEntity p s) = do
+        _ <- finaliseSources s
+        return $ SomeEntity p
+
+-- | Initialise the states for a collection of data sources.
+initialiseSources :: forall e. RetconEntity e
+                 => [SomeDataSource e]
+                 -> IO [InitialisedSource e]
+initialiseSources = mapM initialiseSource
+  where
+    initialiseSource (SomeDataSource (p :: Proxy s) :: SomeDataSource e) = do
+        s <- initialiseState
+        return $ InitialisedSource p s
+
+-- | Finalise the states for a collection of data sources.
+finaliseSources :: forall e. RetconEntity e
+                 => [InitialisedSource e]
+                 -> IO [SomeDataSource e]
+finaliseSources = mapM finaliseSource
+  where
+    finaliseSource :: InitialisedSource e -> IO (SomeDataSource e)
+    finaliseSource (InitialisedSource p s) = do
+        finaliseState s
+        return $ SomeDataSource p
 
 -- * Monads
 
