@@ -99,18 +99,15 @@ runOperation state event =
 dispatch :: forall store. RetconStore store => String -> RetconHandler store ()
 dispatch work = do
     let (entity_str, source_str, key) = read work :: (String, String, String)
-    entities <- asks (retconEntities . retconConfig)
+    entities <- asks (retconState)
 
     case (someSymbolVal entity_str, someSymbolVal source_str) of
         (SomeSymbol entity, SomeSymbol source) ->
-            forM_ entities $ \(SomeEntity e) -> when (same e entity) $
-                forM_ (entitySources e) $ \(SomeDataSource (sp :: Proxy st) :: SomeDataSource et) -> do
+            forM_ entities $ \(InitialisedEntity e dss) -> when (same e entity) $
+                forM_ dss $ \(InitialisedSource (sp :: Proxy st) dst :: InitialisedSource et) -> do
                             let fk = ForeignKey key :: ForeignKey et st
 
-                            when (same source sp) $ do
-                                state <- liftIO initialiseState
-                                (process state fk)
-                                liftIO $ finaliseState state
+                            when (same source sp) $ process dst fk
 
 -- | Run the retcon process on an event.
 retcon :: RetconStore s
@@ -245,7 +242,7 @@ getDocuments :: forall store entity. (RetconStore store, RetconEntity entity)
              -> RetconHandler store [Either RetconError Document]
 getDocuments ik =
     forM (entitySources (Proxy :: Proxy entity)) $
-        \(SomeDataSource (Proxy :: Proxy source) :: SomeDataSource entity) ->
+        \(SomeDataSource (source :: Proxy source) :: SomeDataSource entity) ->
             -- Flatten any nested errors.
             join . first RetconError <$> tryAny (do
                 -- Lookup the foreign key for this data source.
@@ -253,11 +250,10 @@ getDocuments ik =
                 -- If there was a key, use it to fetch the document.
                 case mkey of
                     Nothing -> return . Left $ RetconFailed
-                    Just fk -> liftIO $ do
-                        state <- initialiseState
-                        res <- runDataSourceAction state $ getDocument fk
-                        finaliseState state
-                        return res
+                    Just fk -> do
+                        states <- asks retconState
+                        let Just state = accessState states (Proxy :: Proxy entity) source
+                        liftIO $ runDataSourceAction state $ getDocument fk
                 )
 
 -- | Set 'Document's corresponding to an 'InternalKey' for all sources for an
@@ -268,14 +264,13 @@ setDocuments :: forall store entity. (RetconStore store, RetconEntity entity)
              -> RetconHandler store [Either RetconError ()]
 setDocuments ik docs =
     forM (zip docs (entitySources (Proxy :: Proxy entity))) $
-        \(doc, SomeDataSource (Proxy :: Proxy source)) ->
+        \(doc, SomeDataSource (source :: Proxy source)) ->
             join . first RetconError <$> tryAny (do
                 (fk :: Maybe (ForeignKey entity source)) <- lookupForeignKey ik
-                fk' <- liftIO $ do
-                    state <- initialiseState
-                    res <- runDataSourceAction state $ setDocument doc fk
-                    finaliseState state
-                    return res
+                fk' <- do
+                    states <- asks retconState
+                    let Just state = accessState states (Proxy :: Proxy entity) source
+                    liftIO $ runDataSourceAction state $ setDocument doc fk
                 case fk' of
                     Left err -> return $ Left err
                     Right new_fk -> do
@@ -289,16 +284,15 @@ deleteDocuments :: forall store entity. (RetconStore store, RetconEntity entity)
                 -> RetconHandler store [Either RetconError ()]
 deleteDocuments ik =
     forM (entitySources (Proxy :: Proxy entity)) $
-        \(SomeDataSource (Proxy :: Proxy source)) ->
+        \(SomeDataSource (source :: Proxy source)) ->
             join . first RetconError <$> tryAny (do
                 (fk' :: Maybe (ForeignKey entity source)) <- lookupForeignKey ik
                 case fk' of
                     Nothing -> return $ Right ()
-                    Just fk -> liftIO $ do
-                        state <- initialiseState
-                        res <- runDataSourceAction state $ deleteDocument fk
-                        finaliseState state
-                        return res
+                    Just fk -> do
+                        states <- asks retconState
+                        let Just state = accessState states (Proxy :: Proxy entity) source
+                        liftIO $ runDataSourceAction state $ deleteDocument fk
             )
 
 -- * Storage backend wrappers

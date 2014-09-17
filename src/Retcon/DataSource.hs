@@ -179,10 +179,10 @@ initialiseEntities = mapM initialiseEntity
 -- | Finalise the states for a collection of entities.
 finaliseEntities :: [InitialisedEntity]
                  -> IO [SomeEntity]
-finaliseEntities = mapM finaliseEntity
+finaliseEntities = mapM finaliseEntity . reverse
   where
     finaliseEntity (InitialisedEntity p s) = do
-        _ <- finaliseSources s
+        _ <- finaliseSources $ reverse s
         return $ SomeEntity p
 
 -- | Initialise the states for a collection of data sources.
