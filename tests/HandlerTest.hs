@@ -1,4 +1,3 @@
---
 -- Copyright © 2013-2014 Anchor Systems, Pty Ltd and Others
 --
 -- The code in this file, and the program it is a part of, is
@@ -145,12 +144,12 @@ instance RetconDataSource "dispatchtest" "dispatch1" where
         Dispatch1 { dispatch1State :: IORef (Map Text Value) }
 
     initialiseState = do
-        putStrLn "Initialising state for dispatch1"
+        putStrLn "dispatch1: initialise"
         ref <- newIORef M.empty
         return $ Dispatch1 ref
 
     finaliseState (Dispatch1 ref) = do
-        putStrLn "Finalising state for dispatch2"
+        putStrLn "dispatch1: finalise"
         writeIORef ref M.empty
 
     getDocument fk = do
@@ -171,12 +170,12 @@ instance RetconDataSource "dispatchtest" "dispatch2" where
         Dispatch2 { dispatch2State :: IORef (Map Text Value) }
 
     initialiseState = do
-        putStrLn "Initialising state for dispatch2"
+        putStrLn "dispatch2: initialise"
         ref <- newIORef M.empty
         return $ Dispatch2 ref
 
     finaliseState (Dispatch2 ref) = do
-        putStrLn "Finalising state for dispatch2"
+        putStrLn "dispatch2: finalise"
         writeIORef ref M.empty
 
     getDocument fk = do
@@ -201,7 +200,6 @@ operationSuite = around (prepareDatabase . prepareDispatchSuite) $ do
 
     describe "Determining operations" $ do
         it "should result in a create when new key is seen, with document." $ do
-
             -- Create a document in dispatch1; leave dispatch2 and the
             -- database tables empty.
             state <- initialiseEntities (retconEntities dispatchConfig)
@@ -212,91 +210,134 @@ operationSuite = around (prepareDatabase . prepareDispatchSuite) $ do
 
             (fk', _) <- newTestDocument "dispatch1-" Nothing ref
             let fk = ForeignKey (T.unpack fk') :: ForeignKey "dispatchtest" "dispatch1"
-            op <- run opt $ determineOperation st fk
+            op <- run opt state $ determineOperation st fk
 
             _ <- finaliseEntities state
 
             op `shouldBe` (Right $ RetconCreate fk)
 
         it "should result in an error when new key is seen, but no document." $ do
+            state <- initialiseEntities (retconEntities dispatchConfig)
+
+            let entity = Proxy :: Proxy "dispatchtest"
+            let source = Proxy :: Proxy "dispatch1"
+            let Just st@(Dispatch1 ref) = accessState state entity source
+
             let fk = ForeignKey "this is new" :: ForeignKey "dispatchtest" "dispatch1"
-            state <- initialiseState
-            op <- run opt $ determineOperation state fk
-            finaliseState state
+            op <- run opt state $ determineOperation st fk
+
+            _ <- finaliseEntities state
             op `shouldBe` (Right $ RetconProblem fk RetconFailed)
 
         it "should result in a update when old key is seen, with document." $
             withConfiguration opt $ \(conn, opts) -> do
+                state <- initialiseEntities (retconEntities dispatchConfig)
+
                 -- Insert a key into the database, with a document in the store.
-                let entity = "dispatchtest" :: String
+
+                let es = "dispatchtest" :: String
                 let ds = "dispatch1" :: String
-                (fk', doc) <- newTestDocument "dispatch1-" Nothing dispatch1Data
+                let entity = Proxy :: Proxy "dispatchtest"
+                let source = Proxy :: Proxy "dispatch1"
+                let Just st@(Dispatch1 ref) = accessState state entity source
+
+                (fk', doc) <- newTestDocument "dispatch1-" Nothing ref
+
                 [Only (ik'::Int)] <- query_ conn "INSERT INTO retcon (entity) VALUES ('dispatchtest') RETURNING id"
-                execute conn "INSERT INTO retcon_fk (entity,id,source,fk) VALUES (?,?,?,?)" (entity, ik', ds, fk')
+                _ <- execute conn "INSERT INTO retcon_fk (entity,id,source,fk) VALUES (?,?,?,?)" (es, ik', ds, fk')
 
                 let fk = ForeignKey (T.unpack fk') :: ForeignKey "dispatchtest" "dispatch1"
                 let ik = InternalKey ik' :: InternalKey "dispatchtest"
 
                 -- Determine the operation to perform.
-                state <- initialiseState
-                op <- run opt $ determineOperation state fk
-                finaliseState state
+                op <- run opt state $ determineOperation st fk
+
+                _ <- finaliseEntities state
                 op `shouldBe` (Right $ RetconUpdate ik)
 
         it "should result in a delete when old key is seen, but no document." $
             withConfiguration opt $ \(conn, opts) -> do
+                state <- initialiseEntities (retconEntities dispatchConfig)
+
                 -- Insert a key into the database, but no document in the store.
-                let ent = "dispatchtest" :: String
+                let es = "dispatchtest" :: String
                 let ds = "dispatch1" :: String
+                let entity = Proxy :: Proxy "dispatchtest"
+                let source = Proxy :: Proxy "dispatch1"
+                let Just st@(Dispatch1 ref) = accessState state entity source
+
                 let fk1 = "dispatch1-deleted-docid" :: String
                 [Only (ik'::Int)] <- query_ conn "INSERT INTO retcon (entity) VALUES ('dispatchtest') RETURNING id"
-                execute conn "INSERT INTO retcon_fk (entity, id, source, fk) VALUES (?, ?, ?, ?)" (ent, ik', ds, fk1)
+                execute conn "INSERT INTO retcon_fk (entity, id, source, fk) VALUES (?, ?, ?, ?)" (es, ik', ds, fk1)
 
                 let fk = ForeignKey fk1 :: ForeignKey "dispatchtest" "dispatch1"
                 let ik = InternalKey ik' :: InternalKey "dispatchtest"
-                state <- initialiseState
-                op <- run opts $ determineOperation state fk
-                finaliseState state
+
+                op <- run opts state $ determineOperation st fk
+
+                _ <- finaliseEntities state
                 op `shouldBe` (Right $ RetconDelete ik)
 
     describe "Evaluating operations" $ do
         it "should process a create operation." $
             withConfiguration opt $ \(conn, opts) -> do
-                (fk', _) <- newTestDocument "dispatch1-" Nothing dispatch1Data
+                state <- initialiseEntities (retconEntities dispatchConfig)
+
+                let es = "dispatchtest" :: String
+                let ds = "dispatch1" :: String
+                let entity = Proxy :: Proxy "dispatchtest"
+                let source = Proxy :: Proxy "dispatch1"
+                let Just st@(Dispatch1 ref) = accessState state entity source
+
+                (fk', _) <- newTestDocument "dispatch1-" Nothing ref
                 let fk = ForeignKey (T.unpack fk')
 
                 let op = RetconCreate fk :: RetconOperation "dispatchtest" "dispatch1"
 
-                state <- initialiseState
-                res <- run opt $ runOperation state op
-                finaliseState state
+                res <- run opt state $ runOperation st op
 
                 [Only (n_ik :: Int)] <- query_ conn "SELECT COUNT(*) FROM retcon"
                 [Only (n_fk :: Int)] <- query_ conn "SELECT COUNT(*) FROM retcon_fk"
 
+                _ <- finaliseEntities state
                 (n_ik, n_fk) `shouldBe` (1, 2)
 
         it "should process an error operation." $
             withConfiguration opt $ \(conn, opts) -> do
-                (fk', _) <- newTestDocument "dispatch1-" Nothing dispatch1Data
+                state <- initialiseEntities (retconEntities dispatchConfig)
+
+                let es = "dispatchtest" :: String
+                let ds = "dispatch1" :: String
+                let entity = Proxy :: Proxy "dispatchtest"
+                let source = Proxy :: Proxy "dispatch1"
+                let Just st@(Dispatch1 ref) = accessState state entity source
+
+                (fk', _) <- newTestDocument "dispatch1-" Nothing ref
                 let fk = ForeignKey (T.unpack fk')
                 let op = RetconProblem fk (RetconUnknown "Testing error reporting.") :: RetconOperation "dispatchtest" "dispatch1"
 
-                state <- initialiseState
-                res <- run opt $ runOperation state op
-                finaliseState state
+                res <- run opt state $ runOperation st op
+
+                _ <- finaliseEntities state
                 res `shouldBe` (Right ())
 
         it "should process an update operation." $
             withConfiguration opt $ \(conn, opts) -> do
+                state <- initialiseEntities (retconEntities dispatchConfig)
+
+                let entity = Proxy :: Proxy "dispatchtest"
+                let source1 = Proxy :: Proxy "dispatch1"
+                let source2 = Proxy :: Proxy "dispatch2"
+                let Just st1@(Dispatch1 ref1) = accessState state entity source1
+                let Just st2@(Dispatch2 ref2) = accessState state entity source2
 
                 let change = Diff () [ InsertOp () ["name"] "INSERT ONE"
                                      , InsertOp () ["address"] " 201 Elizabeth"
                                      ]
-                let doc  = toJSON (mempty :: Document)
-                let doc' = toJSON $ applyDiff change mempty
-                (fk1, _) <- newTestDocument "dispatch1-" (Just doc) dispatch1Data
-                (fk2, _) <- newTestDocument "dispatch2-" (Just doc') dispatch2Data
+                let doc1  = toJSON (mempty :: Document)
+                let doc2 = toJSON $ applyDiff change mempty
+                (fk1, _) <- newTestDocument "dispatch1-" (Just doc1) ref1
+                (fk2, _) <- newTestDocument "dispatch2-" (Just doc2) ref2
                 [Only (ik' :: Int)] <- query_ conn "INSERT INTO retcon (entity) VALUES ('dispatchtest') RETURNING id"
                 executeMany conn
                     "INSERT INTO retcon_fk (entity, id, source, fk) VALUES (?, ?, ?, ?)"
@@ -307,21 +348,29 @@ operationSuite = around (prepareDatabase . prepareDispatchSuite) $ do
 
                 -- Perform the operation.
                 let op = RetconUpdate ik :: RetconOperation "dispatchtest" "dispatch1"
-                state <- initialiseState
-                res <- run opt $ runOperation state op
-                finaliseState state
+                res <- run opt state $ runOperation st1 op
 
                 -- Check the things.
-                d1 <- readIORef dispatch1Data
-                d2 <- readIORef dispatch2Data
+                d1 <- readIORef ref1
+                d2 <- readIORef ref2
                 [Only (n_ik::Int)] <- query_ conn "SELECT COUNT(*) FROM retcon"
                 [Only (n_fk::Int)] <- query_ conn "SELECT COUNT(*) FROM retcon_fk"
+
+                _ <- finaliseEntities state
                 (M.size d1, M.size d2, n_ik, n_fk) `shouldBe` (1, 1, 1, 2)
 
         it "should process a delete operation." $
             withConfiguration opt $ \(conn, opts) -> do
+                state <- initialiseEntities (retconEntities dispatchConfig)
+
+                let entity = Proxy :: Proxy "dispatchtest"
+                let source1 = Proxy :: Proxy "dispatch1"
+                let source2 = Proxy :: Proxy "dispatch2"
+                let Just st1@(Dispatch1 ref1) = accessState state entity source1
+                let Just st2@(Dispatch2 ref2) = accessState state entity source2
+
                 let fk1 = "dispatch1-lolno"
-                (fk2, doc) <- newTestDocument "dispatch2-" Nothing dispatch2Data
+                (fk2, doc) <- newTestDocument "dispatch2-" Nothing ref2
                 [Only (ik' :: Int)] <- query_ conn "INSERT INTO retcon (entity) VALUES ('dispatchtest') RETURNING id"
                 executeMany conn
                     "INSERT INTO retcon_fk (entity, id, source, fk) VALUES (?, ?, ?, ?)"
@@ -332,21 +381,20 @@ operationSuite = around (prepareDatabase . prepareDispatchSuite) $ do
 
                 -- Perform the operation.
                 let op = RetconDelete ik :: RetconOperation "dispatchtest" "dispatch1"
-                state <- initialiseState
-                res <- run opt $ runOperation state op
-                finaliseState state
+                res <- run opt state $ runOperation st1 op
 
                 -- Check the things.
-                d1 <- readIORef dispatch1Data
-                d2 <- readIORef dispatch2Data
+                d1 <- readIORef ref1
+                d2 <- readIORef ref2
                 [Only (n_ik::Int)] <- query_ conn "SELECT COUNT(*) FROM retcon"
                 [Only (n_fk::Int)] <- query_ conn "SELECT COUNT(*) FROM retcon_fk"
-                (M.size d1, M.size d2, n_ik, n_fk) `shouldBe` (0, 0, 0, 0)
 
+                _ <- finaliseEntities state
+                (M.size d1, M.size d2, n_ik, n_fk) `shouldBe` (0, 0, 0, 0)
   where
-    run opt action = do
+    run opt state action = do
         withConfiguration opt $ \(conn, opts) ->
-            runRetconHandler opts dispatchConfig (PGStore conn) $ action
+            runRetconHandler' opts state (PGStore conn) $ action
 
 -- | Test suite for dispatching logic.
 dispatchSuite :: Spec
@@ -360,57 +408,84 @@ dispatchSuite = around (prepareDatabase . prepareDispatchSuite) $ do
         -- NEW and EXISTS
         it "should create when new id and source has the document" $
             withConfiguration opts $ \(conn, opts) -> do
+                state <- initialiseEntities (retconEntities dispatchConfig)
+
+                let entity = Proxy :: Proxy "dispatchtest"
+                let ds1 = Proxy :: Proxy "dispatch1"
+                let ds2 = Proxy :: Proxy "dispatch2"
+                let Just (Dispatch1 ref1) = accessState state entity ds1
+                let Just (Dispatch2 ref2) = accessState state entity ds2
 
                 -- Create a document in dispatch1; leave dispatch2 and the
                 -- database tables empty.
-                (fk, doc) <- newTestDocument "dispatch1-" Nothing dispatch1Data
+                (fk, doc) <- newTestDocument "dispatch1-" Nothing ref1
 
                 -- Dispatch the event.
                 let opts' = opts { optArgs = ["dispatchtest", "dispatch1", fk] }
                 let input = show ("dispatchtest", "dispatch1", fk)
-                res <- retcon opts' dispatchConfig (PGStore conn) input
+
+                res <- run opts' state conn $ dispatch input
 
                 -- The document should be present in both stores, with an
                 -- InternalKey and two ForeignKeys.
 
-                d1 <- readIORef dispatch1Data
-                d2 <- readIORef dispatch2Data
+                d1 <- readIORef ref1
+                d2 <- readIORef ref2
 
                 [Only (n_ik::Int)] <- query_ conn "SELECT COUNT(*) FROM retcon"
                 [Only (n_fk::Int)] <- query_ conn "SELECT COUNT(*) FROM retcon_fk"
 
+                _ <- finaliseEntities state
                 (M.size d1, M.size d2, n_ik, n_fk) `shouldBe` (1, 1, 1, 2)
 
         -- NEW and NO EXIST
         it "should error when new id and source hasn't the document" $
             withConfiguration opts $ \(conn, opts) -> do
+                state <- initialiseEntities (retconEntities dispatchConfig)
+
+                let entity = Proxy :: Proxy "dispatchtest"
+                let ds1 = Proxy :: Proxy "dispatch1"
+                let ds2 = Proxy :: Proxy "dispatch2"
+                let Just (Dispatch1 ref1) = accessState state entity ds1
+                let Just (Dispatch2 ref2) = accessState state entity ds2
+
                 -- Both dispatch1 and dispatch2, and the database tables are
                 -- still empty.
 
                 -- Dispatch the event.
                 let opts' = opts { optArgs = ["dispatchtest", "dispatch1", "999"] }
                 let input = show ("dispatchtest", "dispatch1", "999")
-                res <- retcon opts' dispatchConfig (PGStore conn) input
+                res <- run opts' state conn $ dispatch input
 
                 -- Check that there are still no InternalKey or ForeignKey
                 -- details in the database.
-                d1 <- readIORef dispatch1Data
-                d2 <- readIORef dispatch2Data
+                d1 <- readIORef ref1
+                d2 <- readIORef ref2
                 [Only (n_ik :: Int)] <- liftIO $ query_ conn "SELECT COUNT(*) FROM retcon;"
                 [Only (n_fk :: Int)] <- liftIO $ query_ conn "SELECT COUNT(*) FROM retcon_fk;"
+
+                _ <- finaliseEntities state
                 (M.size d1, M.size d2, n_ik, n_fk) `shouldBe` (0, 0, 0, 0)
 
         -- OLD and EXISTS
         it "should update when old id and source has the document" $
             withConfiguration opts $ \(conn, opts) -> do
+                state <- initialiseEntities (retconEntities dispatchConfig)
+
+                let entity = Proxy :: Proxy "dispatchtest"
+                let ds1 = Proxy :: Proxy "dispatch1"
+                let ds2 = Proxy :: Proxy "dispatch2"
+                let Just (Dispatch1 ref1) = accessState state entity ds1
+                let Just (Dispatch2 ref2) = accessState state entity ds2
+
                 -- Create a document, with changes in dispatch1.
                 let change = Diff () [ InsertOp () ["name"] "INSERT ONE"
                                      , InsertOp () ["address"] " 201 Elizabeth"
                                      ]
-                let doc  = toJSON (mempty :: Document)
+                let doc = toJSON (mempty :: Document)
                 let doc' = toJSON $ applyDiff change mempty
-                (fk1, _) <- newTestDocument "dispatch1-" (Just doc') dispatch1Data
-                (fk2, _) <- newTestDocument "dispatch2-" (Just doc) dispatch2Data
+                (fk1, _) <- newTestDocument "dispatch1-" (Just doc') ref1
+                (fk2, _) <- newTestDocument "dispatch2-" (Just doc) ref2
 
                 -- Add a new InternalKey and ForeignKeys for both data sources.
                 [Only (ik :: Int)] <- query_ conn "INSERT INTO retcon (entity) VALUES ('dispatchtest') RETURNING id"
@@ -423,22 +498,31 @@ dispatchSuite = around (prepareDatabase . prepareDispatchSuite) $ do
                 -- Dispatch the event.
                 let opts' = opts { optArgs = ["dispatchtest", "dispatch1", fk1] }
                 let input = show ("dispatchtest", "dispatch1", fk1)
-                res <- retcon opts' dispatchConfig (PGStore conn) input
+                res <- run opts' state conn $ dispatch input
 
                 -- Check that the documents are now the same.
-                d1 <- atomicModifyIORef' dispatch1Data (\m->(m,M.lookup fk1 m))
-                d2 <- atomicModifyIORef' dispatch2Data (\m->(m,M.lookup fk2 m))
+                d1 <- atomicModifyIORef' ref1 (\m->(m,M.lookup fk1 m))
+                d2 <- atomicModifyIORef' ref2 (\m->(m,M.lookup fk2 m))
                 [Only (n::Int)] <- query_ conn "SELECT COUNT(*) FROM retcon_fk"
 
+                _ <- finaliseEntities state
                 (n, d1, d2) `shouldBe` (2, Just doc', Just doc')
 
         -- OLD and NO EXIST
         it "should delete when old id and source hasn't the document" $
             withConfiguration opts $ \(conn, opts) -> do
+                state <- initialiseEntities (retconEntities dispatchConfig)
+
+                let entity = Proxy :: Proxy "dispatchtest"
+                let ds1 = Proxy :: Proxy "dispatch1"
+                let ds2 = Proxy :: Proxy "dispatch2"
+                let Just (Dispatch1 ref1) = accessState state entity ds1
+                let Just (Dispatch2 ref2) = accessState state entity ds2
+
                 -- Foreign keys are presents for dispatch1 and dispatch2, but only
                 -- dispatch2 contains a document.
                 let fk1 = "dispatch1-lolno"
-                (fk2, doc) <- newTestDocument "dispatch2-" Nothing dispatch2Data
+                (fk2, doc) <- newTestDocument "dispatch2-" Nothing ref2
 
                 [Only (ik :: Int)] <- query_ conn "INSERT INTO retcon (entity) VALUES ('dispatchtest') RETURNING id"
                 executeMany conn
@@ -449,19 +533,23 @@ dispatchSuite = around (prepareDatabase . prepareDispatchSuite) $ do
 
                 let opts' = opts { optArgs = ["dispatchtest", "dispatch1", fk1] }
                 let input = show ("dispatchtest", "dispatch1", fk1)
-                res <- first show <$> retcon opts' dispatchConfig (PGStore conn) input
+                res <- run opts' state conn $ dispatch input
 
-                either (error . show) (const . return $ ()) res
+                either (error . show) (const . return $ ()) $ first show res
 
                 -- Both stores should be empty, along with both the retcon and
                 -- retcon_fk tables.
-                d1 <- readIORef dispatch1Data
-                d2 <- readIORef dispatch2Data
+                d1 <- readIORef ref1
+                d2 <- readIORef ref2
 
                 [Only (n_ik::Int)] <- query_ conn "SELECT COUNT(*) FROM retcon"
                 [Only (n_fk::Int)] <- query_ conn "SELECT COUNT(*) FROM retcon_fk"
 
+                _ <- finaliseEntities state
                 (M.size d1, M.size d2, n_ik, n_fk) `shouldBe` (0,0,0,0)
+
+  where
+    run opt state conn action = runRetconHandler' opt state (PGStore conn) action
 
 -- | Setup and teardown for the initial document tests.
 prepareDatabase :: IO () -> IO ()
@@ -499,12 +587,15 @@ prepareDispatchSuite action = bracket setup teardown (const action)
     teardown = return
 
 -- | Open a connection to the configured database.
-withConfiguration cfg = bracket openConnection closeConnection
+withConfiguration :: RetconOptions
+                  -> ((Connection, RetconOptions) -> IO r)
+                  -> IO r
+withConfiguration opt = bracket openConnection closeConnection
   where
     openConnection = do
-        conn <- connectPostgreSQL $ optDB cfg
-        return (conn, cfg)
-    closeConnection (conn, cfg) = close conn
+        conn <- connectPostgreSQL $ optDB opt
+        return (conn, opt)
+    closeConnection (conn, _) = close conn
 
 -- * Initial Document Tests
 --
