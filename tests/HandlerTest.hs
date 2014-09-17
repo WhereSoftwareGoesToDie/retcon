@@ -65,6 +65,7 @@ testConnection = BS.concat [BS.pack "dbname='", testDBName, BS.pack "'"]
 --
 -- $ These tests exercise the logic used in handling events appropriately.
 
+
 -- | Data to be used by '"dispatch1"' below.
 dispatch1Data :: IORef (Map Text Value)
 dispatch1Data = unsafePerformIO $ newIORef M.empty
@@ -75,6 +76,7 @@ dispatch2Data :: IORef (Map Text Value)
 dispatch2Data = unsafePerformIO $ newIORef M.empty
 {-# NOINLINE dispatch2Data #-}
 
+
 -- | Create a new document in one of these stores.
 newTestDocument :: Text
                 -> Maybe Value
@@ -82,7 +84,7 @@ newTestDocument :: Text
                 -> IO (Text, Value)
 newTestDocument n doc' ref = do
     let doc = fromMaybe (Object HM.empty) doc'
-    key <- atomicModifyIORef ref (\store ->
+    key <- atomicModifyIORef' ref (\store ->
         let key = n `T.append` ( T.pack . show $ M.size store)
         in (M.insert key doc store, key))
     return (key, doc)
@@ -94,7 +96,7 @@ deleteDocumentIORef :: (RetconDataSource entity source)
                     -> DataSourceAction (DataSourceState entity source) ()
 deleteDocumentIORef ref (ForeignKey fk') = do
     let k = T.pack fk'
-    liftIO $ atomicModifyIORef ref (\m -> (M.delete k m, ()))
+    liftIO $ atomicModifyIORef' ref (\m -> (M.delete k m, ()))
 
 setDocumentIORef :: (RetconDataSource entity source)
                  => String
@@ -103,14 +105,14 @@ setDocumentIORef :: (RetconDataSource entity source)
                  -> Maybe (ForeignKey entity source)
                  -> DataSourceAction (DataSourceState entity source) (ForeignKey entity source)
 setDocumentIORef name ref doc (Nothing) = do
-    k <- liftIO $ atomicModifyIORef ref
+    k <- liftIO $ atomicModifyIORef' ref
         (\m -> let k = T.pack $ name ++ (show . M.size $ m)
                in (M.insert k (toJSON doc) m, k))
     return $ ForeignKey $ T.unpack k
 
 setDocumentIORef name ref doc (Just (ForeignKey fk')) = do
     let fk = T.pack fk'
-    k <- liftIO $ atomicModifyIORef ref
+    k <- liftIO $ atomicModifyIORef' ref
         (\m -> (M.insert fk (toJSON doc) m, fk))
     return $ ForeignKey $ T.unpack k
 
@@ -120,7 +122,7 @@ getDocumentIORef :: (RetconDataSource entity source)
                  -> DataSourceAction (DataSourceState entity source) Document
 getDocumentIORef ref (ForeignKey fk') = do
     let key = T.pack fk'
-    doc' <- liftIO $ atomicModifyIORef ref
+    doc' <- liftIO $ atomicModifyIORef' ref
         (\m -> (m, M.lookup key m))
     case doc' of
         Just doc -> case fromJSON doc of
@@ -139,31 +141,55 @@ instance RetconEntity "dispatchtest" where
 
 instance RetconDataSource "dispatchtest" "dispatch1" where
 
-    data DataSourceState "dispatchtest" "dispatch1" = Dispatch1
+    data DataSourceState "dispatchtest" "dispatch1" =
+        Dispatch1 { dispatch1State :: IORef (Map Text Value) }
 
-    initialiseState = return Dispatch1
+    initialiseState = do
+        putStrLn "Initialising state for dispatch1"
+        ref <- newIORef M.empty
+        return $ Dispatch1 ref
 
-    finaliseState Dispatch1 = return ()
+    finaliseState (Dispatch1 ref) = do
+        putStrLn "Finalising state for dispatch2"
+        writeIORef ref M.empty
 
-    getDocument = getDocumentIORef dispatch1Data
+    getDocument fk = do
+        ref <- asks dispatch1State
+        getDocumentIORef ref fk
 
-    setDocument = setDocumentIORef "dispatch1-" dispatch1Data
+    setDocument doc fk = do
+        ref <- asks dispatch1State
+        setDocumentIORef "dispatch1-" ref doc fk
 
-    deleteDocument = deleteDocumentIORef dispatch1Data
+    deleteDocument fk = do
+        ref <- asks dispatch1State
+        deleteDocumentIORef ref fk
 
 instance RetconDataSource "dispatchtest" "dispatch2" where
 
-    data DataSourceState "dispatchtest" "dispatch2" = Dispatch2
+    data DataSourceState "dispatchtest" "dispatch2" =
+        Dispatch2 { dispatch2State :: IORef (Map Text Value) }
 
-    initialiseState = return Dispatch2
+    initialiseState = do
+        putStrLn "Initialising state for dispatch2"
+        ref <- newIORef M.empty
+        return $ Dispatch2 ref
 
-    finaliseState Dispatch2 = return ()
+    finaliseState (Dispatch2 ref) = do
+        putStrLn "Finalising state for dispatch2"
+        writeIORef ref M.empty
 
-    getDocument = getDocumentIORef dispatch2Data
+    getDocument fk = do
+        ref <- asks dispatch2State
+        getDocumentIORef ref fk
 
-    setDocument = setDocumentIORef "dispatch2-" dispatch2Data
+    setDocument doc fk = do
+        ref <- asks dispatch2State
+        setDocumentIORef "dispatch2-" ref doc fk
 
-    deleteDocument = deleteDocumentIORef dispatch2Data
+    deleteDocument fk = do
+        ref <- asks dispatch2State
+        deleteDocumentIORef ref fk
 
 -- | Tests for code determining and applying retcon operations.
 operationSuite :: Spec
@@ -175,12 +201,21 @@ operationSuite = around (prepareDatabase . prepareDispatchSuite) $ do
 
     describe "Determining operations" $ do
         it "should result in a create when new key is seen, with document." $ do
+
             -- Create a document in dispatch1; leave dispatch2 and the
             -- database tables empty.
-            (fk', doc) <- newTestDocument "dispatch1-" Nothing dispatch1Data
+            state <- initialiseEntities (retconEntities dispatchConfig)
+
+            let entity = Proxy :: Proxy "dispatchtest"
+            let source = Proxy :: Proxy "dispatch1"
+            let Just st@(Dispatch1 ref) = accessState state entity source
+
+            (fk', _) <- newTestDocument "dispatch1-" Nothing ref
             let fk = ForeignKey (T.unpack fk') :: ForeignKey "dispatchtest" "dispatch1"
-            state <- initialiseState
-            op <- run opt $ determineOperation state fk
+            op <- run opt $ determineOperation st fk
+
+            _ <- finaliseEntities state
+
             op `shouldBe` (Right $ RetconCreate fk)
 
         it "should result in an error when new key is seen, but no document." $ do
@@ -391,8 +426,8 @@ dispatchSuite = around (prepareDatabase . prepareDispatchSuite) $ do
                 res <- retcon opts' dispatchConfig (PGStore conn) input
 
                 -- Check that the documents are now the same.
-                d1 <- atomicModifyIORef dispatch1Data (\m->(m,M.lookup fk1 m))
-                d2 <- atomicModifyIORef dispatch2Data (\m->(m,M.lookup fk2 m))
+                d1 <- atomicModifyIORef' dispatch1Data (\m->(m,M.lookup fk1 m))
+                d2 <- atomicModifyIORef' dispatch2Data (\m->(m,M.lookup fk2 m))
                 [Only (n::Int)] <- query_ conn "SELECT COUNT(*) FROM retcon_fk"
 
                 (n, d1, d2) `shouldBe` (2, Just doc', Just doc')
@@ -457,8 +492,6 @@ prepareDispatchSuite action = bracket setup teardown (const action)
     setup :: IO ()
     setup = do
         -- Empty the data sources.
-        writeIORef dispatch1Data M.empty
-        writeIORef dispatch2Data M.empty
         return ()
 
     -- Clean up the database and data sources.
@@ -486,6 +519,7 @@ instance RetconDataSource "alicorn_invoice" "alicorn_source" where
     data DataSourceState "alicorn_invoice" "alicorn_source" = Alicorn
 
     initialiseState = return Alicorn
+
     finaliseState Alicorn = return ()
 
     getDocument key = error "We're not calling this"
