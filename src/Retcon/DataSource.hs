@@ -222,7 +222,7 @@ newtype DataSourceAction s a =
         unDataSourceAction :: DataSourceActionStack s a
     }
   deriving (Functor, Applicative, Monad, MonadBase IO, MonadIO, MonadLogger,
-  MonadError RetconError)
+  MonadError RetconError, MonadReader s)
 
 -- | Run a 'DataSourceAction' action.
 runDataSourceAction :: state
