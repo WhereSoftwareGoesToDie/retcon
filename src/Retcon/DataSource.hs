@@ -15,6 +15,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE PolyKinds                  #-}
+{-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeFamilies               #-}
 
@@ -25,7 +26,9 @@ import Control.Monad.Base
 import Control.Monad.Except
 import Control.Monad.Logger
 import Control.Monad.Reader
+import Data.Maybe
 import Data.Proxy
+import Data.Type.Equality
 import GHC.TypeLits
 
 import Retcon.Document
@@ -128,6 +131,40 @@ data InitialisedSource e = forall s. RetconDataSource e s =>
     InitialisedSource { sourceProxy :: Proxy s
                       , sourceState :: DataSourceState e s
                       }
+
+-- | Get the state, if any, associated with a data source.
+--
+-- This function will, through the judicious application of magic, determine if
+-- a list of initialised entity state values (each containing initialised data
+-- source state values) contains a state value for a specific data source.
+--
+-- Using 'foldl' here is pretty silly -- we should short circuit, etc. -- but
+-- the data to be traversed will allways be short, so it doesn't matter too
+-- much.
+accessState :: forall e d. (RetconDataSource e d)
+            => [InitialisedEntity] -- ^ Initialised state
+            -> Proxy e -- ^ Entity to look for
+            -> Proxy d -- ^ Data source to look for
+            -> Maybe (DataSourceState e d) -- ^ State for (e,d)
+accessState state entity source = foldl findEntity Nothing state
+  where
+    findEntity :: Maybe (DataSourceState e d)
+               -> InitialisedEntity
+               -> Maybe (DataSourceState e d)
+    findEntity Nothing (InitialisedEntity entityProxy entityState) =
+        case sameSymbol entityProxy entity of
+            Just Refl -> foldl findSource Nothing entityState
+            Nothing   -> Nothing
+    findEntity r       _ = r
+
+    findSource :: Maybe (DataSourceState e d)
+               -> InitialisedSource e
+               -> Maybe (DataSourceState e d)
+    findSource Nothing (InitialisedSource sourceProxy sourceState) =
+        case sameSymbol sourceProxy source of
+            Just Refl -> Just sourceState
+            Nothing   -> Nothing
+    findSource r       _ = r
 
 -- | Initialise the states for a collection of entities.
 initialiseEntities :: [SomeEntity]

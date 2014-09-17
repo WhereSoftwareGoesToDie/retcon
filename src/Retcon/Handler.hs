@@ -101,19 +101,16 @@ dispatch work = do
     let (entity_str, source_str, key) = read work :: (String, String, String)
     entities <- asks (retconEntities . retconConfig)
 
-    case someSymbolVal entity_str of
-        SomeSymbol (entity :: Proxy entity_ty) ->
-            forM_ entities $ \(SomeEntity e) ->
-                when (same e entity) $ forM_ (entitySources e) $ \(SomeDataSource (sp :: Proxy st) :: SomeDataSource et) -> do
-                    case someSymbolVal source_str of
-                        SomeSymbol (source :: Proxy source_ty) -> do
+    case (someSymbolVal entity_str, someSymbolVal source_str) of
+        (SomeSymbol entity, SomeSymbol source) ->
+            forM_ entities $ \(SomeEntity e) -> when (same e entity) $
+                forM_ (entitySources e) $ \(SomeDataSource (sp :: Proxy st) :: SomeDataSource et) -> do
                             let fk = ForeignKey key :: ForeignKey et st
 
                             when (same source sp) $ do
                                 state <- liftIO initialiseState
                                 (process state fk)
                                 liftIO $ finaliseState state
-
 
 -- | Run the retcon process on an event.
 retcon :: RetconStore s
