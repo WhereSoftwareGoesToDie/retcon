@@ -15,19 +15,20 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE PolyKinds                  #-}
+{-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeFamilies               #-}
 
 module Retcon.DataSource where
 
 import Control.Applicative
-import Control.Exception
-import Control.Exception.Enclosed
 import Control.Monad.Base
 import Control.Monad.Except
 import Control.Monad.Logger
 import Control.Monad.Reader
-import Control.Monad.Trans.Control
+import Data.Maybe
 import Data.Proxy
+import Data.Type.Equality
 import GHC.TypeLits
 
 import Retcon.Document
@@ -58,6 +59,22 @@ class (KnownSymbol entity) => RetconEntity entity where
 -- 'Document' values of the appropriate sort from the external system.
 class (KnownSymbol source, RetconEntity entity) => RetconDataSource entity source where
 
+    -- | Type of state used by the data source.
+    data DataSourceState entity source
+
+    -- | Initialise the state to be used by the data source.
+    --
+    -- This is called during startup to, for example, open a connection to a
+    -- datasource-specific database server.
+    initialiseState :: IO (DataSourceState entity source)
+
+    -- | Finalise the state used by the data source.
+    --
+    -- This is called during a clean shutdown to, for example, cleanly close a
+    -- database connection, etc.
+    finaliseState :: (DataSourceState entity source)
+                  -> IO ()
+
     -- | Put a document into a data source.
     --
     -- If the 'ForeignKey' is not known, it will be omitted and the data source
@@ -68,33 +85,126 @@ class (KnownSymbol source, RetconEntity entity) => RetconDataSource entity sourc
     -- monad.
     setDocument :: Document
                 -> Maybe (ForeignKey entity source)
-                -> DataSourceAction (ForeignKey entity source)
+                -> DataSourceAction (DataSourceState entity source) (ForeignKey entity source)
 
     -- | Retrieve a document from a data source.
     --
     -- If the document cannot be retrieved an error is returned in the 'Retcon'
     -- monad.
     getDocument :: ForeignKey entity source
-                -> DataSourceAction Document
+                -> DataSourceAction (DataSourceState entity source) Document
 
     -- | Delete a document from a data source.
     --
     -- If the document cannot be deleted an error is returned in the 'Retcon'
     -- monad.
     deleteDocument :: ForeignKey entity source
-                   -> DataSourceAction ()
+                   -> DataSourceAction (DataSourceState entity source) ()
 
 -- * Wrapper types
 --
 -- $ 'Proxy' values for instances of our 'RetconEntity' and 'RetconDataSource'
 -- type classes can be wrapped with existential types, allowing us to put them
 -- into data structures like lists easily.
+--
+-- We also have wrappers which include the initialised 'DataSourceState' values
+-- associated with each data source.
 
 -- | Wrap an arbitrary 'RetconEntity'.
-data SomeEntity = forall e. (KnownSymbol e, RetconEntity e) => SomeEntity (Proxy e)
+data SomeEntity = forall e. (KnownSymbol e, RetconEntity e) =>
+    SomeEntity (Proxy e)
 
 -- | Wrap an arbitrary 'RetconDataSource' for some entity 'e'.
-data SomeDataSource e = forall s. RetconDataSource e s => SomeDataSource (Proxy s)
+data SomeDataSource e = forall s. RetconDataSource e s =>
+    SomeDataSource (Proxy s)
+
+-- | Wrap an arbitrary 'RetconEntity', together with the initialised state for
+-- it's sources.
+data InitialisedEntity = forall e. (RetconEntity e) =>
+    InitialisedEntity { entityProxy :: Proxy e
+                      , entityState :: [InitialisedSource e]
+                      }
+
+-- | Wrap an arbitrary 'RetconDataSource' for some entity 'e', together with
+-- it's initialised state.
+data InitialisedSource e = forall s. RetconDataSource e s =>
+    InitialisedSource { sourceProxy :: Proxy s
+                      , sourceState :: DataSourceState e s
+                      }
+
+-- | Get the state, if any, associated with a data source.
+--
+-- This function will, through the judicious application of magic, determine if
+-- a list of initialised entity state values (each containing initialised data
+-- source state values) contains a state value for a specific data source.
+--
+-- Using 'foldl' here is pretty silly -- we should short circuit, etc. -- but
+-- the data to be traversed will allways be short, so it doesn't matter too
+-- much.
+accessState :: forall e d. (RetconDataSource e d)
+            => [InitialisedEntity] -- ^ Initialised state
+            -> Proxy e -- ^ Entity to look for
+            -> Proxy d -- ^ Data source to look for
+            -> Maybe (DataSourceState e d) -- ^ State for (e,d)
+accessState state entity source = foldl findEntity Nothing state
+  where
+    findEntity :: Maybe (DataSourceState e d)
+               -> InitialisedEntity
+               -> Maybe (DataSourceState e d)
+    findEntity Nothing (InitialisedEntity entityProxy entityState) =
+        case sameSymbol entityProxy entity of
+            Just Refl -> foldl findSource Nothing entityState
+            Nothing   -> Nothing
+    findEntity r       _ = r
+
+    findSource :: Maybe (DataSourceState e d)
+               -> InitialisedSource e
+               -> Maybe (DataSourceState e d)
+    findSource Nothing (InitialisedSource sourceProxy sourceState) =
+        case sameSymbol sourceProxy source of
+            Just Refl -> Just sourceState
+            Nothing   -> Nothing
+    findSource r       _ = r
+
+-- | Initialise the states for a collection of entities.
+initialiseEntities :: [SomeEntity]
+                   -> IO [InitialisedEntity]
+initialiseEntities = mapM initialiseEntity
+  where
+    initialiseEntity :: SomeEntity -> IO (InitialisedEntity)
+    initialiseEntity (SomeEntity (p :: Proxy e)) = do
+        ss <- initialiseSources $ entitySources p
+        return $ InitialisedEntity p ss
+
+-- | Finalise the states for a collection of entities.
+finaliseEntities :: [InitialisedEntity]
+                 -> IO [SomeEntity]
+finaliseEntities = mapM finaliseEntity . reverse
+  where
+    finaliseEntity (InitialisedEntity p s) = do
+        _ <- finaliseSources $ reverse s
+        return $ SomeEntity p
+
+-- | Initialise the states for a collection of data sources.
+initialiseSources :: forall e. RetconEntity e
+                 => [SomeDataSource e]
+                 -> IO [InitialisedSource e]
+initialiseSources = mapM initialiseSource
+  where
+    initialiseSource (SomeDataSource (p :: Proxy s) :: SomeDataSource e) = do
+        s <- initialiseState
+        return $ InitialisedSource p s
+
+-- | Finalise the states for a collection of data sources.
+finaliseSources :: forall e. RetconEntity e
+                 => [InitialisedSource e]
+                 -> IO [SomeDataSource e]
+finaliseSources = mapM finaliseSource
+  where
+    finaliseSource :: InitialisedSource e -> IO (SomeDataSource e)
+    finaliseSource (InitialisedSource p s) = do
+        finaliseState s
+        return $ SomeDataSource p
 
 -- * Monads
 
@@ -102,24 +212,26 @@ data SomeDataSource e = forall s. RetconDataSource e s => SomeDataSource (Proxy 
 -- implemented in the 'DataSourceAction' monad.
 
 -- | Monad transformer stack used in the 'DataSourceAction' monad.
-type DataSourceActionStack = ExceptT RetconError (LoggingT IO)
+type DataSourceActionStack s = ReaderT s (ExceptT RetconError (LoggingT IO))
 
 -- | Monad for interactions with data sources.
 --
 -- This monad provides error handling, logging, and I/O facilities.
-newtype DataSourceAction a =
+newtype DataSourceAction s a =
     DataSourceAction {
-        unDataSourceAction :: DataSourceActionStack a
+        unDataSourceAction :: DataSourceActionStack s a
     }
   deriving (Functor, Applicative, Monad, MonadBase IO, MonadIO, MonadLogger,
-  MonadError RetconError)
+  MonadError RetconError, MonadReader s)
 
 -- | Run a 'DataSourceAction' action.
-runDataSourceAction :: DataSourceAction a
+runDataSourceAction :: state
+                    -> DataSourceAction state a
                     -> IO (Either RetconError a)
-runDataSourceAction =
+runDataSourceAction s =
     runStderrLoggingT
     . runExceptT
+    . flip runReaderT s
     . unDataSourceAction
 
 -- * Keys

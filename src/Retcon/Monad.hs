@@ -33,6 +33,7 @@ import Control.Monad.Reader
 import Control.Monad.Trans.Control
 
 import Retcon.Config
+import Retcon.DataSource
 import Retcon.Error
 import Retcon.Options
 import Retcon.Store
@@ -50,7 +51,7 @@ carefully = handleAny (throwError . RetconError)
 -- | State held in the reader part of the 'RetconHandler' monad.
 data RetconStore s => RetconState s = RetconState
     { retconOptions :: RetconOptions
-    , retconConfig  :: RetconConfig
+    , retconState   :: [InitialisedEntity]
     , retconStore   :: s
     }
 
@@ -82,18 +83,31 @@ instance MonadBaseControl IO (RetconHandler s) where
     -- Wrap things back up into our monad.
     restoreM       = RetconHandler . restoreM . unStHandler
 
--- | Run a 'RetconHandler' action with the given configuration.
-runRetconHandler :: RetconStore s
-                 => RetconOptions
-                 -> RetconConfig
-                 -> s
-                 -> RetconHandler s a
-                 -> IO (Either RetconError a)
-runRetconHandler opt cfg store (RetconHandler a) =
-    flip runReaderT (RetconState opt cfg store ) . runLogging . runExceptT $ a
+-- | Run a 'RetconHandler' action with the given state.
+runRetconHandler' :: RetconStore s
+                  => RetconOptions
+                  -> [InitialisedEntity]
+                  -> s
+                  -> RetconHandler s a
+                  -> IO (Either RetconError a)
+runRetconHandler' opt state store (RetconHandler a) = do
+    flip runReaderT (RetconState opt state store) . runLogging . runExceptT $ a
   where
     runLogging = case optLogging opt of
       LogStderr -> runStderrLoggingT
       LogStdout -> runStdoutLoggingT
       LogNone   -> (`runLoggingT` \_ _ _ _ -> return ())
+
+-- | Run a 'RetconHandler' action with the given configuration.
+runRetconHandler :: RetconStore s
+                  => RetconOptions
+                  -> RetconConfig
+                  -> s
+                  -> RetconHandler s a
+                  -> IO (Either RetconError a)
+runRetconHandler opt cfg store a = do
+    state <- initialiseEntities (retconEntities cfg)
+    ret <- runRetconHandler' opt state store a
+    _ <- finaliseEntities state
+    return ret
 

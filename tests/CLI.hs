@@ -18,6 +18,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE TypeFamilies          #-}
 
 module Main where
 
@@ -53,6 +54,13 @@ instance RetconEntity "event" where
 -- * Data sources
 
 instance RetconDataSource "customer" "json" where
+
+    data DataSourceState "customer" "json" = JSONState
+
+    initialiseState = return JSONState
+
+    finaliseState _ = return ()
+
     getDocument key = liftIO $ do
         f <- fp "customer" "json"
         doc <- getJsonDirDocument f key
@@ -69,6 +77,13 @@ instance RetconDataSource "customer" "json" where
         either (error . show) return res
 
 instance RetconDataSource "customer" "json2" where
+
+    data DataSourceState "customer" "json2" = JSON2State
+
+    initialiseState = return JSON2State
+
+    finaliseState _ = return ()
+
     getDocument key = liftIO $ do
         f <- fp "customer" "json2"
         doc <- getJsonDirDocument f key
@@ -85,6 +100,13 @@ instance RetconDataSource "customer" "json2" where
         either (error . show) return res
 
 instance RetconDataSource "event" "json" where
+
+    data DataSourceState "event" "json" = JSONEventState
+
+    initialiseState = return JSONEventState
+
+    finaliseState _ = return ()
+
     getDocument key = liftIO $ do
         f <- fp "event" "json"
         doc <- getJsonDirDocument f key
@@ -101,6 +123,13 @@ instance RetconDataSource "event" "json" where
         either (error . show) return res
 
 instance RetconDataSource "event" "icalendar" where
+
+    data DataSourceState "event" "icalendar" = CalState
+
+    initialiseState = return CalState
+
+    finaliseState _ = return ()
+
     getDocument key = liftIO $ do
         f <- fp "event" "icalendar"
         doc <- getJsonDirDocument f key
@@ -117,6 +146,13 @@ instance RetconDataSource "event" "icalendar" where
         either (error . show) return res
 
 instance RetconDataSource "event" "exchange" where
+
+    data DataSourceState "event" "exchange" = ExchangeState
+
+    initialiseState = return ExchangeState
+
+    finaliseState _ = return ()
+
     getDocument key = liftIO $ do
         f <- fp "event" "exchange"
         doc <- getJsonDirDocument f key

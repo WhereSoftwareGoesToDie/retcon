@@ -8,7 +8,7 @@
 --
 
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE Rank2Types            #-}
 
 -- | Description: Abstract storage for retcon operational data.
 --

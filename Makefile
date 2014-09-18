@@ -30,3 +30,6 @@ lint: $(SOURCES)
 test:
 	@/bin/echo -e "TEST"
 	cabal test
+
+build:
+	cabal build

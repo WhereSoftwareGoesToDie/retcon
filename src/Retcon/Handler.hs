@@ -14,6 +14,7 @@
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TemplateHaskell       #-}
+{-# LANGUAGE TypeFamilies          #-}
 
 module Retcon.Handler where
 
@@ -31,6 +32,7 @@ import Data.Monoid
 import Data.Proxy
 import Data.Text (Text)
 import qualified Data.Text as T
+import Data.Type.Equality
 import Database.PostgreSQL.Simple
 import GHC.TypeLits
 
@@ -41,9 +43,9 @@ import Retcon.Document
 import Retcon.Error
 import Retcon.MergePolicy
 import Retcon.Monad
+import Retcon.Options
 import Retcon.Store (RetconStore)
 import qualified Retcon.Store as S
-import Retcon.Options
 
 -- | Check that two symbols are the same.
 same :: (KnownSymbol a, KnownSymbol b) => Proxy a -> Proxy b -> Bool
@@ -70,12 +72,13 @@ instance Eq (RetconOperation entity source) where
 -- This function should be able to return a 'RetconProblem' value, but currently
 -- doesn't.
 determineOperation :: (RetconStore s, RetconDataSource entity source)
-                   => ForeignKey entity source
+                   => DataSourceState entity source
+                   -> ForeignKey entity source
                    -> RetconHandler s (RetconOperation entity source)
-determineOperation fk = do
+determineOperation state fk = do
     ik' <- lookupInternalKey fk
     doc' <- join . first RetconError <$> tryAny
-        (liftIO . runDataSourceAction $ getDocument fk)
+        (liftIO . runDataSourceAction state $ getDocument fk)
     return $ case (ik', doc') of
         (Nothing, Left  _) -> RetconProblem fk (RetconSourceError "Unknown key, no document")
         (Nothing, Right _) -> RetconCreate fk
@@ -84,28 +87,31 @@ determineOperation fk = do
 
 -- | Perform the action/s described by a 'RetconOperation' value.
 runOperation :: (RetconStore store, RetconDataSource entity source)
-             => RetconOperation entity source
+             => DataSourceState entity source
+             -> RetconOperation entity source
              -> RetconHandler store ()
-runOperation event =
+runOperation state event =
     case event of
-        RetconCreate  fk -> create fk
-        RetconDelete  ik -> delete ik
-        RetconUpdate  ik -> update ik
-        RetconProblem fk err -> reportError fk err
+        RetconCreate  fk -> create state fk
+        RetconDelete  ik -> delete state ik
+        RetconUpdate  ik -> update state ik
+        RetconProblem fk err -> reportError state fk err
 
 -- | Parse a request string and handle an event.
-dispatch :: RetconStore store => String -> RetconHandler store ()
+dispatch :: forall store. RetconStore store
+         => String
+         -> RetconHandler store ()
 dispatch work = do
     let (entity_str, source_str, key) = read work :: (String, String, String)
-    entities <- asks (retconEntities . retconConfig)
-    case someSymbolVal entity_str of
-        SomeSymbol (entity :: Proxy entity_ty) ->
-            forM_ entities $ \(SomeEntity e) ->
-                when (same e entity) $ forM_ (entitySources e) $ \(SomeDataSource (sp :: Proxy st) :: SomeDataSource et) -> do
-                    case someSymbolVal source_str of
-                        SomeSymbol (source :: Proxy source_ty) -> do
-                          let fk = ForeignKey key :: ForeignKey et st
-                          when (same source sp) (process fk)
+    entities <- asks (retconState)
+
+    case (someSymbolVal entity_str, someSymbolVal source_str) of
+        (SomeSymbol entity, SomeSymbol source) ->
+            forM_ entities $ \(InitialisedEntity e dss) -> when (same e entity) $
+                forM_ dss $ \(InitialisedSource (sp :: Proxy st) dst :: InitialisedSource et) -> do
+                            let fk = ForeignKey key :: ForeignKey et st
+
+                            when (same source sp) $ process dst fk
 
 -- | Run the retcon process on an event.
 retcon :: RetconStore s
@@ -123,22 +129,24 @@ retcon opts config store key = do
 -- occured and invoking the correct 'RetconDataSource' actions and retcon
 -- algorithms to handle it.
 process :: forall store entity source. (RetconStore store, RetconDataSource entity source)
-        => ForeignKey entity source
+        => DataSourceState entity source
+        -> ForeignKey entity source
         -> RetconHandler store ()
-process fk = do
+process state fk = do
     $logDebug . T.pack . concat $ [ "EVENT against ", show $ length sources
                                   , " sources"
                                   ]
 
-    determineOperation fk >>= runOperation
+    determineOperation state fk >>= runOperation state
   where
     sources = entitySources (Proxy :: Proxy entity)
 
 -- | Process a creation event.
 create :: forall store entity source. (RetconStore store, RetconDataSource entity source)
-       => ForeignKey entity source
+       => DataSourceState entity source
+       -> ForeignKey entity source
        -> RetconHandler store ()
-create fk = do
+create state fk = do
     store <- asks retconStore
     $logDebug "CREATE"
 
@@ -147,7 +155,7 @@ create fk = do
     liftIO $ S.recordForeignKey store ik fk
 
     -- Use the new Document as the initial document.
-    doc' <- join . first RetconError <$> tryAny (liftIO $ runDataSourceAction $ getDocument fk)
+    doc' <- join . first RetconError <$> tryAny (liftIO $ runDataSourceAction state $ getDocument fk)
 
     case doc' of
         Left _ -> do
@@ -160,9 +168,10 @@ create fk = do
 
 -- | Process a deletion event.
 delete :: (RetconStore store, RetconEntity entity)
-       => InternalKey entity
+       => state
+       -> InternalKey entity
        -> RetconHandler store ()
-delete ik = do
+delete state ik = do
     $logDebug "DELETE"
 
     -- Delete from data sources.
@@ -175,9 +184,10 @@ delete ik = do
 
 -- | Process an update event.
 update :: (RetconStore store, RetconEntity entity)
-       => InternalKey entity
+       => state
+       -> InternalKey entity
        -> RetconHandler store ()
-update ik = do
+update state ik = do
     $logDebug "UPDATE"
 
     -- Fetch documents.
@@ -212,10 +222,11 @@ update ik = do
 -- | Report an error in determining the operation, communicating with the data
 -- source or similar.
 reportError :: (RetconDataSource entity source)
-            => ForeignKey entity source
+            => state
+            -> ForeignKey entity source
             -> RetconError
             -> RetconHandler store ()
-reportError fk err = do
+reportError state fk err = do
     $logError . T.pack . concat $ [ "Could not process event for "
                                   , show . foreignKeyValue $ fk
                                   , ". "
@@ -233,19 +244,24 @@ reportError fk err = do
 getDocuments :: forall store entity. (RetconStore store, RetconEntity entity)
              => InternalKey entity
              -> RetconHandler store [Either RetconError Document]
-getDocuments ik =
-    forM (entitySources (Proxy :: Proxy entity)) $
-        \(SomeDataSource (Proxy :: Proxy source)) ->
-            -- Flatten any nested errors.
-            join . first RetconError <$> tryAny (do
-                -- Lookup the foreign key for this data source.
-                mkey <- lookupForeignKey ik
-                -- If there was a key, use it to fetch the document.
-                case mkey of
-                    Just (fk :: ForeignKey entity source) ->
-                        liftIO . runDataSourceAction $ getDocument fk
-                    Nothing ->
-                        return . Left $ RetconFailed)
+getDocuments ik = do
+    let entity = Proxy :: Proxy entity
+    entities <- asks retconState
+
+    results <- forM entities $ \(InitialisedEntity current sources) ->
+        case sameSymbol entity current of
+            Nothing -> return []
+            Just Refl -> forM sources $ \(InitialisedSource (_ :: Proxy source) state) ->
+                -- Flatten any nested errors.
+                join . first RetconError <$> tryAny (do
+                    -- Lookup the foreign key for this data source.
+                    mkey :: Maybe (ForeignKey entity source) <- lookupForeignKey ik
+                    -- If there was a key, use it to fetch the document.
+                    case mkey of
+                        Nothing -> return . Left $ RetconFailed
+                        Just fk -> liftIO $ runDataSourceAction state $ getDocument fk
+                    )
+    return . concat $ results
 
 -- | Set 'Document's corresponding to an 'InternalKey' for all sources for an
 -- entity.
@@ -253,33 +269,47 @@ setDocuments :: forall store entity. (RetconStore store, RetconEntity entity)
              => InternalKey entity
              -> [Document]
              -> RetconHandler store [Either RetconError ()]
-setDocuments ik docs =
-    forM (zip docs (entitySources (Proxy :: Proxy entity))) $
-        \(doc, SomeDataSource (Proxy :: Proxy source)) ->
-            join . first RetconError <$> tryAny (do
-                (fk :: Maybe (ForeignKey entity source)) <- lookupForeignKey ik
-                fk' <- liftIO $ runDataSourceAction $ setDocument doc fk
-                -- TODO: Save ForeignKey to database.
-                case fk' of
-                    Left err -> return $ Left err
-                    Right new_fk -> do
-                        recordForeignKey ik new_fk
-                        return $ Right ()
-            )
+setDocuments ik docs = do
+    let entity = Proxy :: Proxy entity
+    entities <- asks retconState
 
--- | Delete a document.
+    results <- forM entities $ \(InitialisedEntity current sources) ->
+        case sameSymbol entity current of
+            Nothing -> return []
+            Just Refl -> forM (zip docs sources) $
+                \(doc, InitialisedSource (_ :: Proxy source) state) ->
+                    join . first RetconError <$> tryAny (do
+                        (fk :: Maybe (ForeignKey entity source)) <- lookupForeignKey ik
+                        fk' <- liftIO $ runDataSourceAction state $ setDocument doc fk
+                        case fk' of
+                            Left err -> return $ Left err
+                            Right new_fk -> do
+                                recordForeignKey ik new_fk
+                                return $ Right ()
+                    )
+    return . concat $ results
+
+-- | Delete the 'Document' corresponding to an 'InternalKey' for all sources.
 deleteDocuments :: forall store entity. (RetconStore store, RetconEntity entity)
                 => InternalKey entity
                 -> RetconHandler store [Either RetconError ()]
-deleteDocuments ik =
-    forM (entitySources (Proxy :: Proxy entity)) $
-        \(SomeDataSource (Proxy :: Proxy source)) ->
-            join . first RetconError <$> tryAny (do
-                (fk' :: Maybe (ForeignKey entity source)) <- lookupForeignKey ik
-                case fk' of
-                    Nothing -> return $ Right ()
-                    Just fk -> liftIO $ runDataSourceAction $ deleteDocument fk
-            )
+deleteDocuments ik = do
+    let entity = Proxy :: Proxy entity
+    entities <- asks retconState
+
+    results <- forM entities $ \(InitialisedEntity current sources) ->
+        case sameSymbol entity current of
+            Nothing -> return []
+            Just Refl -> forM sources $
+                \(InitialisedSource (_:: Proxy source) state) ->
+
+                    join . first RetconError <$> tryAny (do
+                        (fk' :: Maybe (ForeignKey entity source)) <- lookupForeignKey ik
+                        case fk' of
+                            Nothing -> return $ Right ()
+                            Just fk -> liftIO $ runDataSourceAction state $ deleteDocument fk
+                    )
+    return . concat $ results
 
 -- * Storage backend wrappers
 --
