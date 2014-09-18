@@ -16,7 +16,7 @@
 -- interface which can be implemented against various data storage backends.
 --
 -- The library includes type implementations of this interface in the
--- 'Retcon.Store.PostgreSQL' and 'Retcon.Store.Memory' modules.
+-- "Retcon.Store.PostgreSQL" and "Retcon.Store.Memory" modules.
 module Retcon.Store where
 
 import Retcon.DataSource
@@ -38,6 +38,12 @@ class RetconStore s where
     -- (E.g. connect to the database server, etc.)
     initialiseStorage :: RetconOptions
                       -> IO s
+
+    -- | Finalise a handle to the storage backend.
+    --
+    -- (E.g. disconnect from the database server, etc.)
+    finaliseStorage :: s
+                    -> IO ()
 
     -- | Allocate and return a new 'InternalKey'.
     createInternalKey :: forall entity. (RetconEntity entity)

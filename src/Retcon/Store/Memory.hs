@@ -12,23 +12,41 @@
 -- Retcon maintains quite a lot of operational data. This implements the
 -- operational data storage interface using an in-memory data structure. This
 -- is useful for test suites, demonstrations, etc.
-module Retcon.Store.Memory where
+module Retcon.Store.Memory (MemStorage) where
 
 import Data.Functor
 import Data.IORef
 import Data.Map.Strict (Map)
-import Data.Map.Strict as M
+import qualified Data.Map.Strict as M
 
+import Retcon.Document
+import Retcon.Diff
 import Retcon.Store
 
-type State = (Map String String)
+-- | Collection of in-memory data-structures to store retcon internal state.
+data State = MemoryStore
+    { memKeys :: Map String String
+    , memInits :: Map String Document
+    , memDiffs :: Map String [Diff ()]
+    }
 
--- | Wrapper around PostgreSQL connection for backend storage.
+-- | An empty 'State' value.
+emptyState :: State
+emptyState = MemoryStore keyMap docs diffs
+  where
+    keyMap = M.empty
+    docs = M.empty
+    diffs = M.empty
+
+-- | An ephemeral in-memory storage backend for Retcon.
 newtype MemStorage = MemStorage { unwrapMemStorage :: IORef State }
 
+-- | Ephemeral in-memory data storage.
 instance RetconStore MemStorage where
 
-    initialiseStorage _ = MemStorage <$> newIORef (M.empty)
+    initialiseStorage _ = MemStorage <$> newIORef emptyState
+
+    finaliseStorage (MemStorage ref) = writeIORef ref emptyState
 
     createInternalKey conn = return undefined
 
