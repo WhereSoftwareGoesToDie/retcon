@@ -26,12 +26,9 @@ import Retcon.Error
 import Retcon.Handler
 import Retcon.Monad
 import Retcon.Options
-import Retcon.Store (RetconStore)
+import Retcon.Store ()
 import Retcon.Store.PostgreSQL
 
-import TestHelpers
-
-import Control.Applicative
 import Control.Exception
 import Control.Monad.Error.Class
 import Control.Monad.Reader
@@ -39,7 +36,6 @@ import Data.Aeson
 import Data.Bifunctor
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BS
-import Data.Either
 import qualified Data.HashMap.Strict as HM
 import Data.IORef
 import Data.Map (Map)
@@ -51,7 +47,6 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Database.PostgreSQL.Simple
 import GHC.TypeLits ()
-import System.IO.Unsafe
 import System.Process
 
 testDBName :: ByteString
@@ -63,18 +58,6 @@ testConnection = BS.concat [BS.pack "dbname='", testDBName, BS.pack "'"]
 -- * Dispatching Tests
 --
 -- $ These tests exercise the logic used in handling events appropriately.
-
-
--- | Data to be used by '"dispatch1"' below.
-dispatch1Data :: IORef (Map Text Value)
-dispatch1Data = unsafePerformIO $ newIORef M.empty
-{-# NOINLINE dispatch1Data #-}
-
--- | Data to be used by '"dispatch2"' below.
-dispatch2Data :: IORef (Map Text Value)
-dispatch2Data = unsafePerformIO $ newIORef M.empty
-{-# NOINLINE dispatch2Data #-}
-
 
 -- | Create a new document in one of these stores.
 newTestDocument :: Text
