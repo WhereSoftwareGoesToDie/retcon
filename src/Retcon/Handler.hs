@@ -41,9 +41,9 @@ import Retcon.Document
 import Retcon.Error
 import Retcon.MergePolicy
 import Retcon.Monad
+import Retcon.Options
 import Retcon.Store (RetconStore)
 import qualified Retcon.Store as S
-import Retcon.Options
 
 -- | Check that two symbols are the same.
 same :: (KnownSymbol a, KnownSymbol b) => Proxy a -> Proxy b -> Bool

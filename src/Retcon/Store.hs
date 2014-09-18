@@ -8,7 +8,7 @@
 --
 
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE Rank2Types            #-}
 
 -- | Description: Abstract storage for retcon operational data.
 --
@@ -18,6 +18,8 @@
 -- The library includes type implementations of this interface in the
 -- "Retcon.Store.PostgreSQL" and "Retcon.Store.Memory" modules.
 module Retcon.Store where
+
+import GHC.TypeLits
 
 import Retcon.DataSource
 import Retcon.Diff
