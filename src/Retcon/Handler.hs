@@ -96,7 +96,9 @@ runOperation state event =
         RetconProblem fk err -> reportError state fk err
 
 -- | Parse a request string and handle an event.
-dispatch :: forall store. RetconStore store => String -> RetconHandler store ()
+dispatch :: forall store. RetconStore store
+         => String
+         -> RetconHandler store ()
 dispatch work = do
     let (entity_str, source_str, key) = read work :: (String, String, String)
     entities <- asks (retconState)
