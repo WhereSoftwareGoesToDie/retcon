@@ -8,16 +8,16 @@
 --
 
 {-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 
 module Main where
 
 import Data.IORef
-import Data.Maybe
 import qualified Data.Map.Strict as M
+import Data.Maybe
 import Data.Monoid
 import Test.Hspec
 
