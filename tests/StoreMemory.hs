@@ -30,7 +30,17 @@ import Retcon.Store.Memory
 options :: RetconOptions
 options = defaultOptions
 
+
+-- $ Entities and Data Sources
+--
+-- This test suite uses two data entities, each with two data sources, in all
+-- tests. This helps check that we're distinguishing internal and foreign keys
+-- correctly, etc.
+
 instance RetconEntity "tests" where
+    entitySources _ = []
+
+instance RetconEntity "testers" where
     entitySources _ = []
 
 instance RetconDataSource "tests" "test" where
@@ -48,6 +58,25 @@ instance RetconDataSource "tests" "more" where
     getDocument _ = undefined
 
     deleteDocument _ = return ()
+
+instance RetconDataSource "testers" "tester1" where
+
+    setDocument _ _ = undefined
+
+    getDocument _ = undefined
+
+    deleteDocument _ = return ()
+
+instance RetconDataSource "testers" "tester2" where
+
+    setDocument _ _ = undefined
+
+    getDocument _ = undefined
+
+    deleteDocument _ = return ()
+
+
+-- $ Memory Storage Tests
 
 memorySuite :: Spec
 memorySuite = do
@@ -68,10 +97,12 @@ memorySuite = do
 
             (_ :: InternalKey "tests") <- createInternalKey state
             (_ :: InternalKey "tests") <- createInternalKey state
+            (_ :: InternalKey "testers") <- createInternalKey state
 
             -- Should not be empty after we've put things in it.
             store <- readIORef ref
             store `shouldSatisfy` (/= emptyState)
+            memNextKey store `shouldBe` 3
 
             finaliseStorage state
 
@@ -84,11 +115,11 @@ memorySuite = do
             let ref = unwrapMemStorage $ state
 
             (ik1 :: InternalKey "tests") <- createInternalKey state
-            (ik2 :: InternalKey "tests") <- createInternalKey state
+            (ik2 :: InternalKey "testers") <- createInternalKey state
             (ik3 :: InternalKey "tests") <- createInternalKey state
 
             let (fk1 :: ForeignKey "tests" "test") = ForeignKey "fk1"
-            let (fk2 :: ForeignKey "tests" "test") = ForeignKey "fk2"
+            let (fk2 :: ForeignKey "testers" "tester1") = ForeignKey "fk2"
             let (fk3 :: ForeignKey "tests" "test") = ForeignKey "fk3"
 
             recordForeignKey state ik1 fk3
@@ -99,12 +130,12 @@ memorySuite = do
             memNextKey store `shouldBe` 3
             memItoF store `shouldBe` M.fromList [
                 (0, [("tests", "test", "fk3")]),
-                (1, [("tests", "test", "fk2")]),
+                (1, [("testers", "tester1", "fk2")]),
                 (2, [("tests", "test", "fk1")])
                 ]
             memFtoI store `shouldBe` M.fromList [
                 (("tests", "test", "fk1"), 2),
-                (("tests", "test", "fk2"), 1),
+                (("testers", "tester1", "fk2"), 1),
                 (("tests", "test", "fk3"), 0)
                 ]
 
@@ -207,7 +238,7 @@ memorySuite = do
 
             -- Insert some initial documents.
             (ik1 :: InternalKey "tests") <- createInternalKey state
-            (ik2 :: InternalKey "tests") <- createInternalKey state
+            (ik2 :: InternalKey "testers") <- createInternalKey state
             (ik3 :: InternalKey "tests") <- createInternalKey state
             (ik4 :: InternalKey "tests") <- createInternalKey state
 
@@ -228,7 +259,7 @@ memorySuite = do
             memNextKey store `shouldBe` 4
             memInits store `shouldBe` M.fromList
                 [ (("tests", 0), doc1)
-                , (("tests", 1), doc2)
+                , (("testers", 1), doc2)
                 , (("tests", 2), doc3)
                 ]
 
@@ -242,7 +273,7 @@ memorySuite = do
             memNextKey store `shouldBe` 4
             memInits store `shouldBe` M.fromList
                 [ (("tests", 0), doc1)
-                , (("tests", 1), doc2)
+                , (("testers", 1), doc2)
                 , (("tests", 2), doc4)
                 ]
 
@@ -271,7 +302,7 @@ memorySuite = do
 
             -- Insert some initial documents.
             (ik1 :: InternalKey "tests") <- createInternalKey state
-            (ik2 :: InternalKey "tests") <- createInternalKey state
+            (ik2 :: InternalKey "testers") <- createInternalKey state
             (ik3 :: InternalKey "tests") <- createInternalKey state
             (ik4 :: InternalKey "tests") <- createInternalKey state
 
@@ -297,7 +328,7 @@ memorySuite = do
             memNextKey store `shouldBe` 4
             memDiffs store `shouldBe` M.fromList
                 [ (("tests", 0), [ds1])
-                , (("tests", 1), [ds2])
+                , (("testers", 1), [ds2])
                 , (("tests", 2), [ds3])
                 ]
 

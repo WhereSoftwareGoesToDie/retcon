@@ -210,4 +210,3 @@ instance RetconStore MemStorage where
                      ds' = M.delete ikv ds
                      st' = st { memDiffs = ds' }
                  in (st', 0)
-
