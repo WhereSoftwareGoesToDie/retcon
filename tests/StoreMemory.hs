@@ -18,6 +18,7 @@ module Main where
 import Data.IORef
 import Data.Maybe
 import qualified Data.Map.Strict as M
+import Data.Monoid
 import Test.Hspec
 
 import Retcon.DataSource
@@ -268,13 +269,52 @@ memorySuite = do
             store <- readIORef ref
             store `shouldBe` emptyState
 
-            -- mutate
+            -- Insert some initial documents.
+            (ik1 :: InternalKey "tests") <- createInternalKey state
+            (ik2 :: InternalKey "tests") <- createInternalKey state
+            (ik3 :: InternalKey "tests") <- createInternalKey state
+            (ik4 :: InternalKey "tests") <- createInternalKey state
+
+            let a1 = mempty
+            let l1 = []
+            let ds1 = (a1, l1)
+            let a2 = mempty
+            let l2 = [mempty]
+            let ds2 = (a2, l2)
+            let a3 = mempty
+            let l3 = [mempty]
+            let ds3 = (a3, l3)
+
+            --
+            -- Check diffs can be recorded.
+            --
+
+            recordDiffs state ik1 ds1
+            recordDiffs state ik2 ds2
+            recordDiffs state ik3 ds3
+
+            store <- readIORef ref
+            memNextKey store `shouldBe` 4
+            memDiffs store `shouldBe` M.fromList
+                [ (("tests", 0), [ds1])
+                , (("tests", 1), [ds2])
+                , (("tests", 2), [ds3])
+                ]
+
+            --
+            -- Check diffs can be deleted.
+            --
+
+            deleteDiffs state ik2
+
+            store <- readIORef ref
+            memNextKey store `shouldBe` 4
+            memDiffs store `shouldBe` M.fromList
+                [ (("tests", 0), [ds1])
+                , (("tests", 2), [ds3])
+                ]
+
             finaliseStorage state
-            pending
 
 main :: IO ()
 main = hspec memorySuite
-
-pass :: Expectation
-pass = return ()
-

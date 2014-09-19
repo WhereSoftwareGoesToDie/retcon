@@ -59,7 +59,7 @@ data State = MemoryStore
     , memItoF    :: Map Int [(String, String, String)]
     , memFtoI    :: Map (String, String, String) Int
     , memInits   :: Map (String, Int) Document
-    , memDiffs   :: Map (String, Int) [Diff ()]
+    , memDiffs   :: Map (String, Int) [(Diff (), [Diff ()])]
     }
     deriving (Eq, Show)
 
@@ -192,7 +192,22 @@ instance RetconStore MemStorage where
                      st' = st { memInits = ids' }
                  in (st', ())
 
-    recordDiffs (MemStorage ref) ik (d, ds) = return ()
+    recordDiffs (MemStorage ref) ik (new, news) =
+        atomicModifyIORef' ref ins
+      where
+        ins st = let new' = (fmap (const ()) new, map (fmap (const ())) news)
+                     ds = memDiffs st
+                     ikv = internalKeyValue ik
+                     ds' = M.alter (Just . maybe [new'] (new':)) ikv ds
+                     st' = st { memDiffs = ds' }
+                 in (st', ())
 
-    deleteDiffs (MemStorage ref) ik = return 0
+    deleteDiffs (MemStorage ref) ik =
+        atomicModifyIORef' ref del
+      where
+        del st = let ds = memDiffs st
+                     ikv = internalKeyValue ik
+                     ds' = M.delete ikv ds
+                     st' = st { memDiffs = ds' }
+                 in (st', 0)
 
