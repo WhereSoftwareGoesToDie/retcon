@@ -8,6 +8,7 @@
 --
 
 {-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
@@ -15,10 +16,12 @@
 module Main where
 
 import Data.IORef
+import Data.Maybe
 import qualified Data.Map.Strict as M
 import Test.Hspec
 
 import Retcon.DataSource
+import Retcon.Document
 import Retcon.Options
 import Retcon.Store
 import Retcon.Store.Memory
@@ -195,12 +198,77 @@ memorySuite = do
 
         it "should record initial documents" $ do
             state <- (initialiseStorage options :: IO MemStorage)
-            -- mutate
+            let ref = unwrapMemStorage $ state
+
+            -- Should be empty before we've done anything to it.
+            store <- readIORef ref
+            store `shouldBe` emptyState
+
+            -- Insert some initial documents.
+            (ik1 :: InternalKey "tests") <- createInternalKey state
+            (ik2 :: InternalKey "tests") <- createInternalKey state
+            (ik3 :: InternalKey "tests") <- createInternalKey state
+            (ik4 :: InternalKey "tests") <- createInternalKey state
+
+            let doc1 = fromJust $ mkNode (Just "Document One")
+            let doc2 = fromJust $ mkNode (Just "Document Two")
+            let doc3 = fromJust $ mkNode (Just "Document Three")
+            let doc4 = fromJust $ mkNode (Just "Document Four")
+
+            --
+            -- Check documents can be inserted.
+            --
+
+            recordInitialDocument state ik1 doc1
+            recordInitialDocument state ik2 doc2
+            recordInitialDocument state ik3 doc3
+
+            store <- readIORef ref
+            memNextKey store `shouldBe` 4
+            memInits store `shouldBe` M.fromList
+                [ (("tests", 0), doc1)
+                , (("tests", 1), doc2)
+                , (("tests", 2), doc3)
+                ]
+
+            --
+            -- Check documents can be updated.
+            --
+
+            recordInitialDocument state ik3 doc4
+
+            store <- readIORef ref
+            memNextKey store `shouldBe` 4
+            memInits store `shouldBe` M.fromList
+                [ (("tests", 0), doc1)
+                , (("tests", 1), doc2)
+                , (("tests", 2), doc4)
+                ]
+
+            --
+            -- Check documents can be deleted.
+            --
+
+            deleteInitialDocument state ik2
+
+            store <- readIORef ref
+            memNextKey store `shouldBe` 4
+            memInits store `shouldBe` M.fromList
+                [ (("tests", 0), doc1)
+                , (("tests", 2), doc4)
+                ]
+
             finaliseStorage state
             pending
 
         it "should record diffs" $ do
             state <- (initialiseStorage options :: IO MemStorage)
+            let ref = unwrapMemStorage $ state
+
+            -- Should be empty before we've done anything to it.
+            store <- readIORef ref
+            store `shouldBe` emptyState
+
             -- mutate
             finaliseStorage state
             pending
