@@ -259,7 +259,6 @@ memorySuite = do
                 ]
 
             finaliseStorage state
-            pending
 
         it "should record diffs" $ do
             state <- (initialiseStorage options :: IO MemStorage)
