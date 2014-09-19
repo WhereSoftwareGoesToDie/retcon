@@ -17,7 +17,7 @@
 --
 -- Retcon maintains quite a lot of operational data. This implements the
 -- operational data storage interface using a PostgreSQL database.
-module Retcon.Store.PostgreSQL where
+module Retcon.Store.PostgreSQL (PGStorage(..)) where
 
 import Data.Aeson
 import Database.PostgreSQL.Simple
@@ -28,14 +28,18 @@ import Retcon.DataSource
 import Retcon.Store
 import Retcon.Options
 
--- | Wrapper around PostgreSQL connection for backend storage.
+-- | A persistent, PostgreSQL storage backend for Retcon.
 newtype PGStorage = PGStore { unWrapConnection :: Connection }
 
+-- | Persistent PostgreSQL-backed data storage.
 instance RetconStore PGStorage where
 
     initialiseStorage opts = do
         conn <- connectPostgreSQL . optDB $ opts
         return . PGStore $ conn
+
+    finaliseStorage (PGStore conn) = do
+        close conn
 
     -- | Create a new 'InternalKey' by inserting a row in the database and
     -- using the allocated ID as the new key.
