@@ -56,7 +56,7 @@ data DiffOp l
 
 instance Monoid l => Monoid (Diff l) where
     mempty = Diff mempty mempty
-    mappend = error "unimplemented mappend for Diff"
+    (Diff l1 o1) `mappend` (Diff l2 o2) = Diff (l1 `mappend` l2) (o1 ++ o2)
 
 instance FromJSON l => FromJSON (DiffOp l) where
     parseJSON (Object v) = case HM.lookup "op" v of
