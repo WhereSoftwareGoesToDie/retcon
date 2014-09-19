@@ -85,42 +85,42 @@ instance RetconDataSource "customer" "test-results" where
 
 -- | test suite
 suite :: Spec
-suite = do
+suite =
     describe "JSON directory marshalling" $ do
         it "can load 01-diff-source" $ do
             state <- initialiseState
-            _ <- runDataSourceAction state $ do
+            _ <- runDataSourceAction state $
                 getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "data")
             finaliseState state
             pass
 
         it "can load 01-diff-target" $ do
             state <- initialiseState
-            _ <- runDataSourceAction state $ do
+            _ <- runDataSourceAction state $
                 getDocument (ForeignKey "01-diff-target" :: ForeignKey "customer" "data")
             finaliseState state
             pass
 
         it "can write 01-diff-source to another source with that key" $ do
             state1 <- initialiseState
-            Right doc3 <- runDataSourceAction state1 $ do
+            Right doc3 <- runDataSourceAction state1 $
                 getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "data")
             finaliseState state1
 
             state2 <- initialiseState
-            _ <- runDataSourceAction state2 $ do
+            _ <- runDataSourceAction state2 $
                 setDocument doc3 (Just (ForeignKey "01-diff-source" :: ForeignKey "customer" "test-results"))
             finaliseState state2
             pass
 
         it "can write 01-diff-source to another source with new key" $ do
             state <- initialiseState
-            Right doc4 <- runDataSourceAction state $ do
+            Right doc4 <- runDataSourceAction state $
                 getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "data")
             finaliseState state
 
             state2 <- initialiseState
-            _ <- runDataSourceAction state2 $ do
+            _ <- runDataSourceAction state2 $
                 setDocument doc4 (Nothing :: Maybe (ForeignKey "customer" "test-results"))
             finaliseState state2
             pass

@@ -63,7 +63,7 @@ prop_diffopJsonSerialisable diffop = decode (encode diffop) == Just diffop
 -- | Hspec test suite for the 'Retcon.Diff' module.
 suite :: Spec
 suite = do
-  describe "generating a diff" $ do
+  describe "generating a diff" $
     it "should work with canned documents 01-*.json" $ do
       source <- testLoad' "01-diff-source.json"
       target <- testLoad' "01-diff-target.json"
@@ -78,10 +78,10 @@ suite = do
 
     prop "applyDiff (idem)" prop_applyDiffIdem
 
-  describe "serialising a diff" $ do
+  describe "serialising a diff" $
     prop "serialiseJSON (Diff)" prop_diffJsonSerialisable
 
-  describe "serialising a diff operation" $ do
+  describe "serialising a diff operation" $
     prop "serialiseJSON (DiffOp)" prop_diffopJsonSerialisable
 
 -- | Run the test suite.

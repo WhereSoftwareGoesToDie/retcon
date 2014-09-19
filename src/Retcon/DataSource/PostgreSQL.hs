@@ -42,21 +42,21 @@ getPgDocument connString fk = Ex.bracket (PG.connectPostgreSQL connString) PG.cl
         run conn = do
             results <- PG.query conn selectQ (PGT.Only $ unForeignKey fk)
             case results of
-                [] -> do
-                    return $ Left (DataSourceError "Nothing to get")
-                (PGT.Only fdoc:_) -> do
-                    case fromJSON fdoc of
-                        Error msg   -> do
-                            return $ Left (DataSourceError msg)
-                        Success doc -> do
-                            return $ Right doc
+                [] -> return $ Left (DataSourceError "Nothing to get")
+                (PGT.Only fdoc:_) -> case fromJSON fdoc of
+                    Error msg   -> return $ Left (DataSourceError msg)
+                    Success doc -> return $ Right doc
         selectQ = "SELECT data FROM retcon WHERE id = ?" :: PGT.Query
 
 -- | API function setDocument
-setPgDocument :: forall entity source . BS.ByteString -> Document -> Maybe (ForeignKey entity source) -> IO (Either DataSourceError (Maybe (ForeignKey entity source)))
+setPgDocument :: forall entity source. RetconDataSource entity source
+              => BS.ByteString
+              -> Document
+              -> Maybe (ForeignKey entity source)
+              -> IO (Either DataSourceError (Maybe (ForeignKey entity source)))
 setPgDocument connString doc mfk = Ex.bracket (PG.connectPostgreSQL connString) PG.close run
     where
-        run conn = do
+        run conn =
             case mfk of
                 Nothing -> do
                     newFK <- PG.returning conn insertQ [PGT.Only enc]

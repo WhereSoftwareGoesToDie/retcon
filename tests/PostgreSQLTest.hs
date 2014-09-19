@@ -82,41 +82,41 @@ instance RetconDataSource "customer" "db2" where
         either (error . show) return res
 
 suite :: Spec
-suite = do
+suite =
     describe "PostgreSQL marshalling" $ do
         it "can load row 1 from db1" $ do
             state <- initialiseState
-            _ <- runDataSourceAction state $ do
+            _ <- runDataSourceAction state $
                 getDocument (ForeignKey "1" :: ForeignKey "customer" "db1")
             finaliseState state
             pass
 
         it "can load row 2 from db1" $ do
             state <- initialiseState
-            _ <- runDataSourceAction state $ do
+            _ <- runDataSourceAction state $
                 getDocument (ForeignKey "2" :: ForeignKey "customer" "db1")
             finaliseState state
             pass
 
         it "can write db1/row1 to db2 with new key" $ do
             state <- initialiseState
-            Right doc3 <- runDataSourceAction state $ do
+            Right doc3 <- runDataSourceAction state $
                 getDocument (ForeignKey "1" :: ForeignKey "customer" "db1")
             finaliseState state
 
             state2 <- initialiseState
-            _ <- runDataSourceAction state2 $ do
+            _ <- runDataSourceAction state2 $
                 setDocument doc3 (Nothing :: Maybe (ForeignKey "customer" "db2"))
             finaliseState state2
             pass
 
         it "can write db1/row2 to db2 with existing key row1" $ do
             state <- initialiseState
-            Right doc4 <- runDataSourceAction state $ do
+            Right doc4 <- runDataSourceAction state $
                 getDocument (ForeignKey "2" :: ForeignKey "customer" "db1")
             finaliseState state
             state2 <- initialiseState
-            _ <- runDataSourceAction state2 $ do
+            _ <- runDataSourceAction state2 $
                 setDocument doc4 (Just $ ForeignKey "1" :: Maybe (ForeignKey "customer" "db2"))
             finaliseState state2
             pass

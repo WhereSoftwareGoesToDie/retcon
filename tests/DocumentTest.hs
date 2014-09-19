@@ -32,7 +32,7 @@ suite = do
       maybe (error "Could not load file") (const pass) test2
 
   describe "initial document calculation" $ do
-    it "should be empty whenever the input list is empty" $ do
+    it "should be empty whenever the input list is empty" $
       calculateInitialDocument [] `shouldBe` mempty
 
     it "should be empty whenever an empty is input" $ do

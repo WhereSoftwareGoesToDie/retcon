@@ -49,7 +49,7 @@ suite = do
                                   ]
 
 brokenSuite :: Spec
-brokenSuite = do
+brokenSuite =
     describe "acceptAll <+> onField value rejectAll" $ do
         let policy = acceptAll `combine` onField ["value"] rejectAll
 
@@ -74,8 +74,8 @@ brokenSuite = do
                                      , InsertOp label ["cats"] "long"
                                      ]
 
-        it "should leave other changes alone" $ do
-            1 `shouldBe` 2
+        it "should leave other changes alone" $
+            pendingWith "Not implemented"
 
 main :: IO ()
 main = hspec suite

@@ -79,17 +79,17 @@ instance RetconDataSource "testers" "tester2" where
 -- $ Memory Storage Tests
 
 memorySuite :: Spec
-memorySuite = do
+memorySuite =
     describe "Memory storage backend" $ do
         it "should be empty when initialised" $ do
-            state <- (initialiseStorage options :: IO MemStorage)
+            state <- initialiseStorage options :: IO MemStorage
 
             store <- readIORef . unwrapMemStorage $ state
             store `shouldBe` emptyState
 
         it "should be empty when finalised" $ do
-            state <- (initialiseStorage options :: IO MemStorage)
-            let ref = unwrapMemStorage $ state
+            state <- initialiseStorage options :: IO MemStorage
+            let ref = unwrapMemStorage state
 
             -- Should be empty before we've done anything to it.
             store <- readIORef ref
@@ -111,8 +111,8 @@ memorySuite = do
             store `shouldBe` emptyState
 
         it "should allocate and delete internal keys" $ do
-            state <- (initialiseStorage options :: IO MemStorage)
-            let ref = unwrapMemStorage $ state
+            state <- initialiseStorage options :: IO MemStorage
+            let ref = unwrapMemStorage state
 
             (ik1 :: InternalKey "tests") <- createInternalKey state
             (ik2 :: InternalKey "testers") <- createInternalKey state
@@ -140,8 +140,8 @@ memorySuite = do
                 ]
 
         it "should associate foreign and internal keys" $ do
-            state <- (initialiseStorage options :: IO MemStorage)
-            let ref = unwrapMemStorage $ state
+            state <- initialiseStorage options :: IO MemStorage
+            let ref = unwrapMemStorage state
 
             -- mutate
             (ik1 :: InternalKey "tests") <- createInternalKey state
@@ -229,8 +229,8 @@ memorySuite = do
                 ]
 
         it "should record initial documents" $ do
-            state <- (initialiseStorage options :: IO MemStorage)
-            let ref = unwrapMemStorage $ state
+            state <- initialiseStorage options :: IO MemStorage
+            let ref = unwrapMemStorage state
 
             -- Should be empty before we've done anything to it.
             store <- readIORef ref
@@ -293,8 +293,8 @@ memorySuite = do
             finaliseStorage state
 
         it "should record diffs" $ do
-            state <- (initialiseStorage options :: IO MemStorage)
-            let ref = unwrapMemStorage $ state
+            state <- initialiseStorage options :: IO MemStorage
+            let ref = unwrapMemStorage state
 
             -- Should be empty before we've done anything to it.
             store <- readIORef ref

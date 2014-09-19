@@ -302,7 +302,7 @@ operationSuite = around (prepareDatabase . prepareDispatchSuite) $ do
                 res <- run opt state $ runOperation st op
 
                 _ <- finaliseEntities state
-                res `shouldBe` (Right ())
+                res `shouldBe` Right ()
 
         it "should process an update operation." $
             withConfiguration opt $ \(conn, opts) -> do
@@ -375,9 +375,9 @@ operationSuite = around (prepareDatabase . prepareDispatchSuite) $ do
                 _ <- finaliseEntities state
                 (M.size d1, M.size d2, n_ik, n_fk) `shouldBe` (0, 0, 0, 0)
   where
-    run opt state action = do
+    run opt state action =
         withConfiguration opt $ \(conn, opts) ->
-            runRetconHandler' opts state (PGStore conn) $ action
+            runRetconHandler' opts state (PGStore conn) action
 
 -- | Test suite for dispatching logic.
 dispatchSuite :: Spec
@@ -561,9 +561,7 @@ prepareDispatchSuite action = bracket setup teardown (const action)
   where
     -- Create and initialise the database and data sources.
     setup :: IO ()
-    setup = do
-        -- Empty the data sources.
-        return ()
+    setup = return ()
 
     -- Clean up the database and data sources.
     teardown :: () -> IO ()
@@ -603,7 +601,7 @@ instance RetconDataSource "alicorn_invoice" "alicorn_source" where
 
 -- | Test suite for initial document.
 initialDocumentSuite :: Spec
-initialDocumentSuite = around prepareDatabase $ do
+initialDocumentSuite = around prepareDatabase $
     describe "Initial documents" $ do
         it "reads and writes initial documents" $ do
             let testDoc = Document [(["key"], "value")]
@@ -656,7 +654,7 @@ diffDatabaseSuite = around prepareDatabase $ do
         , optLogging = LogNone
         }
 
-    describe "Database diffs" $ do
+    describe "Database diffs" $
         it "writes a diff to database and reads it" $ do
             pendingWith "Data storage API changes."
             let testDiff = Diff 1 [InsertOp 1 [T.pack "a",T.pack "b",T.pack "c"] (T.pack "foo")]
@@ -665,7 +663,7 @@ diffDatabaseSuite = around prepareDatabase $ do
                 (PGStore conn) <- asks retconStore
 
                 -- Do some super rough db scaffolding
-                [(Only (ik_base::Int))] <- liftIO $ query conn "INSERT INTO retcon (entity) VALUES (?) RETURNING id" (Only $ T.pack "alicorn_invoice")
+                [Only (ik_base::Int)] <- liftIO $ query conn "INSERT INTO retcon (entity) VALUES (?) RETURNING id" (Only $ T.pack "alicorn_invoice")
 
                 void $ liftIO $ execute conn "INSERT INTO retcon_fk (entity, id, source, fk) VALUES (?, ?, ?, ?)" (T.pack "alicorn_invoice", T.pack $ show ik_base, T.pack "alicorn_source", T.pack "1")
 
@@ -678,14 +676,14 @@ diffDatabaseSuite = around prepareDatabase $ do
                 let ik = InternalKey 1 :: InternalKey "alicorn_invoice"
                 all_diffs <- getInitialDocumentDiffs ik
 
-                return (ik_base, mid, diffChanges $ head $ all_diffs)
+                return (ik_base, mid, diffChanges . head $ all_diffs)
 
             case result of
                 Left e                          -> error (show e)
                 Right (ik_base, mid, all_diffops) -> do
                     ik_base `shouldBe` 1
-                    mid `shouldBe` (Just 1)
-                    (all_diffops) `shouldBe` (diffChanges testDiff)
+                    mid `shouldBe` Just 1
+                    all_diffops `shouldBe` diffChanges testDiff
 
 testHandler :: RetconHandler PGStorage a -> IO (Either RetconError a)
 testHandler a = bracket setupConn closeConn run

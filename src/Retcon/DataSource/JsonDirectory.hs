@@ -34,16 +34,14 @@ getJsonDirDocument :: FilePath
 getJsonDirDocument dir fk = do
     readOK <- readFileFromDocument fp
     case readOK of
-        Left err -> do
-            return $ Left (DataSourceError err)
-        Right fdoc -> do
-            return $ Right fdoc
+        Left err -> return $ Left (DataSourceError err)
+        Right fdoc -> return $ Right fdoc
     where
         fp = getFkFilename dir fk
 
 -- | API function setDocument
 setJsonDirDocument :: FilePath -> Document -> Maybe (ForeignKey entity source) -> IO (Either DataSourceError (Maybe (ForeignKey entity source)))
-setJsonDirDocument dir doc mfk = do
+setJsonDirDocument dir doc mfk =
     case mfk of
         Nothing -> do
             nfk <- newFK dir

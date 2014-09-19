@@ -15,7 +15,6 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE PolyKinds                  #-}
-{-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeFamilies               #-}
 
@@ -72,7 +71,7 @@ class (KnownSymbol source, RetconEntity entity) => RetconDataSource entity sourc
     --
     -- This is called during a clean shutdown to, for example, cleanly close a
     -- database connection, etc.
-    finaliseState :: (DataSourceState entity source)
+    finaliseState :: DataSourceState entity source
                   -> IO ()
 
     -- | Put a document into a data source.
@@ -171,7 +170,7 @@ initialiseEntities :: [SomeEntity]
                    -> IO [InitialisedEntity]
 initialiseEntities = mapM initialiseEntity
   where
-    initialiseEntity :: SomeEntity -> IO (InitialisedEntity)
+    initialiseEntity :: SomeEntity -> IO InitialisedEntity
     initialiseEntity (SomeEntity (p :: Proxy e)) = do
         ss <- initialiseSources $ entitySources p
         return $ InitialisedEntity p ss

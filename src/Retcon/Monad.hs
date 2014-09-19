@@ -90,7 +90,7 @@ runRetconHandler' :: RetconStore s
                   -> s
                   -> RetconHandler s a
                   -> IO (Either RetconError a)
-runRetconHandler' opt state store (RetconHandler a) = do
+runRetconHandler' opt state store (RetconHandler a) =
     flip runReaderT (RetconState opt state store) . runLogging . runExceptT $ a
   where
     runLogging = case optLogging opt of

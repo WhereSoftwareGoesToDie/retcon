@@ -70,7 +70,7 @@ suite = do
                             test4 <- testWriteJsonDirExisting targetFp doc fk
                             either (error "Could not write file again") (const pass) test4
 
-    describe "JSON directory deleting" $ do
+    describe "JSON directory deleting" $
         it "can delete existing file" $ do
             preTest5a <- testReadJsonDir sourceFp (ForeignKey "01-diff-source")
             case preTest5a of

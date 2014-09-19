@@ -103,7 +103,7 @@ dispatch :: forall store. RetconStore store
          -> RetconHandler store ()
 dispatch work = do
     let (entity_str, source_str, key) = read work :: (String, String, String)
-    entities <- asks (retconState)
+    entities <- asks retconState
 
     case (someSymbolVal entity_str, someSymbolVal source_str) of
         (SomeSymbol entity, SomeSymbol source) ->
@@ -120,7 +120,7 @@ retcon :: RetconStore s
        -> s
        -> String -- ^ Key to use.
        -> IO (Either RetconError ())
-retcon opts config store key = do
+retcon opts config store key =
     runRetconHandler opts config store . dispatch $ key
 
 -- | Process an event on a specified 'ForeignKey'.
@@ -421,10 +421,10 @@ putDiffIntoDb fk (Diff _ diffOps) = do
         Nothing  -> return Nothing
         Just ik' -> do
             let toInsert = packDiffInsertParams (foreignKeyValue fk) ik'
-            (results :: [(Only Int)]) <- liftIO $ query conn insertQ toInsert
+            (results :: [Only Int]) <- liftIO $ query conn insertQ toInsert
             case results of
                 Only did:_ -> do
-                    sequence_ $ map (putDiffOpIntoDb fk did) diffOps
+                    mapM_ (putDiffOpIntoDb fk did) diffOps
                     return $ Just did
                 []         -> return Nothing
     where
@@ -483,12 +483,12 @@ getDbDiffOps diff_id = do
     -- conn <- asks retconConnection
     let conn = undefined
     (results :: [Only Value]) <- liftIO $ query conn selectQ (Only diff_id)
-    return . catMaybes . map (constructDiffOpFromDb . fromOnly) $ results
+    return . mapMaybe (constructDiffOpFromDb . fromOnly) $ results
     where
         selectQ = "SELECT portion FROM retcon_diff_portion WHERE diff_id = ?"
 
 constructDiffOpFromDb :: (FromJSON l) => Value -> Maybe (DiffOp l)
 constructDiffOpFromDb v =
     case (fromJSON v :: (FromJSON l) => Result (DiffOp l)) of
-        Error e   -> Nothing
+        Error _   -> Nothing
         Success d -> Just d
