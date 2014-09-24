@@ -63,13 +63,25 @@ parseArgsWithConfig = parseFile >=> execParser . helpfulParser
 helpfulParser :: RetconOptions -> ParserInfo RetconOptions
 helpfulParser os = info (helper <*> optionsParser os) fullDesc
 
--- | Applicative parser for options.
+-- | Applicative parser for 'RetconOptions', including entity details.
 optionsParser :: RetconOptions -> O.Parser RetconOptions
-optionsParser RetconOptions{..} =
+optionsParser def = confOptionsParser def <*> parseID
+  where
+    parseID = (\x y z -> [x,y,z])
+        <$> argument (return . T.pack) (metavar "ENTITY")
+        <*> argument (return . T.pack) (metavar "SOURCE")
+        <*> argument (return . T.pack) (metavar "ID")
+
+-- | Applicative parser for 'RetconOptions', including entity details.
+optionsParser' :: RetconOptions -> O.Parser RetconOptions
+optionsParser' def = confOptionsParser def <*> pure []
+
+-- | Applicative parser for the configuration components of 'RetconOptions'.
+confOptionsParser :: RetconOptions -> O.Parser ([Text] -> RetconOptions)
+confOptionsParser RetconOptions{..} =
     RetconOptions <$> parseVerbose
                   <*> parseLogging
                   <*> parseDB
-                  <*> parseID
   where
     parseVerbose :: O.Parser Bool
     parseVerbose = switch $
@@ -92,10 +104,6 @@ optionsParser RetconOptions{..} =
         <> help "Log messages to an output"
         <> O.value optLogging
         <> showDefault
-    parseID = (\x y z -> [x,y,z])
-        <$> argument (return . T.pack) (metavar "ENTITY")
-        <*> argument (return . T.pack) (metavar "SOURCE")
-        <*> argument (return . T.pack) (metavar "ID")
 
 -- | Reader for logging options.
 readLog :: (Monad m, MonadPlus m) => String -> m Logging
