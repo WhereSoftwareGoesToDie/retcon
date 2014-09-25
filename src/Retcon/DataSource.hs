@@ -113,9 +113,21 @@ class (KnownSymbol source, RetconEntity entity) => RetconDataSource entity sourc
 data SomeEntity = forall e. (KnownSymbol e, RetconEntity e) =>
     SomeEntity (Proxy e)
 
+-- | Extract the [hopefully] human-readable name from a 'SomeEntity' value.
+someEntityName :: SomeEntity
+               -> String
+someEntityName (SomeEntity proxy) = symbolVal proxy
+
 -- | Wrap an arbitrary 'RetconDataSource' for some entity 'e'.
 data SomeDataSource e = forall s. RetconDataSource e s =>
     SomeDataSource (Proxy s)
+
+-- | Extract the [hopefully] human-readable name from a 'SomeDataSource' value.
+someDataSourceName :: forall e. (RetconEntity e)
+                   => SomeDataSource e
+                   -> (String, String)
+someDataSourceName (SomeDataSource proxy) =
+    (symbolVal (Proxy :: Proxy e), symbolVal proxy)
 
 -- | Wrap an arbitrary 'RetconEntity', together with the initialised state for
 -- it's sources.
