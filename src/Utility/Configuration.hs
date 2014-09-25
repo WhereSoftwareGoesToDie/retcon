@@ -38,4 +38,3 @@ convertConfig input = foldl add M.empty input
     add m (e, s, k, v) =
         let new = M.singleton k v
         in M.alter (Just . maybe new (M.union new)) (e, s) m
-
