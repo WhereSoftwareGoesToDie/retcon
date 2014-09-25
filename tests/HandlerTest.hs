@@ -130,7 +130,7 @@ instance RetconDataSource "dispatchtest" "dispatch1" where
         ref <- newIORef M.empty
         return $ Dispatch1 ref
 
-    finaliseState (Dispatch1 ref) = do
+    finaliseState (Dispatch1 ref) =
         writeIORef ref M.empty
 
     getDocument fk = do
@@ -154,7 +154,7 @@ instance RetconDataSource "dispatchtest" "dispatch2" where
         ref <- newIORef M.empty
         return $ Dispatch2 ref
 
-    finaliseState (Dispatch2 ref) = do
+    finaliseState (Dispatch2 ref) =
         writeIORef ref M.empty
 
     getDocument fk = do
@@ -534,11 +534,11 @@ namesSuite :: Spec
 namesSuite = describe "Human readable names" $ do
     it "should be known for entities" $ do
         let entity = SomeEntity (Proxy :: Proxy "dispatchtest")
-        (someEntityName entity) `shouldBe` "dispatchtest"
+        someEntityName entity `shouldBe` "dispatchtest"
 
     it "should be known for data sources of an entity" $ do
         let entity = SomeEntity (Proxy :: Proxy "dispatchtest")
-        (someEntityNames entity) `shouldBe` ("dispatchtest", ["dispatch1", "dispatch2"])
+        someEntityNames entity `shouldBe` ("dispatchtest", ["dispatch1", "dispatch2"])
 
 -- | Setup and teardown for the initial document tests.
 prepareDatabase :: IO () -> IO ()
