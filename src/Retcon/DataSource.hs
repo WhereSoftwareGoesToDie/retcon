@@ -118,6 +118,15 @@ someEntityName :: SomeEntity
                -> String
 someEntityName (SomeEntity proxy) = symbolVal proxy
 
+-- | Extract the human-readable name of an entity and its data sources from a
+-- 'SomeEntity' value.
+someEntityNames :: SomeEntity
+                -> (String, [String])
+someEntityNames (SomeEntity entity) =
+    let en = symbolVal entity
+        ds = map (snd . someDataSourceName) . entitySources $ entity
+    in (en, ds)
+
 -- | Wrap an arbitrary 'RetconDataSource' for some entity 'e'.
 data SomeDataSource e = forall s. RetconDataSource e s =>
     SomeDataSource (Proxy s)

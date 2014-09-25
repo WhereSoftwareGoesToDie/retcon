@@ -127,12 +127,10 @@ instance RetconDataSource "dispatchtest" "dispatch1" where
         Dispatch1 { dispatch1State :: IORef (Map Text Value) }
 
     initialiseState = do
-        putStrLn "dispatch1: initialise"
         ref <- newIORef M.empty
         return $ Dispatch1 ref
 
     finaliseState (Dispatch1 ref) = do
-        putStrLn "dispatch1: finalise"
         writeIORef ref M.empty
 
     getDocument fk = do
@@ -153,12 +151,10 @@ instance RetconDataSource "dispatchtest" "dispatch2" where
         Dispatch2 { dispatch2State :: IORef (Map Text Value) }
 
     initialiseState = do
-        putStrLn "dispatch2: initialise"
         ref <- newIORef M.empty
         return $ Dispatch2 ref
 
     finaliseState (Dispatch2 ref) = do
-        putStrLn "dispatch2: finalise"
         writeIORef ref M.empty
 
     getDocument fk = do
@@ -534,6 +530,16 @@ dispatchSuite = around (prepareDatabase . prepareDispatchSuite) $ do
   where
     run opt state conn action = runRetconHandler' opt state (PGStore conn) action
 
+namesSuite :: Spec
+namesSuite = describe "Human readable names" $ do
+    it "should be known for entities" $ do
+        let entity = SomeEntity (Proxy :: Proxy "dispatchtest")
+        (someEntityName entity) `shouldBe` "dispatchtest"
+
+    it "should be known for data sources of an entity" $ do
+        let entity = SomeEntity (Proxy :: Proxy "dispatchtest")
+        (someEntityNames entity) `shouldBe` ("dispatchtest", ["dispatch1", "dispatch2"])
+
 -- | Setup and teardown for the initial document tests.
 prepareDatabase :: IO () -> IO ()
 prepareDatabase action = bracket setupSuite teardownSuite (const action)
@@ -696,6 +702,7 @@ testHandler a = bracket setupConn closeConn run
 
 main :: IO ()
 main = hspec $ do
+    namesSuite
     operationSuite
     dispatchSuite
     initialDocumentSuite
