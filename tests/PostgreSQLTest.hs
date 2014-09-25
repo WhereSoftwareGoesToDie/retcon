@@ -16,8 +16,10 @@
 
 module Main where
 
+import Control.Monad
 import Control.Monad.IO.Class
 import Data.ByteString
+import qualified Data.Map as M
 import Data.Proxy
 import GHC.TypeLits
 import System.Process
@@ -85,48 +87,49 @@ suite :: Spec
 suite =
     describe "PostgreSQL marshalling" $ do
         it "can load row 1 from db1" $ do
-            state <- initialiseState
+            state <- runInitialiser M.empty initialiseState
             _ <- runDataSourceAction state $
                 getDocument (ForeignKey "1" :: ForeignKey "customer" "db1")
-            finaliseState state
+            runInitialiser M.empty $ finaliseState state
             pass
 
         it "can load row 2 from db1" $ do
-            state <- initialiseState
+            state <- runInitialiser M.empty initialiseState
             _ <- runDataSourceAction state $
                 getDocument (ForeignKey "2" :: ForeignKey "customer" "db1")
-            finaliseState state
+            runInitialiser M.empty $ finaliseState state
             pass
 
         it "can write db1/row1 to db2 with new key" $ do
-            state <- initialiseState
+            state <- runInitialiser M.empty initialiseState
             Right doc3 <- runDataSourceAction state $
                 getDocument (ForeignKey "1" :: ForeignKey "customer" "db1")
-            finaliseState state
+            runInitialiser M.empty $ finaliseState state
 
-            state2 <- initialiseState
+            state2 <- runInitialiser M.empty initialiseState
             _ <- runDataSourceAction state2 $
                 setDocument doc3 (Nothing :: Maybe (ForeignKey "customer" "db2"))
-            finaliseState state2
+            runInitialiser M.empty $ finaliseState state2
             pass
 
         it "can write db1/row2 to db2 with existing key row1" $ do
-            state <- initialiseState
+            state <- runInitialiser M.empty initialiseState
             Right doc4 <- runDataSourceAction state $
                 getDocument (ForeignKey "2" :: ForeignKey "customer" "db1")
-            finaliseState state
-            state2 <- initialiseState
+            runInitialiser M.empty $ finaliseState state
+
+            state2 <- runInitialiser M.empty initialiseState
             _ <- runDataSourceAction state2 $
                 setDocument doc4 (Just $ ForeignKey "1" :: Maybe (ForeignKey "customer" "db2"))
-            finaliseState state2
+            runInitialiser M.empty $ finaliseState state2
             pass
 
         it "can delete db2/row1" $ do
-            state <- initialiseState
-            res <- runDataSourceAction state $ do
+            state <- runInitialiser M.empty initialiseState
+            void $ runDataSourceAction state $ do
                 doc5 <- getDocument (ForeignKey "1" :: ForeignKey "customer" "db2")
                 deleteDocument (ForeignKey "1" :: ForeignKey "customer" "db2")
-            finaliseState state
+            runInitialiser M.empty $ finaliseState state
             pass
 
 -- | get source file path

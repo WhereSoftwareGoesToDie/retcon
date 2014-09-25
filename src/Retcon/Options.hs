@@ -135,4 +135,3 @@ parseFile path = do
 
     possibleKeys :: Parser String
     possibleKeys = string "logging" <|> string "database"
-

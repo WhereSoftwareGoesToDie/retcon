@@ -127,11 +127,11 @@ instance RetconDataSource "dispatchtest" "dispatch1" where
         Dispatch1 { dispatch1State :: IORef (Map Text Value) }
 
     initialiseState = do
-        ref <- newIORef M.empty
+        ref <- liftIO $ newIORef M.empty
         return $ Dispatch1 ref
 
     finaliseState (Dispatch1 ref) =
-        writeIORef ref M.empty
+        liftIO $ writeIORef ref M.empty
 
     getDocument fk = do
         ref <- asks dispatch1State
@@ -151,11 +151,11 @@ instance RetconDataSource "dispatchtest" "dispatch2" where
         Dispatch2 { dispatch2State :: IORef (Map Text Value) }
 
     initialiseState = do
-        ref <- newIORef M.empty
+        ref <- liftIO $ newIORef M.empty
         return $ Dispatch2 ref
 
     finaliseState (Dispatch2 ref) =
-        writeIORef ref M.empty
+        liftIO $ writeIORef ref M.empty
 
     getDocument fk = do
         ref <- asks dispatch2State

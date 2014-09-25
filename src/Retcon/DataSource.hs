@@ -25,8 +25,10 @@ import Control.Monad.Base
 import Control.Monad.Except
 import Control.Monad.Logger
 import Control.Monad.Reader
-import Data.Maybe
+import Data.Map (Map)
+import qualified Data.Map as M
 import Data.Proxy
+import Data.Text (Text)
 import Data.Type.Equality
 import GHC.TypeLits
 
@@ -50,6 +52,19 @@ class (KnownSymbol entity) => RetconEntity entity where
 
 -- * Data sources
 
+-- | Monad for initialisers.
+newtype Initialiser s a = Initialiser {
+    unInitialiser :: ReaderT s IO a
+    }
+  deriving (Functor, Applicative, Monad, MonadIO, MonadReader s, MonadBase IO)
+
+-- | Run an 'Initialiser' action.
+runInitialiser :: s -> Initialiser s a -> IO a
+runInitialiser s (Initialiser a) = runReaderT a s
+
+type DataSourceInit a = Initialiser (Map Text Text) a
+type EntityInit a = Initialiser (Map (String, String) Text) a
+
 -- | The 'RetconDataSource' type class associates two 'Symbol' types: the first
 -- identifies an entity (i.e. a type of data) and the second identifies a
 -- system which handles data of that type.
@@ -65,14 +80,14 @@ class (KnownSymbol source, RetconEntity entity) => RetconDataSource entity sourc
     --
     -- This is called during startup to, for example, open a connection to a
     -- datasource-specific database server.
-    initialiseState :: IO (DataSourceState entity source)
+    initialiseState :: DataSourceInit (DataSourceState entity source)
 
     -- | Finalise the state used by the data source.
     --
     -- This is called during a clean shutdown to, for example, cleanly close a
     -- database connection, etc.
     finaliseState :: DataSourceState entity source
-                  -> IO ()
+                  -> DataSourceInit ()
 
     -- | Put a document into a data source.
     --
@@ -212,7 +227,7 @@ initialiseSources :: forall e. RetconEntity e
 initialiseSources = mapM initialiseSource
   where
     initialiseSource (SomeDataSource (p :: Proxy s) :: SomeDataSource e) = do
-        s <- initialiseState
+        s <- runInitialiser (M.empty) initialiseState
         return $ InitialisedSource p s
 
 -- | Finalise the states for a collection of data sources.
@@ -223,7 +238,7 @@ finaliseSources = mapM finaliseSource
   where
     finaliseSource :: InitialisedSource e -> IO (SomeDataSource e)
     finaliseSource (InitialisedSource p s) = do
-        finaliseState s
+        runInitialiser (M.empty) $ finaliseState s
         return $ SomeDataSource p
 
 -- * Monads
