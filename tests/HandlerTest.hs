@@ -177,6 +177,16 @@ operationSuite = around (prepareDatabase . prepareDispatchSuite) $ do
         , optLogging = LogNone
         }
 
+    describe "Mapping keys" $ do
+        it "should map from internal to foreign keys" $
+            pending
+
+        it "should map from foreign to internal keys" $
+            pending
+
+        it "should translate foreign to foreign keys" $
+            pending
+
     describe "Determining operations" $ do
         it "should result in a create when new key is seen, with document." $ do
             -- Create a document in dispatch1; leave dispatch2 and the
