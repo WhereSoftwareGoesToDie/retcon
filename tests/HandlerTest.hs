@@ -530,6 +530,7 @@ dispatchSuite = around (prepareDatabase . prepareDispatchSuite) $ do
   where
     run opt state conn action = runRetconHandler' opt state (PGStore conn) action
 
+-- | Test operations for dealing with entity and data source names.
 namesSuite :: Spec
 namesSuite = describe "Human readable names" $ do
     it "should be known for entities" $ do
@@ -538,7 +539,8 @@ namesSuite = describe "Human readable names" $ do
 
     it "should be known for data sources of an entity" $ do
         let entity = SomeEntity (Proxy :: Proxy "dispatchtest")
-        someEntityNames entity `shouldBe` ("dispatchtest", ["dispatch1", "dispatch2"])
+        someEntityNames entity `shouldBe` ("dispatchtest",
+            ["dispatch1", "dispatch2"])
 
 -- | Setup and teardown for the initial document tests.
 prepareDatabase :: IO () -> IO ()
