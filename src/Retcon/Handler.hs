@@ -362,12 +362,24 @@ recordForeignKey ik fk = do
     liftIO $ S.recordForeignKey store ik fk
     return ()
 
+-- | Lookup the 'ForeignKey' which corresponds to an 'InternalKey'.
 lookupForeignKey :: (RetconStore store, RetconDataSource entity source)
                  => InternalKey entity
                  -> RetconHandler store (Maybe (ForeignKey entity source))
 lookupForeignKey ik = do
     store <- asks retconStore
     liftIO $ S.lookupForeignKey store ik
+
+-- | Attempt to translate a 'ForeignKey' from one source into a 'ForeignKey'
+-- for another source.
+translateForeignKey
+    :: forall entity source1 source2 store.
+        (RetconStore store, RetconDataSource entity source1,
+        RetconDataSource entity source2)
+    => ForeignKey entity source1
+    -> RetconHandler store (Maybe (ForeignKey entity source2))
+translateForeignKey from =
+    lookupInternalKey from >>= maybe (return Nothing) lookupForeignKey
 
 -- | Fetch the initial document, if any, last used for an 'InternalKey'.
 getInitialDocument :: forall store entity. (RetconStore store, RetconEntity entity)
