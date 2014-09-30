@@ -31,16 +31,16 @@ import Control.Monad.Except
 import Control.Monad.Logger
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
+import qualified Control.Monad.Trans.Reader as ReaderT (ask, local, reader)
 
 import Retcon.Config
 import Retcon.DataSource
 import Retcon.Error
 import Retcon.Options
-import Retcon.Store
 
 -- | Run an action in 'RetconHandler', catching any exceptions and propagating
 -- them as 'RetconError's.
-carefully :: RetconHandler s a -> RetconHandler s a
+carefully :: RetconMonad s l a -> RetconMonad s l a
 carefully = handleAny (throwError . RetconError)
 
 -- * Handler monad
@@ -49,65 +49,65 @@ carefully = handleAny (throwError . RetconError)
 -- actions in the 'RetconHandler' monad.
 
 -- | State held in the reader part of the 'RetconHandler' monad.
-data RetconStore s => RetconState s = RetconState
+data RetconState s = RetconState
     { retconOptions :: RetconOptions
     , retconState   :: [InitialisedEntity]
     , retconStore   :: s
     }
 
 -- | Monad transformer stack used in the 'RetconHandler' monad.
-type RetconHandlerStack s = ExceptT RetconError (LoggingT (ReaderT (RetconState s) IO))
+type RetconHandlerStack s l = ReaderT (RetconState s, l) (ExceptT RetconError (LoggingT IO))
 
 -- | Monad for the retcon system.
 --
--- This monad provides error handling (by throwing 'HandlerLog' exceptions),
--- logging (write 'HandlerLog'), access to configuration and PostgreSQL
--- connections (reader), and IO facilities.
-newtype RetconHandler s a =
-    RetconHandler {
-        unRetconHandler :: (RetconHandlerStack s) a
+-- This monad provides access to an environment containing the "global" state
+-- of the retcon system and the "local" state of the current action; error
+-- handling through exceptions; logging; and I/O.
+newtype RetconMonad s l a =
+    RetconMonad {
+        unRetconMonad :: (RetconHandlerStack s l) a
     }
   deriving (Functor, Applicative, Monad, MonadIO, MonadLogger,
-  MonadReader (RetconState s), MonadError RetconError, MonadBase IO)
+  MonadReader (RetconState s, l), MonadError RetconError, MonadBase IO)
 
--- | MonadBaseControl used to catch IO exceptions
-instance MonadBaseControl IO (RetconHandler s) where
-    newtype StM (RetconHandler s) a = StHandler {
-        unStHandler :: StM (RetconHandlerStack s) a
-    }
+-- | Get the retcon component of the environment.
+getRetconState :: RetconMonad s l (RetconState s)
+getRetconState = asks fst
 
-    -- Unwrap the bits in our monad to get to the base.
-    liftBaseWith f = RetconHandler . liftBaseWith $ \r ->
-        f $ liftM StHandler . r . unRetconHandler
+-- | Get the action-specific component of the environment.
+getActionState :: RetconMonad s l l
+getActionState = asks snd
 
-    -- Wrap things back up into our monad.
-    restoreM       = RetconHandler . restoreM . unStHandler
-
--- | Run a 'RetconHandler' action with the given state.
-runRetconHandler' :: RetconStore s
-                  => RetconOptions
-                  -> [InitialisedEntity]
-                  -> s
-                  -> RetconHandler s a
-                  -> IO (Either RetconError a)
-runRetconHandler' opt state store (RetconHandler a) =
-    flip runReaderT (RetconState opt state store) . runLogging . runExceptT $ a
+-- | Execute an action in the 'RetconMonad' monad.
+runRetconMonad :: RetconOptions
+               -> [InitialisedEntity]
+               -> s
+               -> l
+               -> RetconMonad s l a
+               -> IO (Either RetconError a)
+runRetconMonad opt state store l =
+    runLogging . runExceptT . flip runReaderT (st, l) . unRetconMonad
   where
+    st = RetconState opt state store
     runLogging = case optLogging opt of
       LogStderr -> runStderrLoggingT
       LogStdout -> runStdoutLoggingT
       LogNone   -> (`runLoggingT` \_ _ _ _ -> return ())
 
--- | Run a 'RetconHandler' action with the given configuration.
-runRetconHandler :: RetconStore s
-                  => RetconOptions
-                  -> RetconConfig
-                  -> s
-                  -> RetconHandler s a
-                  -> IO (Either RetconError a)
-runRetconHandler opt cfg store a = do
-    state <- initialiseEntities (retconEntities cfg)
-    ret <- runRetconHandler' opt state store a
-    _ <- finaliseEntities state
-    return ret
+runRetconMonad' opt conf store l = do
+    let state = []
+    runRetconMonad opt state store l
+
+-- | MonadBaseControl used to catch IO exceptions
+instance MonadBaseControl IO (RetconMonad s l) where
+    newtype StM (RetconMonad s l) a = StHandler {
+        unStHandler :: StM (RetconHandlerStack s l) a
+    }
+
+    -- Unwrap the bits in our monad to get to the base.
+    liftBaseWith f = RetconMonad . liftBaseWith $ \r ->
+        f $ liftM StHandler . r . unRetconMonad
+
+    -- Wrap things back up into our monad.
+    restoreM       = RetconMonad . restoreM . unStHandler
 
