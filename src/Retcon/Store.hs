@@ -241,7 +241,7 @@ instance ReadableToken ROToken where
     lookupForeignKey ik = do
         ROToken store <- retconStore <$> getRetconState
         liftIO $ storeLookupForeignKey store ik
-    
+
     lookupInitialDocument ik = do
         ROToken store <- retconStore <$> getRetconState
         liftIO $ storeLookupInitialDocument store ik
@@ -260,7 +260,7 @@ instance ReadableToken RWToken where
     lookupForeignKey ik = do
         RWToken store <- retconStore <$> getRetconState
         liftIO $ storeLookupForeignKey store ik
-    
+
     lookupInitialDocument ik = do
         RWToken store <- retconStore <$> getRetconState
         liftIO $ storeLookupInitialDocument store ik

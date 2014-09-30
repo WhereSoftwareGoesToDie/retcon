@@ -45,7 +45,7 @@ import Retcon.Error
 import Retcon.MergePolicy
 import Retcon.Monad
 import Retcon.Options
-import Retcon.Store (ReadableToken, WritableToken, StoreToken)
+import Retcon.Store (ReadableToken, StoreToken, WritableToken)
 import qualified Retcon.Store as S
 
 -- | Check that two symbols are the same.
