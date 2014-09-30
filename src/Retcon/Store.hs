@@ -33,6 +33,7 @@ module Retcon.Store (
     RWToken,
     ) where
 
+import Control.Applicative
 import Control.Monad.IO.Class
 
 import Retcon.DataSource
@@ -162,80 +163,68 @@ class StoreToken s where
 class StoreToken s => ReadableToken s where
     -- | Find the 'InternalKey' associated with a 'ForeignKey'.
     lookupInternalKey :: (RetconDataSource e d)
-                      => s
-                      -> ForeignKey e d
+                      => ForeignKey e d
                       -> RetconMonad s l (Maybe (InternalKey e))
 
     -- | Find the 'ForeignKey' corresponding to an 'InternalKey' in a particular
     -- data source.
     lookupForeignKey :: (RetconDataSource e d)
-                     => s
-                     -> InternalKey e
+                     => InternalKey e
                      -> RetconMonad s l (Maybe (ForeignKey e d))
 
     -- | Lookup the initial 'Document', if any, associated with an 'InternalKey'.
     lookupInitialDocument :: (RetconEntity e)
-                          => s
-                          -> InternalKey e
+                          => InternalKey e
                           -> RetconMonad s l (Maybe Document)
 
 -- | Storage tokens which support writing operations.
 class StoreToken s => WritableToken s where
     -- | Allocate and return a new 'InternalKey'.
     createInternalKey :: (RetconEntity entity)
-                      => s
-                      -> RetconMonad s l (InternalKey entity)
+                      => RetconMonad s l (InternalKey entity)
 
     -- | Delete an 'InternalKey' and any associated resources.
     deleteInternalKey :: (RetconEntity entity)
-                      => s
-                      -> InternalKey entity
+                      => InternalKey entity
                       -> RetconMonad s l ()
 
     -- | Record a 'ForeignKey' and it's association with an 'InternalKey'.
     recordForeignKey :: (RetconDataSource e d)
-                     => s
-                     -> InternalKey e
+                     => InternalKey e
                      -> ForeignKey e d
                      -> RetconMonad s l ()
 
     -- | Delete a 'ForeignKey'.
     deleteForeignKey :: (RetconDataSource e d)
-                     => s
-                     -> ForeignKey e d
+                     => ForeignKey e d
                      -> RetconMonad s l ()
 
     -- | Delete all 'ForeignKey's associated with an 'InternalKey'.
     deleteForeignKeys :: (RetconEntity e)
-                      => s
-                      -> InternalKey e
+                      => InternalKey e
                       -> RetconMonad s l ()
 
     -- | Record the initial 'Document' associated with an 'InternalKey'.
     recordInitialDocument :: (RetconEntity e)
-                          => s
-                          -> InternalKey e
+                          => InternalKey e
                           -> Document
                           -> RetconMonad s l ()
 
     -- | Delete the initial 'Document', if any, associated with an 'InternalKey'.
     deleteInitialDocument :: (RetconEntity e)
-                          => s
-                          -> InternalKey e
+                          => InternalKey e
                           -> RetconMonad s l ()
 
     -- | Record the success 'Diff' and a list of failed 'Diff's associated with a
     -- processed 'InternalKey'.
     recordDiffs :: (RetconEntity e)
-                => s
-                -> InternalKey e
+                => InternalKey e
                 -> (Diff l, [Diff l])
                 -> RetconMonad s l ()
 
     -- | Delete the 'Diff's associated with an 'InternalKey'.
     deleteDiffs :: (RetconEntity e)
-                => s
-                -> InternalKey e
+                => InternalKey e
                 -> RetconMonad s l Int
 
 -- | A token exposing only the 'ReadableToken' API.
@@ -245,11 +234,17 @@ instance StoreToken ROToken where
     restrictToken = id
 
 instance ReadableToken ROToken where
-    lookupInternalKey (ROToken store) = liftIO . storeLookupInternalKey store
+    lookupInternalKey fk = do
+        ROToken store <- retconStore <$> getRetconState
+        liftIO $ storeLookupInternalKey store fk
 
-    lookupForeignKey (ROToken store) = liftIO . storeLookupForeignKey store
+    lookupForeignKey ik = do
+        ROToken store <- retconStore <$> getRetconState
+        liftIO $ storeLookupForeignKey store ik
     
-    lookupInitialDocument (ROToken store) = liftIO . storeLookupInitialDocument store
+    lookupInitialDocument ik = do
+        ROToken store <- retconStore <$> getRetconState
+        liftIO $ storeLookupInitialDocument store ik
 
 -- | A token exposing both the 'ReadableToken' and 'WritableToken' APIs.
 data RWToken = forall s. RetconStore s => RWToken s
@@ -258,27 +253,51 @@ instance StoreToken RWToken where
     restrictToken (RWToken st) = ROToken st
 
 instance ReadableToken RWToken where
-    lookupInternalKey (RWToken store) = liftIO . storeLookupInternalKey store
+    lookupInternalKey fk = do
+        RWToken store <- retconStore <$> getRetconState
+        liftIO $ storeLookupInternalKey store fk
 
-    lookupForeignKey (RWToken store) = liftIO . storeLookupForeignKey store
+    lookupForeignKey ik = do
+        RWToken store <- retconStore <$> getRetconState
+        liftIO $ storeLookupForeignKey store ik
     
-    lookupInitialDocument (RWToken store) = liftIO . storeLookupInitialDocument store
+    lookupInitialDocument ik = do
+        RWToken store <- retconStore <$> getRetconState
+        liftIO $ storeLookupInitialDocument store ik
 
 instance WritableToken RWToken where
-    createInternalKey (RWToken store) = liftIO $ storeCreateInternalKey store
+    createInternalKey = do
+        RWToken store <- retconStore <$> getRetconState
+        liftIO $ storeCreateInternalKey store
 
-    deleteInternalKey (RWToken store) = liftIO . storeDeleteInternalKey store
+    deleteInternalKey ik = do
+        RWToken store <- retconStore <$> getRetconState
+        liftIO $ storeDeleteInternalKey store ik
 
-    recordForeignKey (RWToken store) ik fk = liftIO $ storeRecordForeignKey store ik fk
+    recordForeignKey ik fk = do
+        RWToken store <- retconStore <$> getRetconState
+        liftIO $ storeRecordForeignKey store ik fk
 
-    deleteForeignKey (RWToken store) = liftIO . storeDeleteForeignKey store
+    deleteForeignKey fk = do
+        RWToken store <- retconStore <$> getRetconState
+        liftIO $ storeDeleteForeignKey store fk
 
-    deleteForeignKeys (RWToken store) = liftIO . storeDeleteForeignKeys store
+    deleteForeignKeys ik = do
+        RWToken store <- retconStore <$> getRetconState
+        liftIO $ storeDeleteForeignKeys store ik
 
-    recordInitialDocument (RWToken store) ik = liftIO . storeRecordInitialDocument store ik
+    recordInitialDocument ik doc = do
+        RWToken store <- retconStore <$> getRetconState
+        liftIO $ storeRecordInitialDocument store ik doc
 
-    deleteInitialDocument (RWToken store) = liftIO . storeDeleteInitialDocument store
+    deleteInitialDocument ik = do
+        RWToken store <- retconStore <$> getRetconState
+        liftIO $ storeDeleteInitialDocument store ik
 
-    recordDiffs (RWToken store) ik = liftIO . storeRecordDiffs store ik
+    recordDiffs ik diffs = do
+        RWToken store <- retconStore <$> getRetconState
+        liftIO $ storeRecordDiffs store ik diffs
 
-    deleteDiffs (RWToken store) = liftIO . storeDeleteDiffs store
+    deleteDiffs ik = do
+        RWToken store <- retconStore <$> getRetconState
+        liftIO $ storeDeleteDiffs store ik
