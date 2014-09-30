@@ -12,7 +12,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeFamilies          #-}
 
 module Main where
 
@@ -303,7 +303,7 @@ memorySuite =
             --
             -- Check documents can be updated.
             --
- 
+
             runAction state $ do
                 recordInitialDocument ik3 doc4
 
