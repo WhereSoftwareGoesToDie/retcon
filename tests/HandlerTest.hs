@@ -48,9 +48,7 @@ import Data.Monoid
 import Data.Proxy
 import Data.Text (Text)
 import qualified Data.Text as T
-import Database.PostgreSQL.Simple
 import GHC.TypeLits ()
-import System.Process
 
 testDBName :: ByteString
 testDBName = "retcon_handler_test"
@@ -341,8 +339,6 @@ operationSuite = do
 
         it "should process a delete operation." $
             withConfiguration opt $ \(state, store, opts) -> do
-                state <- initialiseEntities (retconEntities dispatchConfig)
-
                 let entity = Proxy :: Proxy "dispatchtest"
                 let source1 = Proxy :: Proxy "dispatch1"
                 let source2 = Proxy :: Proxy "dispatch2"
