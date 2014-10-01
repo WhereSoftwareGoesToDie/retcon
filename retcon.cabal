@@ -243,7 +243,11 @@ test-suite store-postgresql-test
   hs-source-dirs:      tests
   main-is:             StorePostgreSQL.hs
   build-depends:       base
+                     , bytestring
                      , containers
                      , hspec
+                     , mtl
                      , postgresql-simple
+                     , process
+                     , transformers
                      , retcon

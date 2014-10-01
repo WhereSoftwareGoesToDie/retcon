@@ -60,8 +60,15 @@ instance RetconStore PGStorage where
             []         -> return Nothing
 
     storeDeleteInternalKey (PGStore conn) ik = do
+        let ikv = internalKeyValue ik
+        let sql = "DELETE FROM retcon_initial WHERE entity = ? AND id = ?"
+        _ <- execute conn sql ikv
+        let sql = "DELETE FROM retcon_diff WHERE entity = ? AND id = ?"
+        _ <- execute conn sql ikv
+        let sql = "DELETE FROM retcon_fk WHERE entity = ? AND id = ?"
+        _ <- execute conn sql ikv
         let sql = "DELETE FROM retcon WHERE entity = ? AND id = ?"
-        _ <- execute conn sql $ internalKeyValue ik
+        _ <- execute conn sql ikv
         return ()
 
     storeRecordForeignKey (PGStore conn) ik fk = do
