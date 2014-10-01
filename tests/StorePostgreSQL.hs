@@ -20,11 +20,13 @@ import Control.Exception
 import Control.Monad
 import Control.Monad.IO.Class
 import qualified Data.ByteString.Char8 as BS
+import Data.Maybe
 import Database.PostgreSQL.Simple
 import System.Process
 import Test.Hspec
 
 import Retcon.DataSource
+import Retcon.Document
 import Retcon.Error
 import Retcon.Monad
 import Retcon.Options
@@ -200,8 +202,46 @@ postgresqlSuite = around prepareDatabase $
 
         it "should record initial documents" $ do
             store@(PGStore conn) <- storeInitialise options
+
+            let doc1 = fromJust $ mkNode (Just "Document One")
+            let doc2 = fromJust $ mkNode (Just "Document Two")
+            let doc3 = fromJust $ mkNode (Just "Document Three")
+            let doc4 = fromJust $ mkNode (Just "Document Four")
+
+            Right (ik1, ik2, ik3, ik4) <- runAction store $ do
+                (ik1 :: InternalKey "tests") <- createInternalKey
+                (ik2 :: InternalKey "testers") <- createInternalKey
+                (ik3 :: InternalKey "tests") <- createInternalKey
+                (ik4 :: InternalKey "tests") <- createInternalKey
+                return (ik1, ik2, ik3, ik4)
+
+            result <- runAction store $ do
+                recordInitialDocument ik1 doc1
+                recordInitialDocument ik2 doc2
+                recordInitialDocument ik3 doc3
+
+            -- Check it.
+            result `shouldBe` Right ()
+            count <- countStore store
+            count `shouldBe` (4, 0, 3, 0)
+
+            runAction store $ do
+                recordInitialDocument ik3 doc4
+
+            -- Check it.
+            result `shouldBe` Right ()
+            count <- countStore store
+            count `shouldBe` (4, 0, 3, 0)
+
+            runAction store $ do
+                deleteInitialDocument ik2
+
+            -- Check it.
+            result `shouldBe` Right ()
+            count <- countStore store
+            count `shouldBe` (4, 0, 2, 0)
+
             storeFinalise store
-            pendingWith "Unimplemented"
 
         it "should record diffs" $ do
             store@(PGStore conn) <- storeInitialise options
