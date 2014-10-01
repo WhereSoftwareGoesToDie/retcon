@@ -72,8 +72,8 @@ type RetconDiffs = [(String, Int, Int, String, Value)]
 -- | Dump all tables from PostgreSQL
 dumpStore :: PGStorage -> IO (RetconTable, RetconFkTable, RetconInitialTable, RetconDiffs, RetconDiffs)
 dumpStore (PGStore conn) = do
-    retconTable <- query_ conn "SELECT entity, id FROM retcon;"
-    retconFkTable <- query_ conn "SELECT entity, id, source, fk FROM retcon_fk;"
+    retconTable <- query_ conn "SELECT entity, id FROM retcon ORDER BY entity, id;"
+    retconFkTable <- query_ conn "SELECT entity, id, source, fk FROM retcon_fk ORDER BY entity, id, source, fk;"
     retconInitialTable <- query_ conn "SELECT entity, id, document FROM retcon_initial;"
     retconDiffTable <- query_ conn "SELECT entity, id, diff_id, submitted, content FROM retcon_diff;"
     retconDiffConflictTable <- query_ conn "SELECT entity, id, diff_id, submitted, content FROM retcon_diff_conflicts;"
@@ -154,7 +154,10 @@ postgresqlSuite = around prepareDatabase $
             try1 `shouldBe` (3, 3, 0, 0)
 
             try1' <- dumpStore store
-            try1' `shouldBe` ([("tests", 1), ("tests", 2), ("testers", 3)], [("tests", 1, "test", "fk1"), ("tests", 1, "more", "fk2"), ("testers", 3, "tester1", "fk3")], [], [], [])
+            try1' `shouldBe` (
+                [("testers", 3), ("tests", 1), ("tests", 2)],
+                [("testers", 3, "tester1", "fk3"), ("tests", 1, "more", "fk2"), ("tests", 1, "test", "fk1")],
+                [], [], [])
 
             -- Delete ik1 and it's associated things.
             ik1 <- case keys of
@@ -167,6 +170,9 @@ postgresqlSuite = around prepareDatabase $
 
             try2 <- countStore store
             try2 `shouldBe` (2, 1, 0, 0)
+
+            try2' <- dumpStore store
+            try2' `shouldBe` ([("testers", 3), ("tests", 2)], [("testers", 3, "tester1", "fk3")], [], [], [])
 
             storeFinalise store
 
@@ -197,6 +203,13 @@ postgresqlSuite = around prepareDatabase $
             -- Check there are as many things in the database as we expect.
             counts <- countStore store
             counts `shouldBe` (3, 6, 0, 0)
+
+            contents1 <- dumpStore store
+            contents1 `shouldBe` (
+                [("tests", 1), ("tests", 2), ("tests", 3)],
+                [("tests", 1, "more", "more1"), ("tests", 1, "test", "test3"), ("tests", 2, "more", "more2"),
+                ("tests", 2, "test", "test2"), ("tests", 3, "more", "more3"), ("tests", 3, "test", "test1")],
+                [], [], [])
 
             -- TODO: check that the data is actually correct, not just the
             -- right size.
