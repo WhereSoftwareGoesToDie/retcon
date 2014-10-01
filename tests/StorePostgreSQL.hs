@@ -67,16 +67,16 @@ countStore (PGStore conn) = do
 type RetconTable = [(String, Int)]
 type RetconFkTable = [(String, Int, String, String)]
 type RetconInitialTable = [(String, Int, Value)]
-type RetconDiffs = [(String, Int, Int, String, Value)]
+type RetconDiffs = [(String, Int, Int, Value)]
 
 -- | Dump all tables from PostgreSQL
 dumpStore :: PGStorage -> IO (RetconTable, RetconFkTable, RetconInitialTable, RetconDiffs, RetconDiffs)
 dumpStore (PGStore conn) = do
-    retconTable <- query_ conn "SELECT entity, id FROM retcon ORDER BY entity, id;"
-    retconFkTable <- query_ conn "SELECT entity, id, source, fk FROM retcon_fk ORDER BY entity, id, source, fk;"
-    retconInitialTable <- query_ conn "SELECT entity, id, document FROM retcon_initial;"
-    retconDiffTable <- query_ conn "SELECT entity, id, diff_id, submitted, content FROM retcon_diff;"
-    retconDiffConflictTable <- query_ conn "SELECT entity, id, diff_id, submitted, content FROM retcon_diff_conflicts;"
+    retconTable             <- query_ conn "SELECT entity, id FROM retcon ORDER BY entity, id;"
+    retconFkTable           <- query_ conn "SELECT entity, id, source, fk FROM retcon_fk ORDER BY entity, id, source, fk;"
+    retconInitialTable      <- query_ conn "SELECT entity, id, document FROM retcon_initial ORDER BY entity, id;"
+    retconDiffTable         <- query_ conn "SELECT entity, id, diff_id, content FROM retcon_diff ORDER BY entity, id, diff_id;"
+    retconDiffConflictTable <- query_ conn "SELECT entity, id, diff_id, content FROM retcon_diff_conflicts ORDER BY entity, id, diff_id;"
     return (retconTable, retconFkTable, retconInitialTable, retconDiffTable, retconDiffConflictTable)
 
 main :: IO ()
@@ -268,6 +268,14 @@ postgresqlSuite = around prepareDatabase $
             result `shouldBe` Right ()
             count <- countStore store
             count `shouldBe` (4, 0, 3, 0)
+
+            contents <- dumpStore store
+            contents `shouldBe` (
+                [("testers", 2), ("tests", 1), ("tests", 3), ("tests", 4)],
+                [],
+                [("testers", 2, toJSON doc2), ("tests", 1, toJSON doc1),
+                ("tests", 3, toJSON doc3)],
+                [], [])
 
             runAction store $ do
                 recordInitialDocument ik3 doc4
