@@ -17,8 +17,7 @@ source-repository head
   location: git@github.com:anchor/retcon.git
 
 library
-  exposed-modules:     Retcon.Config
-                     , Retcon.DataSource
+  exposed-modules:     Retcon.DataSource
                      , Retcon.DataSource.JsonDirectory
                      , Retcon.DataSource.PostgreSQL
                      , Retcon.Diff
@@ -27,7 +26,6 @@ library
                      , Retcon.Handler
                      , Retcon.MergePolicy
                      , Retcon.Monad
-                     , Retcon.Application
                      , Retcon.Options
                      , Retcon.Store
                      , Retcon.Store.PostgreSQL

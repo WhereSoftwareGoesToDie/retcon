@@ -36,8 +36,6 @@ import Data.Type.Equality
 import Database.PostgreSQL.Simple
 import GHC.TypeLits
 
-import Retcon.Application
-import Retcon.Config
 import Retcon.DataSource
 import Retcon.Diff
 import Retcon.Document

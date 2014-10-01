@@ -22,7 +22,22 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE TypeFamilies               #-}
 
-module Retcon.Monad where
+module Retcon.Monad (
+    RetconMonad,
+    RetconHandler,
+    RetconAction,
+    runRetconMonad,
+    runRetconMonad',
+    runRetconHandler,
+    runRetconAction,
+    RetconState,
+    retconStore,
+    retconState,
+    retconOptions,
+    carefully,
+    getRetconState,
+    getActionState,
+    ) where
 
 import Control.Applicative
 import Control.Exception.Enclosed
@@ -33,17 +48,12 @@ import Control.Monad.Reader
 import Control.Monad.Trans.Control
 import qualified Control.Monad.Trans.Reader as ReaderT (ask, local, reader)
 
-import Retcon.Config
-import Retcon.DataSource
+import Retcon.DataSource hiding (RetconAction)
 import Retcon.Error
 import Retcon.Options
+import {-# SOURCE #-} Retcon.Store
 
--- | Run an action in 'RetconHandler', catching any exceptions and propagating
--- them as 'RetconError's.
-carefully :: RetconMonad s l a -> RetconMonad s l a
-carefully = handleAny (throwError . RetconError)
-
--- * Handler monad
+-- * Retcon monad
 
 -- $ Retcon handlers (i.e. actions which process and response to an event) are
 -- actions in the 'RetconHandler' monad.
@@ -70,13 +80,20 @@ newtype RetconMonad s l a =
   deriving (Functor, Applicative, Monad, MonadIO, MonadLogger,
   MonadReader (RetconState s, l), MonadError RetconError, MonadBase IO)
 
--- | Get the retcon component of the environment.
-getRetconState :: RetconMonad s l (RetconState s)
-getRetconState = asks fst
+-- | MonadBaseControl used to catch IO exceptions
+instance MonadBaseControl IO (RetconMonad s l) where
+    newtype StM (RetconMonad s l) a = StHandler {
+        unStHandler :: StM (RetconHandlerStack s l) a
+    }
 
--- | Get the action-specific component of the environment.
-getActionState :: RetconMonad s l l
-getActionState = asks snd
+    -- Unwrap the bits in our monad to get to the base.
+    liftBaseWith f = RetconMonad . liftBaseWith $ \r ->
+        f $ liftM StHandler . r . unRetconMonad
+
+    -- Wrap things back up into our monad.
+    restoreM       = RetconMonad . restoreM . unStHandler
+
+-- ** Evaluators
 
 -- | Execute an action in the 'RetconMonad' monad.
 runRetconMonad :: RetconOptions
@@ -94,20 +111,56 @@ runRetconMonad opt state store l =
       LogStdout -> runStdoutLoggingT
       LogNone   -> (`runLoggingT` \_ _ _ _ -> return ())
 
+runRetconMonad' :: RetconOptions
+                -> RetconConfig
+                -> s
+                -> l
+                -> RetconMonad s l a
+                -> IO (Either RetconError a)
 runRetconMonad' opt conf store l = do
     let state = []
     runRetconMonad opt state store l
 
--- | MonadBaseControl used to catch IO exceptions
-instance MonadBaseControl IO (RetconMonad s l) where
-    newtype StM (RetconMonad s l) a = StHandler {
-        unStHandler :: StM (RetconHandlerStack s l) a
-    }
+-- * Handler monad
 
-    -- Unwrap the bits in our monad to get to the base.
-    liftBaseWith f = RetconMonad . liftBaseWith $ \r ->
-        f $ liftM StHandler . r . unRetconMonad
+type RetconHandler s a = RetconMonad s () a
 
-    -- Wrap things back up into our monad.
-    restoreM       = RetconMonad . restoreM . unStHandler
+-- | Run an action in the 'RetconHandler' monad (aka the 'RetconMonad' with
+-- '()' local state).
+runRetconHandler :: RetconOptions
+                 -> [InitialisedEntity]
+                 -> s
+                 -> RetconHandler s a
+                 -> IO (Either RetconError a)
+runRetconHandler opt state store = runRetconMonad opt state store ()
 
+-- * Action monad
+
+type RetconAction l a = RetconMonad ROToken l a
+
+-- | Run an action in the 'RetconAction' monad (aka the 'RetconMonad' with
+-- read-only storage).
+runRetconAction :: StoreToken s
+                => l
+                -> RetconAction l a
+                -> RetconHandler s a
+runRetconAction l = RetconMonad . withReaderT localise . unRetconMonad
+  where
+    localise (st, _) =
+        let st' = st { retconStore = restrictToken $ retconStore st }
+        in (st', l)
+
+-- * Monad operations
+
+-- | Get the retcon component of the environment.
+getRetconState :: RetconMonad s l (RetconState s)
+getRetconState = asks fst
+
+-- | Get the action-specific component of the environment.
+getActionState :: RetconMonad s l l
+getActionState = asks snd
+
+-- | Run an action in 'RetconHandler', catching any exceptions and propagating
+-- them as 'RetconError's.
+carefully :: RetconMonad s l a -> RetconMonad s l a
+carefully = handleAny (throwError . RetconError)

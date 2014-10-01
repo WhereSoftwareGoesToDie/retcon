@@ -32,6 +32,15 @@ import GHC.TypeLits
 
 import Retcon.Document
 import Retcon.Error
+import {-# SOURCE #-} Retcon.Monad
+import {-# SOURCE #-} Retcon.Store
+
+-- | Configuration value for retcon.
+data RetconConfig =
+    RetconConfig { retconEntities :: [SomeEntity] }
+
+-- | Restricted monad with read-only access to the retcon storage.
+type RetconAction l a = RetconMonad ROToken l a
 
 -- * Entities
 
@@ -84,21 +93,21 @@ class (KnownSymbol source, RetconEntity entity) => RetconDataSource entity sourc
     -- monad.
     setDocument :: Document
                 -> Maybe (ForeignKey entity source)
-                -> DataSourceAction (DataSourceState entity source) (ForeignKey entity source)
+                -> RetconAction (DataSourceState entity source) (ForeignKey entity source)
 
     -- | Retrieve a document from a data source.
     --
     -- If the document cannot be retrieved an error is returned in the 'Retcon'
     -- monad.
     getDocument :: ForeignKey entity source
-                -> DataSourceAction (DataSourceState entity source) Document
+                -> RetconAction (DataSourceState entity source) Document
 
     -- | Delete a document from a data source.
     --
     -- If the document cannot be deleted an error is returned in the 'Retcon'
     -- monad.
     deleteDocument :: ForeignKey entity source
-                   -> DataSourceAction (DataSourceState entity source) ()
+                   -> RetconAction (DataSourceState entity source) ()
 
 -- * Wrapper types
 --
