@@ -79,18 +79,18 @@ newtype MemStorage = MemStorage { unwrapMemStorage :: IORef State }
 -- | Ephemeral in-memory data storage.
 instance RetconStore MemStorage where
 
-    initialiseStorage _ = MemStorage <$> newIORef emptyState
+    storeInitialise _ = MemStorage <$> newIORef emptyState
 
-    finaliseStorage (MemStorage ref) = writeIORef ref emptyState
+    storeFinalise (MemStorage ref) = writeIORef ref emptyState
 
-    createInternalKey (MemStorage ref) =
+    storeCreateInternalKey (MemStorage ref) =
         atomicModifyIORef' ref alloc
       where
         alloc st = let n = memNextKey st
                        st' = st { memNextKey = n + 1 }
                    in (st', InternalKey n)
 
-    lookupInternalKey (MemStorage ref) fk =
+    storeLookupInternalKey (MemStorage ref) fk =
         atomicModifyIORef' ref get
       where
         get st = let f2i = memFtoI st
@@ -98,7 +98,7 @@ instance RetconStore MemStorage where
                      ik = fmap (InternalKey) $ M.lookup k f2i
                  in (st, ik)
 
-    deleteInternalKey (MemStorage ref) ik =
+    storeDeleteInternalKey (MemStorage ref) ik =
         atomicModifyIORef' ref del
       where
         del st = let i2f = memItoF st
@@ -109,7 +109,7 @@ instance RetconStore MemStorage where
                               }
                  in (st', ())
 
-    recordForeignKey (MemStorage ref) ik fk =
+    storeRecordForeignKey (MemStorage ref) ik fk =
         atomicModifyIORef' ref record
       where
         alter v Nothing = Just [v]
@@ -123,11 +123,11 @@ instance RetconStore MemStorage where
                                  }
                     in (st', ())
 
-    lookupForeignKey :: forall (e :: Symbol) (d :: Symbol). RetconDataSource e d
+    storeLookupForeignKey :: forall (e :: Symbol) (d :: Symbol). RetconDataSource e d
                      => MemStorage
                      -> InternalKey e
                      -> IO (Maybe (ForeignKey e d))
-    lookupForeignKey (MemStorage ref) ik =
+    storeLookupForeignKey (MemStorage ref) ik =
         atomicModifyIORef' ref get
       where
         get st = let i2f = memItoF st
@@ -138,7 +138,7 @@ instance RetconStore MemStorage where
                      fk = join $ listToMaybe . catMaybes . map (convert e s) <$> fks
                  in (st, fk)
 
-    deleteForeignKey (MemStorage ref) fk = do
+    storeDeleteForeignKey (MemStorage ref) fk = do
         atomicModifyIORef' ref del
       where
         del st = let i2f = memItoF st
@@ -152,7 +152,7 @@ instance RetconStore MemStorage where
                               }
                  in (st', ())
 
-    deleteForeignKeys (MemStorage ref) ik =
+    storeDeleteForeignKeys (MemStorage ref) ik =
         atomicModifyIORef' ref del
       where
         del st = let i2f = memItoF st
@@ -166,7 +166,7 @@ instance RetconStore MemStorage where
                               }
                  in (st', ())
 
-    recordInitialDocument (MemStorage ref) ik doc =
+    storeRecordInitialDocument (MemStorage ref) ik doc =
         atomicModifyIORef' ref update
       where
         update st = let ids = memInits st
@@ -175,7 +175,7 @@ instance RetconStore MemStorage where
                         st' = st { memInits = ids' }
                     in (st', ())
 
-    lookupInitialDocument (MemStorage ref) ik =
+    storeLookupInitialDocument (MemStorage ref) ik =
         atomicModifyIORef' ref get
       where
         get st = let ids = memInits st
@@ -183,7 +183,7 @@ instance RetconStore MemStorage where
                      v = M.lookup ikv ids
                  in (st, v)
 
-    deleteInitialDocument (MemStorage ref) ik =
+    storeDeleteInitialDocument (MemStorage ref) ik =
         atomicModifyIORef' ref del
       where
         del st = let ids = memInits st
@@ -192,7 +192,7 @@ instance RetconStore MemStorage where
                      st' = st { memInits = ids' }
                  in (st', ())
 
-    recordDiffs (MemStorage ref) ik (new, news) =
+    storeRecordDiffs (MemStorage ref) ik (new, news) =
         atomicModifyIORef' ref ins
       where
         ins st = let new' = (fmap (const ()) new, map (fmap (const ())) news)
@@ -202,7 +202,7 @@ instance RetconStore MemStorage where
                      st' = st { memDiffs = ds' }
                  in (st', ())
 
-    deleteDiffs (MemStorage ref) ik =
+    storeDeleteDiffs (MemStorage ref) ik =
         atomicModifyIORef' ref del
       where
         del st = let ds = memDiffs st

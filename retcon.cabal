@@ -27,6 +27,7 @@ library
                      , Retcon.Handler
                      , Retcon.MergePolicy
                      , Retcon.Monad
+                     , Retcon.Application
                      , Retcon.Options
                      , Retcon.Store
                      , Retcon.Store.PostgreSQL

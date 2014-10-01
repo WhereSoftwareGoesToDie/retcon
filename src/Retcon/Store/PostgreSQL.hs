@@ -34,37 +34,37 @@ newtype PGStorage = PGStore { unWrapConnection :: Connection }
 -- | Persistent PostgreSQL-backed data storage.
 instance RetconStore PGStorage where
 
-    initialiseStorage opts = do
+    storeInitialise opts = do
         conn <- connectPostgreSQL . optDB $ opts
         return . PGStore $ conn
 
-    finaliseStorage (PGStore conn) = do
+    storeFinalise (PGStore conn) = do
         close conn
 
     -- | Create a new 'InternalKey' by inserting a row in the database and
     -- using the allocated ID as the new key.
-    createInternalKey :: forall entity. (RetconEntity entity)
+    storeCreateInternalKey :: forall entity. (RetconEntity entity)
                       => PGStorage
                       -> IO (InternalKey entity)
-    createInternalKey (PGStore conn) = do
+    storeCreateInternalKey (PGStore conn) = do
         let entity = symbolVal (Proxy :: Proxy entity)
         res <- query conn "INSERT INTO retcon (entity) VALUES (?) RETURNING id" (Only entity)
         case res of
             [] -> error "Could not create new internal key"
             (Only key:_) -> return $ InternalKey key
 
-    lookupInternalKey (PGStore conn) fk = do
+    storeLookupInternalKey (PGStore conn) fk = do
         results <- query conn "SELECT id FROM retcon_fk WHERE entity = ? AND source = ? AND fk = ? LIMIT 1" $ foreignKeyValue fk
         case results of
             Only key:_ -> return $ Just (InternalKey key)
             []         -> return Nothing
 
-    deleteInternalKey (PGStore conn) ik = do
+    storeDeleteInternalKey (PGStore conn) ik = do
         let sql = "DELETE FROM retcon WHERE entity = ? AND id = ?"
         _ <- execute conn sql $ internalKeyValue ik
         return ()
 
-    recordForeignKey (PGStore conn) ik fk = do
+    storeRecordForeignKey (PGStore conn) ik fk = do
         let (entity, source, fid) = foreignKeyValue fk
         let (_, iid) = internalKeyValue ik
         let values = (entity, iid, source, fid)
@@ -72,21 +72,21 @@ instance RetconStore PGStorage where
         _ <- execute conn sql values
         return ()
 
-    deleteForeignKey (PGStore conn) fk = do
+    storeDeleteForeignKey (PGStore conn) fk = do
         let sql = "DELETE FROM retcon_fk WHERE entity = ? AND source = ? AND fk = ?"
         _ <- execute conn sql $ foreignKeyValue fk
         return ()
 
-    deleteForeignKeys (PGStore conn) ik = do
+    storeDeleteForeignKeys (PGStore conn) ik = do
         let sql = "DELETE FROM retcon_fk WHERE entity = ? AND id = ?"
         _ <- execute conn sql $ internalKeyValue ik
         return ()
 
-    lookupForeignKey :: forall entity source. (RetconDataSource entity source)
+    storeLookupForeignKey :: forall entity source. (RetconDataSource entity source)
                      => PGStorage
                      -> InternalKey entity
                      -> IO (Maybe (ForeignKey entity source))
-    lookupForeignKey (PGStore conn) ik = do
+    storeLookupForeignKey (PGStore conn) ik = do
         let source = symbolVal (Proxy :: Proxy source)
         let (entity, ik') = internalKeyValue ik
         let sql = "SELECT fk FROM retcon_fk WHERE entity = ? AND id = ? AND source = ?"
@@ -95,13 +95,13 @@ instance RetconStore PGStorage where
             []         -> Nothing
             Only fk':_ -> Just $ ForeignKey fk'
 
-    recordInitialDocument (PGStore conn) ik doc = do
+    storeRecordInitialDocument (PGStore conn) ik doc = do
         let (entity, ik') = internalKeyValue ik
         let sql = "BEGIN; DELETE FROM retcon_initial WHERE entity = ? AND id = ?; INSERT INTO retcon_initial (id, entity, document) VALUES (?, ?, ?); COMMIT;"
         _ <- execute conn sql (entity, ik', ik', entity, toJSON doc)
         return ()
 
-    lookupInitialDocument (PGStore conn) ik = do
+    storeLookupInitialDocument (PGStore conn) ik = do
         let sql = "SELECT document FROM retcon_initial WHERE entity = ? AND id = ?"
         res <- query conn sql $ internalKeyValue ik
         case res of
@@ -110,18 +110,17 @@ instance RetconStore PGStorage where
                 Error _     -> return Nothing
                 Success doc -> return . Just $ doc
 
-    deleteInitialDocument (PGStore conn) ik = do
+    storeDeleteInitialDocument (PGStore conn) ik = do
         let sql = "DELETE FROM retcon_initial WHERE entity = ? AND id = ?"
         _ <- execute conn sql $ internalKeyValue ik
         return ()
 
-    recordDiffs (PGStore conn) ik (d, ds) = do
+    storeRecordDiffs (PGStore conn) ik (d, ds) = do
         return ()
 
-    deleteDiffs (PGStore conn) ik = do
+    storeDeleteDiffs (PGStore conn) ik = do
         let sql1 = "DELETE FROM retcon_diff_portion WHERE entity = ? AND id = ?"
         let sql2 = "DELETE FROM retcon_diff WHERE entity = ? AND id = ?"
         _ <- execute conn sql1 $ internalKeyValue ik
         _ <- execute conn sql2 $ internalKeyValue ik
         return 0
-
