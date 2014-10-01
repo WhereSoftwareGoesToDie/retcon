@@ -180,13 +180,13 @@ operationSuite = do
 
     describe "Mapping keys" $ do
         it "should map from internal to foreign keys" $
-            pending
+            pendingWith "Unimplemented"
 
         it "should map from foreign to internal keys" $
-            pending
+            pendingWith "Unimplemented"
 
         it "should translate foreign to foreign keys" $
-            pending
+            pendingWith "Unimplemented"
 
     describe "Determining operations" $ do
         it "should result in a create when new key is seen, with document." $
@@ -264,7 +264,7 @@ operationSuite = do
                     return (op, ik)
 
                 case result of
-                    Right (op, ik) -> op `shouldBe` (RetconDelete ik)
+                    Right (op, ik) -> op `shouldBe` RetconDelete ik
                     _ -> error "No match"
 
     describe "Evaluating operations" $ do

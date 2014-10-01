@@ -29,7 +29,7 @@ runRetconAction :: StoreToken s
                 => l
                 -> RetconAction l a
                 -> RetconHandler s a
-runRetconAction l = RetconMonad . withReaderT (localise). unRetconMonad
+runRetconAction l = RetconMonad . withReaderT localise . unRetconMonad
   where
     localise (st, _) =
         let st' = st { retconStore = restrictToken $ retconStore st }
