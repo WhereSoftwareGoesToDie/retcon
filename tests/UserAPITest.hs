@@ -19,6 +19,10 @@ import System.FilePath
 import Retcon.DataSource
 import Retcon.DataSource.JsonDirectory
 import Retcon.Handler
+import Retcon.Monad
+import Retcon.Options
+import Retcon.Store
+import Retcon.Store.Memory
 
 import TestHelpers
 
@@ -82,51 +86,60 @@ instance RetconDataSource "customer" "test-results" where
         res <- deleteJsonDirDocument customerTestResultsPath key
         either (error . show) return res
 
+run l a = do
+    store <- storeInitialise opt :: IO MemStorage
+    runRetconMonad opt state store l a
+    storeFinalise store
+  where
+    opt = defaultOptions
+    state = []
+
+
 -- | test suite
 suite :: Spec
 suite =
     describe "JSON directory marshalling" $ do
         it "can load 01-diff-source" $ do
             state <- initialiseState
-            _ <- runDataSourceAction state $
+            _ <- run state $
                 getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "data")
             finaliseState state
             pass
 
         it "can load 01-diff-target" $ do
             state <- initialiseState
-            _ <- runDataSourceAction state $
+            _ <- run state $
                 getDocument (ForeignKey "01-diff-target" :: ForeignKey "customer" "data")
             finaliseState state
             pass
 
         it "can write 01-diff-source to another source with that key" $ do
             state1 <- initialiseState
-            Right doc3 <- runDataSourceAction state1 $
+            Right doc3 <- runRetconAction state1 $
                 getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "data")
             finaliseState state1
 
             state2 <- initialiseState
-            _ <- runDataSourceAction state2 $
+            _ <- runRetconAction state2 $
                 setDocument doc3 (Just (ForeignKey "01-diff-source" :: ForeignKey "customer" "test-results"))
             finaliseState state2
             pass
 
         it "can write 01-diff-source to another source with new key" $ do
             state <- initialiseState
-            Right doc4 <- runDataSourceAction state $
+            Right doc4 <- runRetconAction state $
                 getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "data")
             finaliseState state
 
             state2 <- initialiseState
-            _ <- runDataSourceAction state2 $
+            _ <- runRetconAction state2 $
                 setDocument doc4 (Nothing :: Maybe (ForeignKey "customer" "test-results"))
             finaliseState state2
             pass
 
         it "can delete 01-diff-source from the test source" $ do
             state <- initialiseState
-            _ <- runDataSourceAction state $ do
+            _ <- runRetconAction state $ do
                 _ <- getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "test-results")
                 deleteDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "test-results")
             finaliseState state
