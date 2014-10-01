@@ -20,7 +20,6 @@ module Main where
 import Test.Hspec
 
 import Retcon.Application
-import Retcon.Config
 import Retcon.DataSource
 import Retcon.Diff
 import Retcon.Document

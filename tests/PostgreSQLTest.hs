@@ -23,7 +23,6 @@ import GHC.TypeLits
 import System.Process
 import Test.Hspec
 
-import Retcon.Config
 import Retcon.DataSource
 import Retcon.DataSource.PostgreSQL
 import Retcon.Handler
