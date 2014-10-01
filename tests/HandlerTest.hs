@@ -604,31 +604,31 @@ initialDocumentSuite = do
                 result `shouldBe` Right ((), (), Nothing)
 
 -- | Test suite for diff database handling.
-diffDatabaseSuite :: Spec
-diffDatabaseSuite = do
-    let opt = defaultOptions {
-          optDB = testConnection
-        , optLogging = LogNone
-        }
+-- diffDatabaseSuite :: Spec
+-- diffDatabaseSuite = do
+--     let opt = defaultOptions {
+--           optDB = testConnection
+--         , optLogging = LogNone
+--         }
 
-    describe "Database diffs" $
-        it "writes a diff to database and reads it" $
-            withConfiguration opt $ \(state, store,_ ) -> do
-                pendingWith "Data storage API changes."
-                let testDiff = Diff 1 [InsertOp 1 [T.pack "a",T.pack "b",T.pack "c"] (T.pack "foo")]
+--     describe "Database diffs" $
+--         it "writes a diff to database and reads it" $
+--             withConfiguration opt $ \(state, store,_ ) -> do
+--                 pendingWith "Data storage API changes."
+--                 let testDiff = Diff 1 [InsertOp 1 [T.pack "a",T.pack "b",T.pack "c"] (T.pack "foo")]
 
-                result <- testHandler state store $ do
-                    -- Create an InternalKey and a ForeignKey
-                    ik <- createInternalKey
-                    let fk = ForeignKey "1" :: ForeignKey "alicorn_invoice" "alicorn_source"
-                    recordForeignKey ik fk
+--                 result <- testHandler state store $ do
+--                     -- Create an InternalKey and a ForeignKey
+--                     ik <- createInternalKey
+--                     let fk = ForeignKey "1" :: ForeignKey "alicorn_invoice" "alicorn_source"
+--                     recordForeignKey ik fk
 
-                    mid <- putDiffIntoDb fk testDiff
-                    all_diffs <- getInitialDocumentDiffs ik
+--                     mid <- putDiffIntoDb fk testDiff
+--                     all_diffs <- getInitialDocumentDiffs ik
 
-                    return (mid, diffChanges . head $ all_diffs)
+--                     return (mid, diffChanges . head $ all_diffs)
 
-                result `shouldBe` Right (Just 1, diffChanges testDiff)
+--                 result `shouldBe` Right (Just 1, diffChanges testDiff)
 
 testHandler :: [InitialisedEntity]
             -> Memory.MemStorage
@@ -644,4 +644,4 @@ main = hspec $ do
     operationSuite
     dispatchSuite
     initialDocumentSuite
-    diffDatabaseSuite
+    -- diffDatabaseSuite

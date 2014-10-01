@@ -40,35 +40,28 @@ CREATE TABLE retcon_initial (
     FOREIGN KEY (entity, id) REFERENCES retcon (entity, id)
 );
 
--- | The `retcon_diff` table manages a central record for each diff against an
--- initial document.
+-- | The `retcon_diff` table records each diff merged into an initial document.
 CREATE TABLE retcon_diff (
     entity    VARCHAR(64) NOT NULL,
     id        INTEGER NOT NULL,
-    source    VARCHAR(64) NOT NULL,
     diff_id   SERIAL NOT NULL,
-    submitted TIMESTAMP NOT NULL,
-    processed BOOLEAN NOT NULL,
+    submitted TIMESTAMP NOT NULL DEFAULT NOW(),
+    content   JSON NOT NULL,
 
     PRIMARY KEY (diff_id),
-    FOREIGN KEY (entity, id, source) REFERENCES retcon_fk (entity, id, source), 
     FOREIGN KEY (entity, id) REFERENCES retcon (entity, id)
 );
 
--- | The `retcon_diff_portion` table records each individual diff portion within
--- a diff.
-CREATE TABLE retcon_diff_portion (
-    entity     VARCHAR(64) NOT NULL,
-    id         INTEGER NOT NULL,
-    source     VARCHAR(64) NOT NULL,
-    diff_id    INTEGER NOT NULL,
-    portion_id SERIAL NOT NULL,
-    portion    JSON NOT NULL,
-    accepted   BOOLEAN NOT NULL,
+-- | The `retcon_diff_conflicts` table records diffs that can not be merged into 
+-- an initial document due to conflicts.
+CREATE TABLE retcon_diff_conflicts (
+    entity    VARCHAR(64) NOT NULL,
+    id        INTEGER NOT NULL,
+    diff_id   SERIAL NOT NULL,
+    submitted TIMESTAMP NOT NULL DEFAULT NOW(),
+    content   JSON NOT NULL,
 
-    PRIMARY KEY (portion_id),
-    FOREIGN KEY (diff_id) REFERENCES retcon_diff (diff_id),
-    FOREIGN KEY (entity, id, source) REFERENCES retcon_fk (entity, id, source), 
+    PRIMARY KEY (diff_id),
     FOREIGN KEY (entity, id) REFERENCES retcon (entity, id)
 );
 
