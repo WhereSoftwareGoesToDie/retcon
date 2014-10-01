@@ -65,19 +65,19 @@ main = hspec postgresqlSuite
 prepareDatabase :: IO () -> IO ()
 prepareDatabase action = bracket setupSuite teardownSuite (const action)
   where
-    db = BS.unpack dbname 
+    db = BS.unpack dbname
 
     setupSuite :: IO ()
     setupSuite = do
         _ <- system $ concat [ " dropdb --if-exists ", db, " >/dev/null 2>&1 "
                              , " && createdb ", db
                              , " && psql --quiet --file=retcon.sql ", db
-                             ] 
+                             ]
         return ()
 
     teardownSuite :: a -> IO ()
     teardownSuite _ = do
-        _ <- system $ concat [ "dropdb --if-exists ", db, " >/dev/null 2>&1 " ] 
+        _ <- system $ concat [ "dropdb --if-exists ", db, " >/dev/null 2>&1 " ]
         return ()
 
 postgresqlSuite :: Spec
@@ -130,25 +130,73 @@ postgresqlSuite = around prepareDatabase $
             try1 <- countStore store
             try1 `shouldBe` (3, 3, 0, 0)
 
+            -- Delete ik1 and it's associated things.
             ik1 <- case keys of
                 Left  _          -> error "Couldn't create internal keys"
                 Right (k1, _, _) -> return k1
 
-            runAction store $ do
+            result <- runAction store $ do
                 deleteInternalKey ik1
+            result `shouldBe` Right ()
 
             try2 <- countStore store
-            try2 `shouldBe` (2, 1, 0, 0)           
-
-            final@(iks', fks', docs', diffs') <- countStore store
-            final `shouldBe` (2, 1, 0, 0)
+            try2 `shouldBe` (2, 1, 0, 0)
 
             storeFinalise store
 
         it "should associate foreign and internal keys" $ do
             store@(PGStore conn) <- storeInitialise options
+
+            let (fk1 :: ForeignKey "tests" "test") = ForeignKey "test1"
+            let (fk2 :: ForeignKey "tests" "test") = ForeignKey "test2"
+            let (fk3 :: ForeignKey "tests" "test") = ForeignKey "test3"
+            let (fk4 :: ForeignKey "tests" "more") = ForeignKey "more1"
+            let (fk5 :: ForeignKey "tests" "more") = ForeignKey "more2"
+            let (fk6 :: ForeignKey "tests" "more") = ForeignKey "more3"
+
+            ik1 <- runAction store $ do
+                (ik1 :: InternalKey "tests") <- createInternalKey
+                (ik2 :: InternalKey "tests") <- createInternalKey
+                (ik3 :: InternalKey "tests") <- createInternalKey
+
+                recordForeignKey ik1 fk3
+                recordForeignKey ik1 fk4
+                recordForeignKey ik2 fk2
+                recordForeignKey ik2 fk5
+                recordForeignKey ik3 fk1
+                recordForeignKey ik3 fk6
+
+                return ik1
+
+            -- Check there are as many things in the database as we expect.
+            counts <- countStore store
+            counts `shouldBe` (3, 6, 0, 0)
+
+            -- TODO: check that the data is actually correct, not just the
+            -- right size.
+
+            result <- runAction store $ do
+                deleteForeignKey fk5
+
+            -- Check there are as many things in the database as we expect.
+            result `shouldBe` Right ()
+            counts <- countStore store
+            counts `shouldBe` (3, 5, 0, 0)
+
+            -- TODO: check that the data is actually correct, not just the
+            -- right size.
+
+            result <- runAction store $ do
+                case ik1 of
+                    Left  _ -> error "Was not able to create ik1."
+                    Right k -> deleteInternalKey k
+
+            -- Check there are as many things in the database as we expect.
+            result `shouldBe` Right ()
+            counts <- countStore store
+            counts `shouldBe` (2, 3, 0, 0)
+
             storeFinalise store
-            pendingWith "Unimplemented"
 
         it "should record initial documents" $ do
             store@(PGStore conn) <- storeInitialise options
