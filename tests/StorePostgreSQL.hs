@@ -285,6 +285,14 @@ postgresqlSuite = around prepareDatabase $
             count <- countStore store
             count `shouldBe` (4, 0, 3, 0)
 
+            contents <- dumpStore store
+            contents `shouldBe` (
+                [("testers", 2), ("tests", 1), ("tests", 3), ("tests", 4)],
+                [],
+                [("testers", 2, toJSON doc2), ("tests", 1, toJSON doc1),
+                ("tests", 3, toJSON doc4)],
+                [], [])
+
             runAction store $ do
                 deleteInitialDocument ik2
 
@@ -292,6 +300,13 @@ postgresqlSuite = around prepareDatabase $
             result `shouldBe` Right ()
             count <- countStore store
             count `shouldBe` (4, 0, 2, 0)
+
+            contents <- dumpStore store
+            contents `shouldBe` (
+                [("testers", 2), ("tests", 1), ("tests", 3), ("tests", 4)],
+                [],
+                [("tests", 1, toJSON doc1), ("tests", 3, toJSON doc4)],
+                [], [])
 
             storeFinalise store
 
@@ -325,12 +340,26 @@ postgresqlSuite = around prepareDatabase $
             count <- countStore store
             count `shouldBe` (4, 0, 0, 3)
 
+            contents <- dumpStore store
+            contents `shouldBe` (
+                [("testers", 2), ("tests", 1), ("tests", 3), ("tests", 4)],
+                [], [],
+                [("testers", 2, 2, toJSON $ a1), ("tests", 1, 1, toJSON $ a2), ("tests", 3, 3, toJSON $ a3)],
+                [("testers", 2, 1, toJSON $ l2 !! 0), ("tests", 3, 2, toJSON $ l3 !! 0)])
+
             result <- runAction store $ do
                 deleteDiffs ik2
 
             result `shouldBe` Right 0
             count <- countStore store
             count `shouldBe` (4, 0, 0, 2)
+
+            contents <- dumpStore store
+            contents `shouldBe` (
+                [("testers", 2), ("tests", 1), ("tests", 3), ("tests", 4)],
+                [], [],
+                [("tests", 1, 1, toJSON $ a2), ("tests", 3, 3, toJSON $ a3)],
+                [("tests", 3, 2, toJSON $ l3 !! 0)])
 
             storeFinalise store
 
