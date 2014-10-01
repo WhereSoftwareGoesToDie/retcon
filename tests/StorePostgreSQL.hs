@@ -211,9 +211,6 @@ postgresqlSuite = around prepareDatabase $
                 ("tests", 2, "test", "test2"), ("tests", 3, "more", "more3"), ("tests", 3, "test", "test1")],
                 [], [], [])
 
-            -- TODO: check that the data is actually correct, not just the
-            -- right size.
-
             result <- runAction store $ do
                 deleteForeignKey fk5
 
@@ -222,8 +219,12 @@ postgresqlSuite = around prepareDatabase $
             counts <- countStore store
             counts `shouldBe` (3, 5, 0, 0)
 
-            -- TODO: check that the data is actually correct, not just the
-            -- right size.
+            contents2 <- dumpStore store
+            contents2 `shouldBe` (
+                [("tests", 1), ("tests", 2), ("tests", 3)],
+                [("tests", 1, "more", "more1"), ("tests", 1, "test", "test3"),
+                ("tests", 2, "test", "test2"), ("tests", 3, "more", "more3"), ("tests", 3, "test", "test1")],
+                [], [], [])
 
             result <- runAction store $ do
                 case ik1 of
@@ -234,6 +235,12 @@ postgresqlSuite = around prepareDatabase $
             result `shouldBe` Right ()
             counts <- countStore store
             counts `shouldBe` (2, 3, 0, 0)
+
+            contents3 <- dumpStore store
+            contents3 `shouldBe` (
+                [("tests", 2), ("tests", 3)],
+                [("tests", 2, "test", "test2"), ("tests", 3, "more", "more3"), ("tests", 3, "test", "test1")],
+                [], [], [])
 
             storeFinalise store
 
