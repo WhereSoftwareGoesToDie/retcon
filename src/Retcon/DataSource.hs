@@ -32,8 +32,8 @@ import GHC.TypeLits
 
 import Retcon.Document
 import Retcon.Error
-import {-# SOURCE #-} Retcon.Monad
-import {-# SOURCE #-} Retcon.Store
+import Retcon.Monad
+import Retcon.Store
 
 -- | Configuration value for retcon.
 data RetconConfig =
@@ -234,34 +234,6 @@ finaliseSources = mapM finaliseSource
     finaliseSource (InitialisedSource p s) = do
         finaliseState s
         return $ SomeDataSource p
-
--- * Monads
-
--- $ Operations which interact with external "data source" systems are
--- implemented in the 'DataSourceAction' monad.
-
--- | Monad transformer stack used in the 'DataSourceAction' monad.
-type DataSourceActionStack s = ReaderT s (ExceptT RetconError (LoggingT IO))
-
--- | Monad for interactions with data sources.
---
--- This monad provides error handling, logging, and I/O facilities.
-newtype DataSourceAction s a =
-    DataSourceAction {
-        unDataSourceAction :: DataSourceActionStack s a
-    }
-  deriving (Functor, Applicative, Monad, MonadBase IO, MonadIO, MonadLogger,
-  MonadError RetconError, MonadReader s)
-
--- | Run a 'DataSourceAction' action.
-runDataSourceAction :: state
-                    -> DataSourceAction state a
-                    -> IO (Either RetconError a)
-runDataSourceAction s =
-    runStderrLoggingT
-    . runExceptT
-    . flip runReaderT s
-    . unDataSourceAction
 
 -- * Keys
 --

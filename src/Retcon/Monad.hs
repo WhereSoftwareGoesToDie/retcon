@@ -51,7 +51,7 @@ import qualified Control.Monad.Trans.Reader as ReaderT (ask, local, reader)
 import Retcon.DataSource hiding (RetconAction)
 import Retcon.Error
 import Retcon.Options
-import {-# SOURCE #-} Retcon.Store
+import Retcon.Store
 
 -- * Retcon monad
 

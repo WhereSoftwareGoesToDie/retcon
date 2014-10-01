@@ -75,8 +75,7 @@ determineOperation :: (ReadableToken s, RetconDataSource entity source)
                    -> RetconHandler s (RetconOperation entity source)
 determineOperation state fk = do
     ik' <- lookupInternalKey fk
-    doc' <- join . first RetconError <$> tryAny
-        (liftIO . runDataSourceAction state $ getDocument fk)
+    doc' <- tryAny (runRetconAction state $ getDocument fk)
     return $ case (ik', doc') of
         (Nothing, Left  _) -> RetconProblem fk (RetconSourceError "Unknown key, no document")
         (Nothing, Right _) -> RetconCreate fk
@@ -152,7 +151,7 @@ create state fk = do
     recordForeignKey ik fk
 
     -- Use the new Document as the initial document.
-    doc' <- join . first RetconError <$> tryAny (liftIO $ runDataSourceAction state $ getDocument fk)
+    doc' <- tryAny (runRetconAction state $ getDocument fk)
 
     case doc' of
         Left _ -> do
@@ -250,13 +249,13 @@ getDocuments ik = do
             Nothing -> return []
             Just Refl -> forM sources $ \(InitialisedSource (_ :: Proxy source) state) ->
                 -- Flatten any nested errors.
-                join . first RetconError <$> tryAny (do
+                first RetconError <$> tryAny (do
                     -- Lookup the foreign key for this data source.
                     mkey :: Maybe (ForeignKey entity source) <- lookupForeignKey ik
                     -- If there was a key, use it to fetch the document.
                     case mkey of
-                        Nothing -> return . Left $ RetconFailed
-                        Just fk -> liftIO $ runDataSourceAction state $ getDocument fk
+                        Nothing -> throwError RetconFailed
+                        Just fk -> runRetconAction state $ getDocument fk
                     )
     return . concat $ results
 
@@ -277,12 +276,9 @@ setDocuments ik docs = do
                 \(doc, InitialisedSource (_ :: Proxy source) state) ->
                     join . first RetconError <$> tryAny (do
                         (fk :: Maybe (ForeignKey entity source)) <- lookupForeignKey ik
-                        fk' <- liftIO $ runDataSourceAction state $ setDocument doc fk
-                        case fk' of
-                            Left err -> return $ Left err
-                            Right new_fk -> do
-                                recordForeignKey ik new_fk
-                                return $ Right ()
+                        fk' <- runRetconAction state $ setDocument doc fk
+                        recordForeignKey ik fk'
+                        return $ Right ()
                     )
     return . concat $ results
 
@@ -300,11 +296,11 @@ deleteDocuments ik = do
             Just Refl -> forM sources $
                 \(InitialisedSource (_:: Proxy source) state) ->
 
-                    join . first RetconError <$> tryAny (do
+                    first RetconError <$> tryAny (do
                         (fk' :: Maybe (ForeignKey entity source)) <- lookupForeignKey ik
                         case fk' of
-                            Nothing -> return $ Right ()
-                            Just fk -> liftIO $ runDataSourceAction state $ deleteDocument fk
+                            Nothing -> return ()
+                            Just fk -> runRetconAction state $ deleteDocument fk
                     )
     return . concat $ results
 
