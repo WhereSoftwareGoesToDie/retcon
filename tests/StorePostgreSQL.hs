@@ -19,6 +19,7 @@ module Main where
 import Control.Exception
 import Control.Monad
 import Control.Monad.IO.Class
+import Data.Aeson
 import qualified Data.ByteString.Char8 as BS
 import Data.Maybe
 import Data.Monoid
@@ -61,6 +62,22 @@ countStore (PGStore conn) = do
     [Only docs] <- query_ conn "SELECT count(*) FROM retcon_initial;"
     [Only diffs] <- query_ conn "SELECT count(*) FROM retcon_diff;"
     return (iks, fks, docs, diffs)
+
+-- | Bunch of data structures to track table contents
+type RetconTable = [(String, Int)]
+type RetconFkTable = [(String, Int, String, String)]
+type RetconInitialTable = [(String, Int, Value)]
+type RetconDiffs = [(String, Int, Int, String, Value)]
+
+-- | Dump all tables from PostgreSQL
+dumpStore :: PGStorage -> IO (RetconTable, RetconFkTable, RetconInitialTable, RetconDiffs, RetconDiffs)
+dumpStore (PGStore conn) = do
+    retconTable <- query_ conn "SELECT entity, id FROM retcon;"
+    retconFkTable <- query_ conn "SELECT entity, id, source, fk FROM retcon_fk;"
+    retconInitialTable <- query_ conn "SELECT entity, id, document FROM retcon_initial;"
+    retconDiffTable <- query_ conn "SELECT entity, id, diff_id, submitted, content FROM retcon_diff;"
+    retconDiffConflictTable <- query_ conn "SELECT entity, id, diff_id, submitted, content FROM retcon_diff_conflicts;"
+    return (retconTable, retconFkTable, retconInitialTable, retconDiffTable, retconDiffConflictTable)
 
 main :: IO ()
 main = hspec postgresqlSuite
@@ -114,6 +131,9 @@ postgresqlSuite = around prepareDatabase $
             initial@(iks, fks, docs, diffs) <- countStore store
             initial `shouldBe` (0,0,0,0)
 
+            initialDumps <- dumpStore store
+            initialDumps `shouldBe` ([], [], [], [], [])
+
             -- Create some internal keys.
             keys <- runAction store $ do
                 (ik1 :: InternalKey "tests") <- createInternalKey
@@ -132,6 +152,9 @@ postgresqlSuite = around prepareDatabase $
 
             try1 <- countStore store
             try1 `shouldBe` (3, 3, 0, 0)
+
+            try1' <- dumpStore store
+            try1' `shouldBe` ([("tests", 1), ("tests", 2), ("testers", 3)], [("tests", 1, "test", "fk1"), ("tests", 1, "more", "fk2"), ("testers", 3, "tester1", "fk3")], [], [], [])
 
             -- Delete ik1 and it's associated things.
             ik1 <- case keys of
@@ -342,5 +365,3 @@ instance RetconDataSource "testers" "tester2" where
     getDocument _ = undefined
 
     deleteDocument _ = return ()
-
-
