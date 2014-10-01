@@ -28,7 +28,7 @@ import Retcon.Error
 import Retcon.Handler
 import Retcon.Monad
 import Retcon.Options
-import Retcon.Store (RWToken, RetconStore, token)
+import Retcon.Store
 import qualified Retcon.Store.Memory as Memory
 
 import Control.Applicative
@@ -595,7 +595,7 @@ initialDocumentSuite = do
 
                     (ik :: InternalKey "alicorn_invoice") <- createInternalKey
                     put <- recordInitialDocument ik testDoc
-                    get <- getInitialDocument ik
+                    get <- lookupInitialDocument ik
 
                     return (put, get)
 
@@ -608,7 +608,7 @@ initialDocumentSuite = do
                     (ik :: InternalKey "alicorn_invoice") <- createInternalKey
                     maybePut <- recordInitialDocument ik testDoc
                     maybeDel <- deleteInitialDocument ik
-                    maybeGet <- getInitialDocument ik
+                    maybeGet <- lookupInitialDocument ik
                     return (maybePut, maybeDel, maybeGet)
 
                 result `shouldBe` Right ((), (), Nothing)

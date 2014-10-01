@@ -45,8 +45,7 @@ import Retcon.Error
 import Retcon.MergePolicy
 import Retcon.Monad
 import Retcon.Options
-import Retcon.Store (ReadableToken, StoreToken, WritableToken)
-import qualified Retcon.Store as S
+import Retcon.Store
 
 -- | Check that two symbols are the same.
 same :: (KnownSymbol a, KnownSymbol b) => Proxy a -> Proxy b -> Bool
@@ -151,8 +150,8 @@ create state fk = do
     $logDebug "CREATE"
 
     -- Allocate a new InternalKey to represent this entity.
-    ik <- S.createInternalKey
-    S.recordForeignKey ik fk
+    ik <- createInternalKey
+    recordForeignKey ik fk
 
     -- Use the new Document as the initial document.
     doc' <- join . first RetconError <$> tryAny (liftIO $ runDataSourceAction state $ getDocument fk)
@@ -198,7 +197,7 @@ update state ik = do
     --
     -- TODO This is fragile in the case that only one data sources has a document.
     initial <- fromMaybe (calculateInitialDocument valid) <$>
-               getInitialDocument ik
+               lookupInitialDocument ik
 
     -- Build the diff.
     let diffs = map (diff initial) valid
@@ -339,32 +338,6 @@ deleteState ik = do
                              ]
     return ()
 
-createInternalKey :: (WritableToken store, RetconEntity entity)
-                  => RetconHandler store (InternalKey entity)
-createInternalKey = do
-    S.createInternalKey
-
-lookupInternalKey :: (ReadableToken store, RetconDataSource entity source)
-                  => ForeignKey entity source
-                  -> RetconHandler store (Maybe (InternalKey entity))
-lookupInternalKey fk = do
-    S.lookupInternalKey fk
-
-recordForeignKey :: (ReadableToken store, WritableToken store, RetconDataSource entity source)
-                 => InternalKey entity
-                 -> ForeignKey entity source
-                 -> RetconHandler store ()
-recordForeignKey ik fk = do
-    S.recordForeignKey ik fk
-    return ()
-
--- | Lookup the 'ForeignKey' which corresponds to an 'InternalKey'.
-lookupForeignKey :: (ReadableToken store, RetconDataSource entity source)
-                 => InternalKey entity
-                 -> RetconHandler store (Maybe (ForeignKey entity source))
-lookupForeignKey ik = do
-    S.lookupForeignKey ik
-
 -- | Attempt to translate a 'ForeignKey' from one source into a 'ForeignKey'
 -- for another source.
 translateForeignKey
@@ -375,40 +348,6 @@ translateForeignKey
     -> RetconHandler store (Maybe (ForeignKey entity source2))
 translateForeignKey from =
     lookupInternalKey from >>= maybe (return Nothing) lookupForeignKey
-
--- | Fetch the initial document, if any, last used for an 'InternalKey'.
-getInitialDocument :: forall store entity. (ReadableToken store, RetconEntity entity)
-       => InternalKey entity
-       -> RetconHandler store (Maybe Document)
-getInitialDocument ik = do
-    S.lookupInitialDocument ik
-
--- | Write the initial document associated with an 'InternalKey' to the database.
-recordInitialDocument :: forall store entity. (WritableToken store, RetconEntity entity)
-        => InternalKey entity
-        -> Document
-        -> RetconHandler store ()
-recordInitialDocument ik doc = do
-    S.recordInitialDocument ik doc
-
--- | Delete the initial document for an 'InternalKey'.
-deleteInitialDocument :: forall store entity. (WritableToken store, RetconEntity entity)
-        => InternalKey entity
-        -> RetconHandler store ()
-deleteInitialDocument ik = do
-    S.deleteInitialDocument ik
-
-deleteForeignKeys :: (WritableToken store, RetconEntity entity)
-                  => InternalKey entity
-                  -> RetconHandler store ()
-deleteForeignKeys ik = do
-    S.deleteForeignKeys ik
-
-deleteInternalKey :: (WritableToken store, RetconEntity entity)
-                  => InternalKey entity
-                  -> RetconHandler store ()
-deleteInternalKey ik = do
-    S.deleteInternalKey ik
 
 -- | Insert a diff into the database
 putDiffIntoDb :: forall store l entity source. (ReadableToken store, WritableToken store, RetconDataSource entity source, ToJSON l, Show l)
