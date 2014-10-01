@@ -123,11 +123,13 @@ instance RetconStore PGStorage where
         return ()
 
     storeRecordDiffs (PGStore conn) ik (d, ds) = do
+        let ikv = internalKeyValue ik
         return ()
 
     storeDeleteDiffs (PGStore conn) ik = do
+        let ikv = internalKeyValue ik
         let sql1 = "DELETE FROM retcon_diff_portion WHERE entity = ? AND id = ?"
         let sql2 = "DELETE FROM retcon_diff WHERE entity = ? AND id = ?"
-        _ <- execute conn sql1 $ internalKeyValue ik
-        _ <- execute conn sql2 $ internalKeyValue ik
+        _ <- execute conn sql1 ikv
+        _ <- execute conn sql2 ikv
         return 0

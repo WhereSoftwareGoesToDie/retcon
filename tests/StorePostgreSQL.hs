@@ -21,6 +21,7 @@ import Control.Monad
 import Control.Monad.IO.Class
 import qualified Data.ByteString.Char8 as BS
 import Data.Maybe
+import Data.Monoid
 import Database.PostgreSQL.Simple
 import System.Process
 import Test.Hspec
@@ -245,8 +246,42 @@ postgresqlSuite = around prepareDatabase $
 
         it "should record diffs" $ do
             store@(PGStore conn) <- storeInitialise options
+
+            let a1 = mempty
+            let l1 = []
+            let ds1 = (a1, l1)
+            let a2 = mempty
+            let l2 = [mempty]
+            let ds2 = (a2, l2)
+            let a3 = mempty
+            let l3 = [mempty]
+            let ds3 = (a3, l3)
+
+            -- Insert some initial documents.
+            Right (ik1, ik2, ik3, ik4) <- runAction store $ do
+                (ik1 :: InternalKey "tests") <- createInternalKey
+                (ik2 :: InternalKey "testers") <- createInternalKey
+                (ik3 :: InternalKey "tests") <- createInternalKey
+                (ik4 :: InternalKey "tests") <- createInternalKey
+                return (ik1, ik2, ik3, ik4)
+
+            result <- runAction store $ do
+                recordDiffs ik1 ds1
+                recordDiffs ik2 ds2
+                recordDiffs ik3 ds3
+
+            result `shouldBe` Right ()
+            count <- countStore store
+            count `shouldBe` (4, 0, 0, 3)
+
+            result <- runAction store $ do
+                deleteDiffs ik2
+
+            result `shouldBe` Right 0
+            count <- countStore store
+            count `shouldBe` (4, 0, 0, 2)
+
             storeFinalise store
-            pendingWith "Unimplemented"
 
 -- $ Entities and Data Sources
 --
