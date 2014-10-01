@@ -32,8 +32,8 @@ import GHC.TypeLits
 
 import Retcon.Document
 import Retcon.Error
-import Retcon.Monad
-import Retcon.Store
+import {-# SOURCE #-} Retcon.Monad
+import {-# SOURCE #-} Retcon.Store
 
 -- | Configuration value for retcon.
 data RetconConfig =
