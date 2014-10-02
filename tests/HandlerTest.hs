@@ -19,7 +19,6 @@ module Main where
 
 import Test.Hspec
 
-import Retcon.Application
 import Retcon.DataSource
 import Retcon.Diff
 import Retcon.Document
@@ -75,7 +74,7 @@ newTestDocument n doc' ref = do
 deleteDocumentIORef :: (RetconDataSource entity source)
                     => IORef (Map Text Value)
                     -> ForeignKey entity source
-                    -> DataSourceAction (DataSourceState entity source) ()
+                    -> RetconMonad t (DataSourceState entity source) ()
 deleteDocumentIORef ref (ForeignKey fk') = do
     let k = T.pack fk'
     liftIO $ atomicModifyIORef' ref (\m -> (M.delete k m, ()))
@@ -85,7 +84,7 @@ setDocumentIORef :: (RetconDataSource entity source)
                  -> IORef (Map Text Value)
                  -> Document
                  -> Maybe (ForeignKey entity source)
-                 -> DataSourceAction (DataSourceState entity source) (ForeignKey entity source)
+                 -> RetconMonad t (DataSourceState entity source) (ForeignKey entity source)
 setDocumentIORef name ref doc (Nothing) = do
     k <- liftIO $ atomicModifyIORef' ref
         (\m -> let k = T.pack $ name ++ (show . M.size $ m)
@@ -101,7 +100,7 @@ setDocumentIORef name ref doc (Just (ForeignKey fk')) = do
 getDocumentIORef :: (RetconDataSource entity source)
                  => IORef (Map Text Value)
                  -> ForeignKey entity source
-                 -> DataSourceAction (DataSourceState entity source) Document
+                 -> RetconMonad t (DataSourceState entity source) Document
 getDocumentIORef ref (ForeignKey fk') = do
     let key = T.pack fk'
     doc' <- liftIO $ atomicModifyIORef' ref
@@ -134,15 +133,15 @@ instance RetconDataSource "dispatchtest" "dispatch1" where
         writeIORef ref M.empty
 
     getDocument fk = do
-        ref <- asks dispatch1State
+        ref <- dispatch1State <$> getActionState
         getDocumentIORef ref fk
 
     setDocument doc fk = do
-        ref <- asks dispatch1State
+        ref <- dispatch1State <$> getActionState
         setDocumentIORef "dispatch1-" ref doc fk
 
     deleteDocument fk = do
-        ref <- asks dispatch1State
+        ref <- dispatch1State <$> getActionState
         deleteDocumentIORef ref fk
 
 instance RetconDataSource "dispatchtest" "dispatch2" where
@@ -158,15 +157,15 @@ instance RetconDataSource "dispatchtest" "dispatch2" where
         writeIORef ref M.empty
 
     getDocument fk = do
-        ref <- asks dispatch2State
+        ref <- dispatch2State <$> getActionState
         getDocumentIORef ref fk
 
     setDocument doc fk = do
-        ref <- asks dispatch2State
+        ref <- dispatch2State <$> getActionState
         setDocumentIORef "dispatch2-" ref doc fk
 
     deleteDocument fk = do
-        ref <- asks dispatch2State
+        ref <- dispatch2State <$> getActionState
         deleteDocumentIORef ref fk
 
 -- | Tests for code determining and applying retcon operations.
@@ -263,8 +262,8 @@ operationSuite = do
                     return (op, ik)
 
                 case result of
+                    Left err -> error $ show err
                     Right (op, ik) -> op `shouldBe` RetconDelete ik
-                    _ -> error "No match"
 
     describe "Evaluating operations" $ do
         it "should process a create operation." $
@@ -624,7 +623,7 @@ diffDatabaseSuite = do
         it "writes a diff to database and reads it" $
             withConfiguration opt $ \(state, store,_ ) -> do
                 pendingWith "Data storage API changes."
-                let testDiff = Diff 1 [InsertOp 1 [T.pack "a",T.pack "b",T.pack "c"] (T.pack "foo")]
+                let testDiff = Diff 1 [InsertOp 1 ["a", "b", "c"] "foo"]
 
                 result <- testHandler state store $ do
                     -- Create an InternalKey and a ForeignKey
