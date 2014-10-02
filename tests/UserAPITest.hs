@@ -10,6 +10,7 @@ module Main where
 import Test.Hspec
 
 import Control.Monad.IO.Class
+import Data.Monoid
 import Data.Proxy
 import GHC.TypeLits
 import System.Directory
@@ -18,6 +19,7 @@ import System.FilePath
 
 import Retcon.DataSource
 import Retcon.DataSource.JsonDirectory
+import Retcon.Error
 import Retcon.Handler
 import Retcon.Monad
 import Retcon.Options
@@ -86,10 +88,12 @@ instance RetconDataSource "customer" "test-results" where
         res <- deleteJsonDirDocument customerTestResultsPath key
         either (error . show) return res
 
+run :: l -> RetconMonad ROToken l r -> IO (Either RetconError r)
 run l a = do
     store <- storeInitialise opt :: IO MemStorage
-    runRetconMonad opt state store l a
+    result <- runRetconMonad opt state (token store) () (runRetconAction l a)
     storeFinalise store
+    return result
   where
     opt = defaultOptions
     state = []
@@ -101,45 +105,50 @@ suite =
     describe "JSON directory marshalling" $ do
         it "can load 01-diff-source" $ do
             state <- initialiseState
-            _ <- run state $
+            result <- run state $
                 getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "data")
             finaliseState state
-            pass
+            case result of
+                Left _ -> error "Could not get document for 01-diff-source!"
+                Right _ -> return ()
 
         it "can load 01-diff-target" $ do
             state <- initialiseState
-            _ <- run state $
+            result <- run state $
                 getDocument (ForeignKey "01-diff-target" :: ForeignKey "customer" "data")
             finaliseState state
-            pass
+            case result of
+                Left _ -> error "Could not get document for 01-diff-target!"
+                Right _ -> return ()
 
         it "can write 01-diff-source to another source with that key" $ do
             state1 <- initialiseState
-            Right doc3 <- runRetconAction state1 $
+            Right doc3 <- run state1 $
                 getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "data")
             finaliseState state1
 
+            let fk = ForeignKey "01-diff-source" :: ForeignKey "customer" "test-results"
             state2 <- initialiseState
-            _ <- runRetconAction state2 $
-                setDocument doc3 (Just (ForeignKey "01-diff-source" :: ForeignKey "customer" "test-results"))
+            result <- run state2 $
+                setDocument doc3 (Just fk)
             finaliseState state2
-            pass
+            result `shouldBe` Right fk
 
         it "can write 01-diff-source to another source with new key" $ do
             state <- initialiseState
-            Right doc4 <- runRetconAction state $
+            Right doc4 <- run state $
                 getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "data")
             finaliseState state
 
             state2 <- initialiseState
-            _ <- runRetconAction state2 $
+            _ <- run state2 $
                 setDocument doc4 (Nothing :: Maybe (ForeignKey "customer" "test-results"))
             finaliseState state2
             pass
 
         it "can delete 01-diff-source from the test source" $ do
             state <- initialiseState
-            _ <- runRetconAction state $ do
+            _ <- run state $ do
                 _ <- getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "test-results")
                 deleteDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "test-results")
             finaliseState state
