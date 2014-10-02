@@ -25,7 +25,12 @@ import Test.Hspec
 
 import Retcon.DataSource
 import Retcon.DataSource.PostgreSQL
+import Retcon.Error
 import Retcon.Handler
+import Retcon.Monad
+import Retcon.Options
+import Retcon.Store
+import Retcon.Store.Memory
 
 instance RetconEntity "customer" where
     entitySources _ = [
@@ -85,44 +90,44 @@ suite =
     describe "PostgreSQL marshalling" $ do
         it "can load row 1 from db1" $ do
             state <- initialiseState
-            _ <- runDataSourceAction state $
+            _ <- run state $
                 getDocument (ForeignKey "1" :: ForeignKey "customer" "db1")
             finaliseState state
             pass
 
         it "can load row 2 from db1" $ do
             state <- initialiseState
-            _ <- runDataSourceAction state $
+            _ <- run state $
                 getDocument (ForeignKey "2" :: ForeignKey "customer" "db1")
             finaliseState state
             pass
 
         it "can write db1/row1 to db2 with new key" $ do
             state <- initialiseState
-            Right doc3 <- runDataSourceAction state $
+            Right doc3 <- run state $
                 getDocument (ForeignKey "1" :: ForeignKey "customer" "db1")
             finaliseState state
 
             state2 <- initialiseState
-            _ <- runDataSourceAction state2 $
+            _ <- run state2 $
                 setDocument doc3 (Nothing :: Maybe (ForeignKey "customer" "db2"))
             finaliseState state2
             pass
 
         it "can write db1/row2 to db2 with existing key row1" $ do
             state <- initialiseState
-            Right doc4 <- runDataSourceAction state $
+            Right doc4 <- run state $
                 getDocument (ForeignKey "2" :: ForeignKey "customer" "db1")
             finaliseState state
             state2 <- initialiseState
-            _ <- runDataSourceAction state2 $
+            _ <- run state2 $
                 setDocument doc4 (Just $ ForeignKey "1" :: Maybe (ForeignKey "customer" "db2"))
             finaliseState state2
             pass
 
         it "can delete db2/row1" $ do
             state <- initialiseState
-            res <- runDataSourceAction state $ do
+            res <- run state $ do
                 doc5 <- getDocument (ForeignKey "1" :: ForeignKey "customer" "db2")
                 deleteDocument (ForeignKey "1" :: ForeignKey "customer" "db2")
             finaliseState state
@@ -139,6 +144,17 @@ targetDb = "dbname='retcon_pg_test2'"
 -- | Explicitly pass a test.
 pass :: Expectation
 pass = return ()
+
+-- | Helper to execute an "action".
+run :: l -> RetconMonad ROToken l r -> IO (Either RetconError r)
+run l a = do
+    store <- storeInitialise opt :: IO MemStorage
+    result <- runRetconMonad opt state (token store) () (runRetconAction l a)
+    storeFinalise store
+    return result
+  where
+    opt = defaultOptions
+    state = []
 
 main :: IO ()
 main = do
