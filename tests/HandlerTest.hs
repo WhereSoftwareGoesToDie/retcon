@@ -126,11 +126,11 @@ instance RetconDataSource "dispatchtest" "dispatch1" where
         Dispatch1 { dispatch1State :: IORef (Map Text Value) }
 
     initialiseState = do
-        ref <- liftIO $ newIORef M.empty
+        ref <- liftIO $ newIORef mempty
         return $ Dispatch1 ref
 
     finaliseState (Dispatch1 ref) =
-        liftIO $ writeIORef ref M.empty
+        liftIO $ writeIORef ref mempty
 
     getDocument fk = do
         ref <- dispatch1State <$> getActionState
@@ -150,11 +150,11 @@ instance RetconDataSource "dispatchtest" "dispatch2" where
         Dispatch2 { dispatch2State :: IORef (Map Text Value) }
 
     initialiseState = do
-        ref <- liftIO $ newIORef M.empty
+        ref <- liftIO $ newIORef mempty
         return $ Dispatch2 ref
 
     finaliseState (Dispatch2 ref) =
-        liftIO $ writeIORef ref M.empty
+        liftIO $ writeIORef ref mempty
 
     getDocument fk = do
         ref <- dispatch2State <$> getActionState
@@ -535,7 +535,7 @@ dispatchSuite = do
                         mem <- readIORef ref
                         return (Memory.memItoF mem, Memory.memFtoI mem)
 
-                (d1, d2, iks, fks) `shouldBe` (M.empty, M.empty, M.empty, M.empty)
+                (d1, d2, iks, fks) `shouldBe` (mempty, mempty, mempty, mempty)
 
   where
     run opt state store action = runRetconHandler opt state (token store) action
