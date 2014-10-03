@@ -216,7 +216,7 @@ memorySuite =
                 ]
 
             -- Delete some of them.
-            runAction state $ do
+            runAction state $
                 deleteForeignKey fk5
 
             -- Check that we have the right things.
@@ -241,7 +241,7 @@ memorySuite =
                 ]
 
             -- Delete an internal key.
-            runAction state $ do
+            runAction state $
                 case ik1 of
                     Left _ -> error "Didn't create key, so now we can't delete"
                     Right k -> deleteForeignKeys k
@@ -304,7 +304,7 @@ memorySuite =
             -- Check documents can be updated.
             --
 
-            runAction state $ do
+            runAction state $
                 recordInitialDocument ik3 doc4
 
             store <- readIORef ref
@@ -319,7 +319,7 @@ memorySuite =
             -- Check documents can be deleted.
             --
 
-            runAction state $ do
+            runAction state $
                 deleteInitialDocument ik2
 
             store <- readIORef ref
@@ -378,8 +378,9 @@ memorySuite =
             -- Check diffs can be deleted.
             --
 
-            _ <- runAction state $ do
+            result <- runAction state $
                 deleteDiffs ik2
+            result `shouldBe` Right 0
 
             store <- readIORef ref
             memNextKey store `shouldBe` 4

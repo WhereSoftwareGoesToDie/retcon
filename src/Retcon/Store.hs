@@ -39,7 +39,7 @@ import Control.Monad.IO.Class
 import Retcon.DataSource
 import Retcon.Diff
 import Retcon.Document
-import Retcon.Monad
+import {-# SOURCE #-} Retcon.Monad
 import Retcon.Options
 
 -- | A storage backend for retcon operational data

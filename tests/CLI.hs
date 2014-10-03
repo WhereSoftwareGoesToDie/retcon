@@ -31,7 +31,6 @@ import System.Directory
 import System.Environment
 import System.FilePath
 
-import Retcon.Config
 import Retcon.DataSource
 import Retcon.DataSource.JsonDirectory
 import Retcon.Handler

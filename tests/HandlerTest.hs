@@ -19,8 +19,6 @@ module Main where
 
 import Test.Hspec
 
-import Retcon.Application
-import Retcon.Config
 import Retcon.DataSource
 import Retcon.Diff
 import Retcon.Document
@@ -76,7 +74,7 @@ newTestDocument n doc' ref = do
 deleteDocumentIORef :: (RetconDataSource entity source)
                     => IORef (Map Text Value)
                     -> ForeignKey entity source
-                    -> DataSourceAction (DataSourceState entity source) ()
+                    -> RetconMonad t (DataSourceState entity source) ()
 deleteDocumentIORef ref (ForeignKey fk') = do
     let k = T.pack fk'
     liftIO $ atomicModifyIORef' ref (\m -> (M.delete k m, ()))
@@ -86,7 +84,7 @@ setDocumentIORef :: (RetconDataSource entity source)
                  -> IORef (Map Text Value)
                  -> Document
                  -> Maybe (ForeignKey entity source)
-                 -> DataSourceAction (DataSourceState entity source) (ForeignKey entity source)
+                 -> RetconMonad t (DataSourceState entity source) (ForeignKey entity source)
 setDocumentIORef name ref doc (Nothing) = do
     k <- liftIO $ atomicModifyIORef' ref
         (\m -> let k = T.pack $ name ++ (show . M.size $ m)
@@ -102,7 +100,7 @@ setDocumentIORef name ref doc (Just (ForeignKey fk')) = do
 getDocumentIORef :: (RetconDataSource entity source)
                  => IORef (Map Text Value)
                  -> ForeignKey entity source
-                 -> DataSourceAction (DataSourceState entity source) Document
+                 -> RetconMonad t (DataSourceState entity source) Document
 getDocumentIORef ref (ForeignKey fk') = do
     let key = T.pack fk'
     doc' <- liftIO $ atomicModifyIORef' ref
@@ -135,15 +133,15 @@ instance RetconDataSource "dispatchtest" "dispatch1" where
         writeIORef ref M.empty
 
     getDocument fk = do
-        ref <- asks dispatch1State
+        ref <- dispatch1State <$> getActionState
         getDocumentIORef ref fk
 
     setDocument doc fk = do
-        ref <- asks dispatch1State
+        ref <- dispatch1State <$> getActionState
         setDocumentIORef "dispatch1-" ref doc fk
 
     deleteDocument fk = do
-        ref <- asks dispatch1State
+        ref <- dispatch1State <$> getActionState
         deleteDocumentIORef ref fk
 
 instance RetconDataSource "dispatchtest" "dispatch2" where
@@ -159,15 +157,15 @@ instance RetconDataSource "dispatchtest" "dispatch2" where
         writeIORef ref M.empty
 
     getDocument fk = do
-        ref <- asks dispatch2State
+        ref <- dispatch2State <$> getActionState
         getDocumentIORef ref fk
 
     setDocument doc fk = do
-        ref <- asks dispatch2State
+        ref <- dispatch2State <$> getActionState
         setDocumentIORef "dispatch2-" ref doc fk
 
     deleteDocument fk = do
-        ref <- asks dispatch2State
+        ref <- dispatch2State <$> getActionState
         deleteDocumentIORef ref fk
 
 -- | Tests for code determining and applying retcon operations.
@@ -176,17 +174,18 @@ operationSuite = do
     let opt = defaultOptions {
           optDB = testConnection
         , optLogging = LogNone
+        , optVerbose = True
         }
 
     describe "Mapping keys" $ do
         it "should map from internal to foreign keys" $
-            pending
+            pendingWith "Unimplemented"
 
         it "should map from foreign to internal keys" $
-            pending
+            pendingWith "Unimplemented"
 
         it "should translate foreign to foreign keys" $
-            pending
+            pendingWith "Unimplemented"
 
     describe "Determining operations" $ do
         it "should result in a create when new key is seen, with document." $
@@ -264,8 +263,8 @@ operationSuite = do
                     return (op, ik)
 
                 case result of
-                    Right (op, ik) -> op `shouldBe` (RetconDelete ik)
-                    _ -> error "No match"
+                    Left err -> error $ show err
+                    Right (op, ik) -> op `shouldBe` RetconDelete ik
 
     describe "Evaluating operations" $ do
         it "should process a create operation." $
@@ -392,6 +391,7 @@ dispatchSuite = do
     let opts = defaultOptions {
           optDB = testConnection
         , optLogging = LogNone
+        , optVerbose = True
         }
 
     describe "Dispatching changes" $ do
@@ -503,21 +503,27 @@ dispatchSuite = do
                 let ds2 = Proxy :: Proxy "dispatch2"
                 let Just (Dispatch1 ref1) = accessState state entity ds1
                 let Just (Dispatch2 ref2) = accessState state entity ds2
+                let Memory.MemStorage storeRef = store
 
                 -- Foreign keys are presents for dispatch1 and dispatch2, but only
                 -- dispatch2 contains a document.
                 let fk1' = "dispatch1-lolno"
                 (fk2', doc) <- newTestDocument "dispatch2-" Nothing ref2
 
+                let fk1 = ForeignKey fk1' :: ForeignKey "dispatchtest" "dispatch1"
+                let fk2 = ForeignKey (T.unpack fk2') :: ForeignKey "dispatchtest" "dispatch2"
+
                 result <- testHandler state store $ do
                     (ik :: InternalKey "dispatchtest") <- createInternalKey
-                    let fk1 = ForeignKey fk1' :: ForeignKey "dispatchtest" "dispatch1"
-                    let fk2 = ForeignKey (T.unpack fk2') :: ForeignKey "dispatchtest" "dispatch2"
                     recordForeignKey ik fk1
                     recordForeignKey ik fk2
-                    dispatch . show $ ("dispatchtest", "dispatch1", fk1')
 
-                either (error . show) (const . return $ ()) $ first show result
+                result `shouldBe` Right ()
+
+                result <- testHandler state store $
+                    dispatch . show . foreignKeyValue $ fk1
+
+                result `shouldBe` Right ()
 
                 -- Both stores should be empty, along with both the retcon and
                 -- retcon_fk tables.
@@ -585,6 +591,7 @@ initialDocumentSuite = do
     let opt = defaultOptions {
           optDB = testConnection
         , optLogging = LogNone
+        , optVerbose = True
         }
 
     describe "Initial documents" $ do
@@ -614,18 +621,19 @@ initialDocumentSuite = do
                 result `shouldBe` Right ((), (), Nothing)
 
 -- | Test suite for diff database handling.
--- diffDatabaseSuite :: Spec
--- diffDatabaseSuite = do
---     let opt = defaultOptions {
---           optDB = testConnection
---         , optLogging = LogNone
---         }
+diffDatabaseSuite :: Spec
+diffDatabaseSuite = do
+    let opt = defaultOptions {
+          optDB = testConnection
+        , optLogging = LogNone
+        , optVerbose = True
+        }
 
---     describe "Database diffs" $
---         it "writes a diff to database and reads it" $
---             withConfiguration opt $ \(state, store,_ ) -> do
---                 pendingWith "Data storage API changes."
---                 let testDiff = Diff 1 [InsertOp 1 [T.pack "a",T.pack "b",T.pack "c"] (T.pack "foo")]
+    describe "Database diffs" $
+        it "writes a diff to database and reads it" $
+            withConfiguration opt $ \(state, store,_ ) -> do
+                let testDiff = Diff 1 [InsertOp 1 ["a", "b", "c"] "foo"]
+                pendingWith "Data storage API changes."
 
 --                 result <- testHandler state store $ do
 --                     -- Create an InternalKey and a ForeignKey
@@ -646,7 +654,10 @@ testHandler :: [InitialisedEntity]
             -> IO (Either RetconError a)
 testHandler state store a = runRetconHandler opts state (token store) a
   where
-    opts = defaultOptions -- { optLogging = LogStdout }
+    opts = defaultOptions
+        { optLogging = LogNone
+        , optVerbose = True
+        }
 
 main :: IO ()
 main = hspec $ do
