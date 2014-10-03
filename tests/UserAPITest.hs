@@ -10,17 +10,21 @@ module Main where
 import Test.Hspec
 
 import Control.Monad.IO.Class
-import qualified Data.Map as M
+import Data.Monoid
 import Data.Proxy
 import GHC.TypeLits
 import System.Directory
 import System.Exit
 import System.FilePath
 
-import Retcon.Config
 import Retcon.DataSource
 import Retcon.DataSource.JsonDirectory
+import Retcon.Error
 import Retcon.Handler
+import Retcon.Monad
+import Retcon.Options
+import Retcon.Store
+import Retcon.Store.Memory
 
 import TestHelpers
 
@@ -84,51 +88,67 @@ instance RetconDataSource "customer" "test-results" where
         res <- deleteJsonDirDocument customerTestResultsPath key
         either (error . show) return res
 
+run :: l -> RetconMonad ROToken l r -> IO (Either RetconError r)
+run l a = do
+    store <- storeInitialise opt :: IO MemStorage
+    result <- runRetconMonad opt state (restrictToken . token $ store) l a
+    storeFinalise store
+    return result
+  where
+    opt = defaultOptions
+    state = []
+
+
 -- | test suite
 suite :: Spec
 suite =
     describe "JSON directory marshalling" $ do
         it "can load 01-diff-source" $ do
-            state <- runInitialiser (M.empty) initialiseState
-            _ <- runDataSourceAction state $
+            state <- initialiseState
+            result <- run state $
                 getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "data")
-            runInitialiser (M.empty) $ finaliseState state
-            pass
+            finaliseState state
+            case result of
+                Left _ -> error "Could not get document for 01-diff-source!"
+                Right _ -> return ()
 
         it "can load 01-diff-target" $ do
-            state <- runInitialiser (M.empty) initialiseState
-            _ <- runDataSourceAction state $
+            state <- initialiseState
+            result <- run state $
                 getDocument (ForeignKey "01-diff-target" :: ForeignKey "customer" "data")
-            runInitialiser (M.empty) $ finaliseState state
-            pass
+            finaliseState state
+            case result of
+                Left _ -> error "Could not get document for 01-diff-target!"
+                Right _ -> return ()
 
         it "can write 01-diff-source to another source with that key" $ do
-            state1 <- runInitialiser (M.empty) initialiseState
-            Right doc3 <- runDataSourceAction state1 $
+            state1 <- initialiseState
+            Right doc3 <- run state1 $
                 getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "data")
             runInitialiser (M.empty) $ finaliseState state1
 
-            state2 <- runInitialiser (M.empty) initialiseState
-            _ <- runDataSourceAction state2 $
-                setDocument doc3 (Just (ForeignKey "01-diff-source" :: ForeignKey "customer" "test-results"))
-            runInitialiser (M.empty) $ finaliseState state2
-            pass
+            let fk = ForeignKey "01-diff-source" :: ForeignKey "customer" "test-results"
+            state2 <- initialiseState
+            result <- run state2 $
+                setDocument doc3 (Just fk)
+            finaliseState state2
+            result `shouldBe` Right fk
 
         it "can write 01-diff-source to another source with new key" $ do
-            state <- runInitialiser M.empty initialiseState
-            Right doc4 <- runDataSourceAction state $
+            state <- initialiseState
+            Right doc4 <- run state $
                 getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "data")
             runInitialiser (M.empty) $ finaliseState state
 
-            state2 <- runInitialiser (M.empty) initialiseState
-            _ <- runDataSourceAction state2 $
+            state2 <- initialiseState
+            _ <- run state2 $
                 setDocument doc4 (Nothing :: Maybe (ForeignKey "customer" "test-results"))
             runInitialiser M.empty $ finaliseState state2
             pass
 
         it "can delete 01-diff-source from the test source" $ do
-            state <- runInitialiser M.empty initialiseState
-            _ <- runDataSourceAction state $ do
+            state <- initialiseState
+            _ <- run state $ do
                 _ <- getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "test-results")
                 deleteDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "test-results")
             runInitialiser M.empty $ finaliseState state

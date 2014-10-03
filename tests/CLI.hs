@@ -31,11 +31,11 @@ import System.Directory
 import System.Environment
 import System.FilePath
 
-import Retcon.Config
 import Retcon.DataSource
 import Retcon.DataSource.JsonDirectory
 import Retcon.Handler
 import Retcon.Options
+import Retcon.Store (token)
 import Retcon.Store.PostgreSQL
 
 -- * Entity definitions
@@ -191,7 +191,7 @@ main = do
     conn <- connectPostgreSQL optDB
 
     let (entity:source:key:_) = optArgs
-
-    res <- retcon opts cfg (PGStore conn) $ show (entity, source, key)
+    let tok = token $ PGStore conn
+    res <- retcon opts cfg tok $ show (entity, source, key)
     print res
 

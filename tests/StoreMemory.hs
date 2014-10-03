@@ -12,6 +12,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeFamilies          #-}
 
 module Main where
 
@@ -23,6 +24,8 @@ import Test.Hspec
 
 import Retcon.DataSource
 import Retcon.Document
+import Retcon.Error
+import Retcon.Monad
 import Retcon.Options
 import Retcon.Store
 import Retcon.Store.Memory
@@ -45,6 +48,10 @@ instance RetconEntity "testers" where
 
 instance RetconDataSource "tests" "test" where
 
+    data DataSourceState "tests" "test" = TestsTest
+    initialiseState = return TestsTest
+    finaliseState _ = return ()
+
     setDocument _ _ = undefined
 
     getDocument _ = undefined
@@ -52,6 +59,10 @@ instance RetconDataSource "tests" "test" where
     deleteDocument _ = return ()
 
 instance RetconDataSource "tests" "more" where
+
+    data DataSourceState "tests" "more" = TestsMore
+    initialiseState = return TestsMore
+    finaliseState _ = return ()
 
     setDocument _ _ = undefined
 
@@ -61,6 +72,10 @@ instance RetconDataSource "tests" "more" where
 
 instance RetconDataSource "testers" "tester1" where
 
+    data DataSourceState "testers" "tester1" = TestersTester1
+    initialiseState = return TestersTester1
+    finaliseState _ = return ()
+
     setDocument _ _ = undefined
 
     getDocument _ = undefined
@@ -69,12 +84,22 @@ instance RetconDataSource "testers" "tester1" where
 
 instance RetconDataSource "testers" "tester2" where
 
+    data DataSourceState "testers" "tester2" = TestersTester2
+    initialiseState = return TestersTester2
+    finaliseState _ = return ()
+
     setDocument _ _ = undefined
 
     getDocument _ = undefined
 
     deleteDocument _ = return ()
 
+-- $ Test Helpers
+
+runAction :: MemStorage
+          -> RetconMonad RWToken () r
+          -> IO (Either RetconError r)
+runAction store action = runRetconMonad options [] (token store) () action
 
 -- $ Memory Storage Tests
 
@@ -82,49 +107,52 @@ memorySuite :: Spec
 memorySuite =
     describe "Memory storage backend" $ do
         it "should be empty when initialised" $ do
-            state <- initialiseStorage options :: IO MemStorage
+            state <- storeInitialise options :: IO MemStorage
 
             store <- readIORef . unwrapMemStorage $ state
             store `shouldBe` emptyState
 
         it "should be empty when finalised" $ do
-            state <- initialiseStorage options :: IO MemStorage
+            state <- storeInitialise options :: IO MemStorage
             let ref = unwrapMemStorage state
 
             -- Should be empty before we've done anything to it.
             store <- readIORef ref
             store `shouldBe` emptyState
 
-            (_ :: InternalKey "tests") <- createInternalKey state
-            (_ :: InternalKey "tests") <- createInternalKey state
-            (_ :: InternalKey "testers") <- createInternalKey state
+            runAction state $ do
+                (_ :: InternalKey "tests") <- createInternalKey
+                (_ :: InternalKey "tests") <- createInternalKey
+                (_ :: InternalKey "testers") <- createInternalKey
+                return ()
 
             -- Should not be empty after we've put things in it.
             store <- readIORef ref
             store `shouldSatisfy` (/= emptyState)
             memNextKey store `shouldBe` 3
 
-            finaliseStorage state
+            storeFinalise state
 
             -- Should be empty after we've finalised it.
             store <- readIORef ref
             store `shouldBe` emptyState
 
         it "should allocate and delete internal keys" $ do
-            state <- initialiseStorage options :: IO MemStorage
+            state <- storeInitialise options :: IO MemStorage
             let ref = unwrapMemStorage state
 
-            (ik1 :: InternalKey "tests") <- createInternalKey state
-            (ik2 :: InternalKey "testers") <- createInternalKey state
-            (ik3 :: InternalKey "tests") <- createInternalKey state
+            runAction state $ do
+                (ik1 :: InternalKey "tests") <- createInternalKey
+                (ik2 :: InternalKey "testers") <- createInternalKey
+                (ik3 :: InternalKey "tests") <- createInternalKey
 
-            let (fk1 :: ForeignKey "tests" "test") = ForeignKey "fk1"
-            let (fk2 :: ForeignKey "testers" "tester1") = ForeignKey "fk2"
-            let (fk3 :: ForeignKey "tests" "test") = ForeignKey "fk3"
+                let (fk1 :: ForeignKey "tests" "test") = ForeignKey "fk1"
+                let (fk2 :: ForeignKey "testers" "tester1") = ForeignKey "fk2"
+                let (fk3 :: ForeignKey "tests" "test") = ForeignKey "fk3"
 
-            recordForeignKey state ik1 fk3
-            recordForeignKey state ik2 fk2
-            recordForeignKey state ik3 fk1
+                recordForeignKey ik1 fk3
+                recordForeignKey ik2 fk2
+                recordForeignKey ik3 fk1
 
             store <- readIORef ref
             memNextKey store `shouldBe` 3
@@ -140,13 +168,8 @@ memorySuite =
                 ]
 
         it "should associate foreign and internal keys" $ do
-            state <- initialiseStorage options :: IO MemStorage
+            state <- storeInitialise options :: IO MemStorage
             let ref = unwrapMemStorage state
-
-            -- mutate
-            (ik1 :: InternalKey "tests") <- createInternalKey state
-            (ik2 :: InternalKey "tests") <- createInternalKey state
-            (ik3 :: InternalKey "tests") <- createInternalKey state
 
             let (fk1 :: ForeignKey "tests" "test") = ForeignKey "test1"
             let (fk2 :: ForeignKey "tests" "test") = ForeignKey "test2"
@@ -155,12 +178,19 @@ memorySuite =
             let (fk5 :: ForeignKey "tests" "more") = ForeignKey "more2"
             let (fk6 :: ForeignKey "tests" "more") = ForeignKey "more3"
 
-            recordForeignKey state ik1 fk3
-            recordForeignKey state ik1 fk4
-            recordForeignKey state ik2 fk2
-            recordForeignKey state ik2 fk5
-            recordForeignKey state ik3 fk1
-            recordForeignKey state ik3 fk6
+            ik1 <- runAction state $ do
+                (ik1 :: InternalKey "tests") <- createInternalKey
+                (ik2 :: InternalKey "tests") <- createInternalKey
+                (ik3 :: InternalKey "tests") <- createInternalKey
+
+                recordForeignKey ik1 fk3
+                recordForeignKey ik1 fk4
+                recordForeignKey ik2 fk2
+                recordForeignKey ik2 fk5
+                recordForeignKey ik3 fk1
+                recordForeignKey ik3 fk6
+
+                return ik1
 
             -- Check all values have been inserted.
             store <- readIORef ref
@@ -186,7 +216,8 @@ memorySuite =
                 ]
 
             -- Delete some of them.
-            deleteForeignKey state fk5
+            runAction state $
+                deleteForeignKey fk5
 
             -- Check that we have the right things.
             store <- readIORef ref
@@ -210,7 +241,10 @@ memorySuite =
                 ]
 
             -- Delete an internal key.
-            deleteForeignKeys state ik1
+            runAction state $
+                case ik1 of
+                    Left _ -> error "Didn't create key, so now we can't delete"
+                    Right k -> deleteForeignKeys k
 
             -- Check that the bits got deleted.
             store <- readIORef ref
@@ -229,7 +263,7 @@ memorySuite =
                 ]
 
         it "should record initial documents" $ do
-            state <- initialiseStorage options :: IO MemStorage
+            state <- storeInitialise options :: IO MemStorage
             let ref = unwrapMemStorage state
 
             -- Should be empty before we've done anything to it.
@@ -237,10 +271,12 @@ memorySuite =
             store `shouldBe` emptyState
 
             -- Insert some initial documents.
-            (ik1 :: InternalKey "tests") <- createInternalKey state
-            (ik2 :: InternalKey "testers") <- createInternalKey state
-            (ik3 :: InternalKey "tests") <- createInternalKey state
-            (ik4 :: InternalKey "tests") <- createInternalKey state
+            Right (ik1, ik2, ik3, ik4) <- runAction state $ do
+                (ik1 :: InternalKey "tests") <- createInternalKey
+                (ik2 :: InternalKey "testers") <- createInternalKey
+                (ik3 :: InternalKey "tests") <- createInternalKey
+                (ik4 :: InternalKey "tests") <- createInternalKey
+                return (ik1, ik2, ik3, ik4)
 
             let doc1 = fromJust $ mkNode (Just "Document One")
             let doc2 = fromJust $ mkNode (Just "Document Two")
@@ -251,9 +287,10 @@ memorySuite =
             -- Check documents can be inserted.
             --
 
-            recordInitialDocument state ik1 doc1
-            recordInitialDocument state ik2 doc2
-            recordInitialDocument state ik3 doc3
+            runAction state $ do
+                recordInitialDocument ik1 doc1
+                recordInitialDocument ik2 doc2
+                recordInitialDocument ik3 doc3
 
             store <- readIORef ref
             memNextKey store `shouldBe` 4
@@ -267,7 +304,8 @@ memorySuite =
             -- Check documents can be updated.
             --
 
-            recordInitialDocument state ik3 doc4
+            runAction state $
+                recordInitialDocument ik3 doc4
 
             store <- readIORef ref
             memNextKey store `shouldBe` 4
@@ -281,7 +319,8 @@ memorySuite =
             -- Check documents can be deleted.
             --
 
-            deleteInitialDocument state ik2
+            runAction state $
+                deleteInitialDocument ik2
 
             store <- readIORef ref
             memNextKey store `shouldBe` 4
@@ -290,10 +329,10 @@ memorySuite =
                 , (("tests", 2), doc4)
                 ]
 
-            finaliseStorage state
+            storeFinalise state
 
         it "should record diffs" $ do
-            state <- initialiseStorage options :: IO MemStorage
+            state <- storeInitialise options :: IO MemStorage
             let ref = unwrapMemStorage state
 
             -- Should be empty before we've done anything to it.
@@ -301,10 +340,12 @@ memorySuite =
             store `shouldBe` emptyState
 
             -- Insert some initial documents.
-            (ik1 :: InternalKey "tests") <- createInternalKey state
-            (ik2 :: InternalKey "testers") <- createInternalKey state
-            (ik3 :: InternalKey "tests") <- createInternalKey state
-            (ik4 :: InternalKey "tests") <- createInternalKey state
+            Right (ik1, ik2, ik3, ik4) <- runAction state $ do
+                (ik1 :: InternalKey "tests") <- createInternalKey
+                (ik2 :: InternalKey "testers") <- createInternalKey
+                (ik3 :: InternalKey "tests") <- createInternalKey
+                (ik4 :: InternalKey "tests") <- createInternalKey
+                return (ik1, ik2, ik3, ik4)
 
             let a1 = mempty
             let l1 = []
@@ -320,9 +361,10 @@ memorySuite =
             -- Check diffs can be recorded.
             --
 
-            recordDiffs state ik1 ds1
-            recordDiffs state ik2 ds2
-            recordDiffs state ik3 ds3
+            runAction state $ do
+                recordDiffs ik1 ds1
+                recordDiffs ik2 ds2
+                recordDiffs ik3 ds3
 
             store <- readIORef ref
             memNextKey store `shouldBe` 4
@@ -336,7 +378,9 @@ memorySuite =
             -- Check diffs can be deleted.
             --
 
-            deleteDiffs state ik2
+            result <- runAction state $
+                deleteDiffs ik2
+            result `shouldBe` Right 0
 
             store <- readIORef ref
             memNextKey store `shouldBe` 4
@@ -345,7 +389,7 @@ memorySuite =
                 , (("tests", 2), [ds3])
                 ]
 
-            finaliseStorage state
+            storeFinalise state
 
 main :: IO ()
 main = hspec memorySuite

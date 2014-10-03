@@ -22,7 +22,22 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE TypeFamilies               #-}
 
-module Retcon.Monad where
+module Retcon.Monad (
+    RetconMonad,
+    RetconHandler,
+    RetconAction,
+    runRetconMonad,
+    runRetconMonad',
+    runRetconHandler,
+    runRetconAction,
+    RetconState,
+    retconStore,
+    retconState,
+    retconOptions,
+    carefully,
+    getRetconState,
+    getActionState,
+    ) where
 
 import Control.Applicative
 import Control.Exception.Enclosed
@@ -31,83 +46,130 @@ import Control.Monad.Except
 import Control.Monad.Logger
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
+import qualified Control.Monad.Trans.Reader as ReaderT (ask, local, reader)
 
-import Retcon.Config
-import Retcon.DataSource
+import Retcon.DataSource hiding (RetconAction)
 import Retcon.Error
 import Retcon.Options
 import Retcon.Store
 
--- | Run an action in 'RetconHandler', catching any exceptions and propagating
--- them as 'RetconError's.
-carefully :: RetconHandler s a -> RetconHandler s a
-carefully = handleAny (throwError . RetconError)
-
--- * Handler monad
+-- * Retcon monad
 
 -- $ Retcon handlers (i.e. actions which process and response to an event) are
 -- actions in the 'RetconHandler' monad.
 
 -- | State held in the reader part of the 'RetconHandler' monad.
-data RetconStore s => RetconState s = RetconState
+data RetconState s = RetconState
     { retconOptions :: RetconOptions
     , retconState   :: [InitialisedEntity]
     , retconStore   :: s
     }
 
 -- | Monad transformer stack used in the 'RetconHandler' monad.
-type RetconHandlerStack s = ExceptT RetconError (LoggingT (ReaderT (RetconState s) IO))
+type RetconHandlerStack s l = ReaderT (RetconState s, l) (ExceptT RetconError (LoggingT IO))
 
 -- | Monad for the retcon system.
 --
--- This monad provides error handling (by throwing 'HandlerLog' exceptions),
--- logging (write 'HandlerLog'), access to configuration and PostgreSQL
--- connections (reader), and IO facilities.
-newtype RetconHandler s a =
-    RetconHandler {
-        unRetconHandler :: (RetconHandlerStack s) a
+-- This monad provides access to an environment containing the "global" state
+-- of the retcon system and the "local" state of the current action; error
+-- handling through exceptions; logging; and I/O.
+newtype RetconMonad s l a =
+    RetconMonad {
+        unRetconMonad :: (RetconHandlerStack s l) a
     }
   deriving (Functor, Applicative, Monad, MonadIO, MonadLogger,
-  MonadReader (RetconState s), MonadError RetconError, MonadBase IO)
+  MonadReader (RetconState s, l), MonadError RetconError, MonadBase IO)
 
 -- | MonadBaseControl used to catch IO exceptions
-instance MonadBaseControl IO (RetconHandler s) where
-    newtype StM (RetconHandler s) a = StHandler {
-        unStHandler :: StM (RetconHandlerStack s) a
+instance MonadBaseControl IO (RetconMonad s l) where
+    newtype StM (RetconMonad s l) a = StHandler {
+        unStHandler :: StM (RetconHandlerStack s l) a
     }
 
     -- Unwrap the bits in our monad to get to the base.
-    liftBaseWith f = RetconHandler . liftBaseWith $ \r ->
-        f $ liftM StHandler . r . unRetconHandler
+    liftBaseWith f = RetconMonad . liftBaseWith $ \r ->
+        f $ liftM StHandler . r . unRetconMonad
 
     -- Wrap things back up into our monad.
-    restoreM       = RetconHandler . restoreM . unStHandler
+    restoreM       = RetconMonad . restoreM . unStHandler
 
--- | Run a 'RetconHandler' action with the given state.
-runRetconHandler' :: RetconStore s
-                  => RetconOptions
-                  -> [InitialisedEntity]
-                  -> s
-                  -> RetconHandler s a
-                  -> IO (Either RetconError a)
-runRetconHandler' opt state store (RetconHandler a) =
-    flip runReaderT (RetconState opt state store) . runLogging . runExceptT $ a
+-- ** Evaluators
+
+-- | Execute an action in the 'RetconMonad' monad.
+runRetconMonad :: RetconOptions
+               -> [InitialisedEntity]
+               -> s
+               -> l
+               -> RetconMonad s l a
+               -> IO (Either RetconError a)
+runRetconMonad opt state store l =
+    runLogging .
+    runExceptT .
+    flip runReaderT (st, l) . unRetconMonad
   where
+    st = RetconState opt state store
     runLogging = case optLogging opt of
       LogStderr -> runStderrLoggingT
       LogStdout -> runStdoutLoggingT
       LogNone   -> (`runLoggingT` \_ _ _ _ -> return ())
 
--- | Run a 'RetconHandler' action with the given configuration.
-runRetconHandler :: RetconStore s
-                  => RetconOptions
-                  -> RetconConfig
-                  -> s
-                  -> RetconHandler s a
-                  -> IO (Either RetconError a)
-runRetconHandler opt cfg store a = do
-    state <- initialiseEntities (retconEntities cfg)
-    ret <- runRetconHandler' opt state store a
-    _ <- finaliseEntities state
-    return ret
+runRetconMonad' :: RetconOptions
+                -> RetconConfig
+                -> s
+                -> l
+                -> RetconMonad s l a
+                -> IO (Either RetconError a)
+runRetconMonad' opt conf store l = do
+    let state = []
+    runRetconMonad opt state store l
 
+-- * Handler monad
+
+type RetconHandler s a = RetconMonad s () a
+
+-- | Run an action in the 'RetconHandler' monad (aka the 'RetconMonad' with
+-- '()' local state).
+runRetconHandler :: RetconOptions
+                 -> [InitialisedEntity]
+                 -> s
+                 -> RetconHandler s a
+                 -> IO (Either RetconError a)
+runRetconHandler opt state store = runRetconMonad opt state store ()
+
+-- * Action monad
+
+type RetconAction l a = RetconMonad ROToken l a
+
+-- | Run an action in the 'RetconAction' monad (aka the 'RetconMonad' with
+-- read-only storage).
+--
+-- Errors which occur in the action are handled and will not propagate up into
+-- the parent handler.
+runRetconAction :: StoreToken s
+                => l
+                -> RetconAction l a
+                -> RetconHandler s (Either RetconError a)
+runRetconAction l = RetconMonad . withReaderT localise . unRetconMonad . handle
+  where
+    localise (st, _) =
+        let st' = st { retconStore = restrictToken $ retconStore st }
+        in (st', l)
+
+    -- | Handle any errors in an action, pulling them into the monad.
+    handle :: (Functor m, MonadError e m) => m v -> m (Either e v)
+    handle a = (Right <$> a) `catchError` (return . Left)
+
+-- * Monad operations
+
+-- | Get the retcon component of the environment.
+getRetconState :: RetconMonad s l (RetconState s)
+getRetconState = asks fst
+
+-- | Get the action-specific component of the environment.
+getActionState :: RetconMonad s l l
+getActionState = asks snd
+
+-- | Run an action in 'RetconHandler', catching any exceptions and propagating
+-- them as 'RetconError's.
+carefully :: RetconMonad s l a -> RetconMonad s l a
+carefully = handleAny (throwError . RetconError)
