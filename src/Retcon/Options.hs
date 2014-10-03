@@ -14,19 +14,23 @@
 
 module Retcon.Options where
 
-import Control.Monad
+import Control.Monad hiding (sequence)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BS
-import Data.Map (Map)
+import Data.Map.Strict (Map)
 import Data.Maybe
 import Data.Monoid
 import Data.Text (Text)
 import qualified Data.Text as T
+import Data.Traversable
 import Options.Applicative hiding (Parser, option)
 import qualified Options.Applicative as O
+import Prelude hiding (sequence)
 import System.Directory
 import System.FilePath
 import Text.Trifecta
+
+import Utility.Configuration
 
 -- | Logging destinations.
 data Logging =
@@ -59,7 +63,18 @@ defaultOptions = RetconOptions False LogNone "" Nothing []
 
 -- | Parse options from a config file and/or the command line.
 parseArgsWithConfig :: FilePath -> IO RetconOptions
-parseArgsWithConfig = parseFile >=> execParser . helpfulParser
+parseArgsWithConfig = parseFile >=> execParser . helpfulParser >=> includeParams
+
+-- | Load the parameters from the path specified in the options.
+includeParams :: RetconOptions -> IO RetconOptions
+includeParams opt = do
+    params <- sequence $ (either readParams return) <$> optParams opt
+    return $ opt { optParams = Right <$> params }
+  where
+    readParams :: FilePath -> IO (Map (Text, Text) (Map Text Text))
+    readParams path = do
+        results <- parseFromFile configParser path
+        return $ maybe mempty convertConfig results
 
 -- * Options parsers
 
@@ -130,8 +145,8 @@ parseFile :: FilePath -> IO RetconOptions
 parseFile path = do
     exists <- doesFileExist path
     if exists
-    then maybe defaultOptions (`mergeConfig` defaultOptions) <$> parseFromFile configParser path
-    else return defaultOptions
+        then maybe defaultOptions (`mergeConfig` defaultOptions) <$> parseFromFile configParser path
+        else return defaultOptions
   where
     mergeConfig ls RetconOptions{..} = fromJust $
         RetconOptions <$> pure optVerbose
