@@ -25,6 +25,7 @@ import Data.Proxy
 import GHC.TypeLits
 
 import Retcon.DataSource
+import Retcon.Diff
 import Retcon.Store
 import Retcon.Options
 
@@ -60,8 +61,15 @@ instance RetconStore PGStorage where
             []         -> return Nothing
 
     storeDeleteInternalKey (PGStore conn) ik = do
+        let ikv = internalKeyValue ik
+        let sql = "DELETE FROM retcon_initial WHERE entity = ? AND id = ?"
+        _ <- execute conn sql ikv
+        let sql = "DELETE FROM retcon_diff WHERE entity = ? AND id = ?"
+        _ <- execute conn sql ikv
+        let sql = "DELETE FROM retcon_fk WHERE entity = ? AND id = ?"
+        _ <- execute conn sql ikv
         let sql = "DELETE FROM retcon WHERE entity = ? AND id = ?"
-        _ <- execute conn sql $ internalKeyValue ik
+        _ <- execute conn sql ikv
         return ()
 
     storeRecordForeignKey (PGStore conn) ik fk = do
@@ -116,11 +124,24 @@ instance RetconStore PGStorage where
         return ()
 
     storeRecordDiffs (PGStore conn) ik (d, ds) = do
+        _ <- storeOneDiff conn False ik $ fmap (const ()) d
+        mapM_ (storeOneDiff conn True ik . fmap (const ())) $ ds
         return ()
 
     storeDeleteDiffs (PGStore conn) ik = do
-        let sql1 = "DELETE FROM retcon_diff_portion WHERE entity = ? AND id = ?"
+        let ikv = internalKeyValue ik
+        let sql1 = "DELETE FROM retcon_diff_conflicts WHERE entity = ? AND id = ?"
         let sql2 = "DELETE FROM retcon_diff WHERE entity = ? AND id = ?"
-        _ <- execute conn sql1 $ internalKeyValue ik
-        _ <- execute conn sql2 $ internalKeyValue ik
+        _ <- execute conn sql1 ikv
+        _ <- execute conn sql2 ikv
         return 0
+
+storeOneDiff :: (RetconEntity entity) => Connection -> Bool -> InternalKey entity -> Diff () -> IO ()
+storeOneDiff conn isConflict ik d = do
+    let (ikentity, ikid) = internalKeyValue ik
+    _ <- execute conn q (ikentity, ikid, encode d)
+    return ()
+    where
+        q = if isConflict
+                then "INSERT INTO retcon_diff_conflicts (entity, id, content) VALUES (?, ?, ?)"
+                else "INSERT INTO retcon_diff (entity, id, content) VALUES (?, ?, ?)"
