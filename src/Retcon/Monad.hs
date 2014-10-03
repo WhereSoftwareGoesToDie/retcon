@@ -103,7 +103,9 @@ runRetconMonad :: RetconOptions
                -> RetconMonad s l a
                -> IO (Either RetconError a)
 runRetconMonad opt state store l =
-    runLogging . runExceptT . flip runReaderT (st, l) . unRetconMonad
+    runLogging .
+    runExceptT .
+    flip runReaderT (st, l) . unRetconMonad
   where
     st = RetconState opt state store
     runLogging = case optLogging opt of
@@ -140,15 +142,22 @@ type RetconAction l a = RetconMonad ROToken l a
 
 -- | Run an action in the 'RetconAction' monad (aka the 'RetconMonad' with
 -- read-only storage).
+--
+-- Errors which occur in the action are handled and will not propagate up into
+-- the parent handler.
 runRetconAction :: StoreToken s
                 => l
                 -> RetconAction l a
-                -> RetconHandler s a
-runRetconAction l = RetconMonad . withReaderT localise . unRetconMonad
+                -> RetconHandler s (Either RetconError a)
+runRetconAction l = RetconMonad . withReaderT localise . unRetconMonad . handle
   where
     localise (st, _) =
         let st' = st { retconStore = restrictToken $ retconStore st }
         in (st', l)
+
+    -- | Handle any errors in an action, pulling them into the monad.
+    handle :: (Functor m, MonadError e m) => m v -> m (Either e v)
+    handle a = (Right <$> a) `catchError` (return . Left)
 
 -- * Monad operations
 

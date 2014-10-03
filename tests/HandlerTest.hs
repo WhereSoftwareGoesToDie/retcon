@@ -174,6 +174,7 @@ operationSuite = do
     let opt = defaultOptions {
           optDB = testConnection
         , optLogging = LogNone
+        , optVerbose = True
         }
 
     describe "Mapping keys" $ do
@@ -390,6 +391,7 @@ dispatchSuite = do
     let opts = defaultOptions {
           optDB = testConnection
         , optLogging = LogNone
+        , optVerbose = True
         }
 
     describe "Dispatching changes" $ do
@@ -501,21 +503,27 @@ dispatchSuite = do
                 let ds2 = Proxy :: Proxy "dispatch2"
                 let Just (Dispatch1 ref1) = accessState state entity ds1
                 let Just (Dispatch2 ref2) = accessState state entity ds2
+                let Memory.MemStorage storeRef = store
 
                 -- Foreign keys are presents for dispatch1 and dispatch2, but only
                 -- dispatch2 contains a document.
                 let fk1' = "dispatch1-lolno"
                 (fk2', doc) <- newTestDocument "dispatch2-" Nothing ref2
 
+                let fk1 = ForeignKey fk1' :: ForeignKey "dispatchtest" "dispatch1"
+                let fk2 = ForeignKey (T.unpack fk2') :: ForeignKey "dispatchtest" "dispatch2"
+
                 result <- testHandler state store $ do
                     (ik :: InternalKey "dispatchtest") <- createInternalKey
-                    let fk1 = ForeignKey fk1' :: ForeignKey "dispatchtest" "dispatch1"
-                    let fk2 = ForeignKey (T.unpack fk2') :: ForeignKey "dispatchtest" "dispatch2"
                     recordForeignKey ik fk1
                     recordForeignKey ik fk2
-                    dispatch . show $ ("dispatchtest", "dispatch1", fk1')
 
-                either (error . show) (const . return $ ()) $ first show result
+                result `shouldBe` Right ()
+
+                result <- testHandler state store $
+                    dispatch . show . foreignKeyValue $ fk1
+
+                result `shouldBe` Right ()
 
                 -- Both stores should be empty, along with both the retcon and
                 -- retcon_fk tables.
@@ -583,6 +591,7 @@ initialDocumentSuite = do
     let opt = defaultOptions {
           optDB = testConnection
         , optLogging = LogNone
+        , optVerbose = True
         }
 
     describe "Initial documents" $ do
@@ -617,6 +626,7 @@ diffDatabaseSuite = do
     let opt = defaultOptions {
           optDB = testConnection
         , optLogging = LogNone
+        , optVerbose = True
         }
 
     describe "Database diffs" $
@@ -644,7 +654,10 @@ testHandler :: [InitialisedEntity]
             -> IO (Either RetconError a)
 testHandler state store a = runRetconHandler opts state (token store) a
   where
-    opts = defaultOptions -- { optLogging = LogStdout }
+    opts = defaultOptions
+        { optLogging = LogNone
+        , optVerbose = True
+        }
 
 main :: IO ()
 main = hspec $ do
