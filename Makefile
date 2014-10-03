@@ -6,18 +6,13 @@ CTAGS=$(if $(HOTHASKTAGS),$(HOTHASKTAGS),/bin/false)
 STYLISHHASKELL=$(shell which stylish-haskell 2>/dev/null)
 STYLISH=$(if $(STYLISHHASKELL),$(STYLISHHASKELL),/bin/false)
 
-all: format tags
+all: tags
 
 .PHONY: all test clean
 
 tags: $(SOURCES)
 	@if [ "$(HOTHASKTAGS)" ] ; then /bin/echo -e "CTAGS\ttags" ; fi
 	@$(CTAGS) $^ > tags $(REDIRECT)
-
-# Note that the config file *MUST* be the first dependency!
-format: .stylish-haskell.yaml $(SOURCES)
-	@if [ ! -z "$(STYLISH)" ] ; then /bin/echo -e "FORMAT" ; fi
-	@$(STYLISH) -c $< -i $(filter-out $<,$^)
 
 clean:
 	@/bin/echo -e "CLEAN"
