@@ -20,6 +20,7 @@ import Control.Monad
 import Control.Monad.IO.Class
 import Data.ByteString
 import qualified Data.Map as M
+import Data.Monoid
 import Data.Proxy
 import GHC.TypeLits
 import System.Process
@@ -91,44 +92,45 @@ suite :: Spec
 suite =
     describe "PostgreSQL marshalling" $ do
         it "can load row 1 from db1" $ do
-            state <- initialiseState
+            state <- runInitialiser mempty $ initialiseState
             _ <- run state $
                 getDocument (ForeignKey "1" :: ForeignKey "customer" "db1")
-            runInitialiser M.empty $ finaliseState state
+            runInitialiser mempty $ finaliseState state
             pass
 
         it "can load row 2 from db1" $ do
-            state <- initialiseState
+            state <- runInitialiser mempty $ initialiseState
             _ <- run state $
                 getDocument (ForeignKey "2" :: ForeignKey "customer" "db1")
             runInitialiser M.empty $ finaliseState state
             pass
 
         it "can write db1/row1 to db2 with new key" $ do
-            state <- initialiseState
+            state <- runInitialiser mempty $ initialiseState
             Right doc3 <- run state $
                 getDocument (ForeignKey "1" :: ForeignKey "customer" "db1")
             runInitialiser M.empty $ finaliseState state
 
-            state2 <- initialiseState
+            state2 <- runInitialiser mempty $ initialiseState
             _ <- run state2 $
                 setDocument doc3 (Nothing :: Maybe (ForeignKey "customer" "db2"))
             runInitialiser M.empty $ finaliseState state2
             pass
 
         it "can write db1/row2 to db2 with existing key row1" $ do
-            state <- initialiseState
+            state <- runInitialiser mempty $ initialiseState
             Right doc4 <- run state $
                 getDocument (ForeignKey "2" :: ForeignKey "customer" "db1")
-            finaliseState state
-            state2 <- initialiseState
+            runInitialiser mempty $ finaliseState state
+
+            state2 <- runInitialiser mempty $ initialiseState
             _ <- run state2 $
                 setDocument doc4 (Just $ ForeignKey "1" :: Maybe (ForeignKey "customer" "db2"))
             runInitialiser M.empty $ finaliseState state2
             pass
 
         it "can delete db2/row1" $ do
-            state <- initialiseState
+            state <- runInitialiser mempty $ initialiseState
             res <- run state $ do
                 doc5 <- getDocument (ForeignKey "1" :: ForeignKey "customer" "db2")
                 deleteDocument (ForeignKey "1" :: ForeignKey "customer" "db2")
