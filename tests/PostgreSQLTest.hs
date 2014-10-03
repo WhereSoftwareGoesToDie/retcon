@@ -149,7 +149,7 @@ pass = return ()
 run :: l -> RetconMonad ROToken l r -> IO (Either RetconError r)
 run l a = do
     store <- storeInitialise opt :: IO MemStorage
-    result <- runRetconMonad opt state (token store) () (runRetconAction l a)
+    result <- runRetconMonad opt state (restrictToken . token $ store) l a
     storeFinalise store
     return result
   where
