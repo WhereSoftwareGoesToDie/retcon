@@ -671,10 +671,7 @@ exceptionSuite =
         it "should catch action exception and return them as RetconErrors" $ do
             let cfg = RetconConfig []
             result <- actionTest cfg
-            case result of
-                Left  (RetconError _) -> return ()
-                Left  _ -> error "Unexpected error (no the expected one)"
-                Right _ -> error "Should not have succeeded"
+            (show result) `shouldBe` "Right (Left (RetconError Action exception))"
 
         it "should allow handler exceptions to propagate" $ do
             let cfg = RetconConfig []
@@ -688,9 +685,18 @@ exceptionSuite =
         }
     -- Raise an exception in "action" code.
     actionTest cfg = bracket
-        (initialiseEntities mempty (retconEntities cfg))
-        (finaliseEntities mempty)
-        (\_ -> error "Action exception")
+        (do
+            st <- initialiseEntities mempty (retconEntities cfg)
+            tok <- storeInitialise opt :: IO Memory.MemStorage
+            return (st, tok))
+        (\(s, t) -> do
+            _ <- finaliseEntities mempty s
+            storeFinalise t
+            return ())
+        (\(s,t) -> runRetconHandler opt s (token t) $ do
+            runRetconAction ExcState $ do
+                error "Action exception"
+                return 1)
     -- Raise an exception in "action" code.
     handlerTest cfg = bracket
         (do
