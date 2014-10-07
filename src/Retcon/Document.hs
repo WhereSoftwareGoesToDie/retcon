@@ -88,13 +88,13 @@ docToJSON (Document (Node nv childs)) 0 = object [
     tlVal = case nv of
       Nothing -> Null
       Just v' -> String v'
-    contents = object $ map (\(k,v) -> k .= (docToJSON (Document v) 1)) $ M.toAscList childs
-docToJSON (Document (Node Nothing childs)) l = object $ map (\(k,v) -> k .= (d' v)) $ M.toAscList childs
+    contents = object $ map (\(k,v) -> k .= docToJSON (Document v) 1) $ M.toAscList childs
+docToJSON (Document (Node Nothing childs)) l = object $ map (\(k,v) -> k .= d' v) $ M.toAscList childs
   where
     d' v = docToJSON (Document v) (l + 1)
 docToJSON (Document (Node (Just val) childs)) l
   | M.null childs = toJSON val
-  | otherwise     = object $ map (\(k,v) -> k .= (d' v)) $ M.toAscList childs
+  | otherwise     = object $ map (\(k,v) -> k .= d' v) $ M.toAscList childs
   where
     d' v = docToJSON (Document v) (l + 1)
 

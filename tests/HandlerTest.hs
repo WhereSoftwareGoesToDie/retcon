@@ -1,5 +1,4 @@
-
-            -- Copyright © 2013-2014 Anchor Systems, Pty Ltd and Others
+-- Copyright © 2013-2014 Anchor Systems, Pty Ltd and Others
 --
 -- The code in this file, and the program it is a part of, is
 -- made available to you by its authors as open source software:
@@ -126,11 +125,11 @@ instance RetconDataSource "dispatchtest" "dispatch1" where
         Dispatch1 { dispatch1State :: IORef (Map Text Value) }
 
     initialiseState = do
-        ref <- newIORef M.empty
+        ref <- liftIO $ newIORef mempty
         return $ Dispatch1 ref
 
     finaliseState (Dispatch1 ref) =
-        writeIORef ref M.empty
+        liftIO $ writeIORef ref mempty
 
     getDocument fk = do
         ref <- dispatch1State <$> getActionState
@@ -150,11 +149,11 @@ instance RetconDataSource "dispatchtest" "dispatch2" where
         Dispatch2 { dispatch2State :: IORef (Map Text Value) }
 
     initialiseState = do
-        ref <- newIORef M.empty
+        ref <- liftIO $ newIORef mempty
         return $ Dispatch2 ref
 
     finaliseState (Dispatch2 ref) =
-        writeIORef ref M.empty
+        liftIO $ writeIORef ref mempty
 
     getDocument fk = do
         ref <- dispatch2State <$> getActionState
@@ -535,11 +534,12 @@ dispatchSuite = do
                         mem <- readIORef ref
                         return (Memory.memItoF mem, Memory.memFtoI mem)
 
-                (d1, d2, iks, fks) `shouldBe` (M.empty, M.empty, M.empty, M.empty)
+                (d1, d2, iks, fks) `shouldBe` (mempty, mempty, mempty, mempty)
 
   where
     run opt state store action = runRetconHandler opt state (token store) action
 
+-- | Test operations for dealing with entity and data source names.
 namesSuite :: Spec
 namesSuite = describe "Human readable names" $ do
     it "should be known for entities" $ do
@@ -548,7 +548,8 @@ namesSuite = describe "Human readable names" $ do
 
     it "should be known for data sources of an entity" $ do
         let entity = SomeEntity (Proxy :: Proxy "dispatchtest")
-        someEntityNames entity `shouldBe` ("dispatchtest", ["dispatch1", "dispatch2"])
+        someEntityNames entity `shouldBe` ("dispatchtest",
+            ["dispatch1", "dispatch2"])
 
 -- | Open a connection to the configured database.
 withConfiguration :: RetconOptions
@@ -557,11 +558,11 @@ withConfiguration :: RetconOptions
 withConfiguration opt = bracket openConnection closeConnection
   where
     openConnection = do
-        state <- initialiseEntities (retconEntities dispatchConfig)
+        state <- initialiseEntities mempty (retconEntities dispatchConfig)
         ref <- newIORef Memory.emptyState
         return (state, Memory.MemStorage ref, opt)
     closeConnection (state, Memory.MemStorage ref, _) = do
-        finaliseEntities state
+        finaliseEntities mempty state
         writeIORef ref Memory.emptyState
         return ()
 

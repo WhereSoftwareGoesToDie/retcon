@@ -164,7 +164,7 @@ postgresqlSuite = around prepareDatabase $
                 Left  _          -> error "Couldn't create internal keys"
                 Right (k1, _, _) -> return k1
 
-            result <- runAction store $ do
+            result <- runAction store $
                 deleteInternalKey ik1
             result `shouldBe` Right ()
 
@@ -211,7 +211,7 @@ postgresqlSuite = around prepareDatabase $
                 ("tests", 2, "test", "test2"), ("tests", 3, "more", "more3"), ("tests", 3, "test", "test1")],
                 [], [], [])
 
-            result <- runAction store $ do
+            result <- runAction store $
                 deleteForeignKey fk5
 
             -- Check there are as many things in the database as we expect.
@@ -226,7 +226,7 @@ postgresqlSuite = around prepareDatabase $
                 ("tests", 2, "test", "test2"), ("tests", 3, "more", "more3"), ("tests", 3, "test", "test1")],
                 [], [], [])
 
-            result <- runAction store $ do
+            result <- runAction store $
                 case ik1 of
                     Left  _ -> error "Was not able to create ik1."
                     Right k -> deleteInternalKey k
@@ -277,7 +277,7 @@ postgresqlSuite = around prepareDatabase $
                 ("tests", 3, toJSON doc3)],
                 [], [])
 
-            runAction store $ do
+            runAction store $
                 recordInitialDocument ik3 doc4
 
             -- Check it.
@@ -293,7 +293,7 @@ postgresqlSuite = around prepareDatabase $
                 ("tests", 3, toJSON doc4)],
                 [], [])
 
-            runAction store $ do
+            runAction store $
                 deleteInitialDocument ik2
 
             -- Check it.
@@ -344,10 +344,10 @@ postgresqlSuite = around prepareDatabase $
             contents `shouldBe` (
                 [("testers", 2), ("tests", 1), ("tests", 3), ("tests", 4)],
                 [], [],
-                [("testers", 2, 2, toJSON $ a1), ("tests", 1, 1, toJSON $ a2), ("tests", 3, 3, toJSON $ a3)],
-                [("testers", 2, 1, toJSON $ l2 !! 0), ("tests", 3, 2, toJSON $ l3 !! 0)])
+                [("testers", 2, 2, toJSON a1), ("tests", 1, 1, toJSON a2), ("tests", 3, 3, toJSON a3)],
+                [("testers", 2, 1, toJSON $ head l2), ("tests", 3, 2, toJSON $ head l3)])
 
-            result <- runAction store $ do
+            result <- runAction store $
                 deleteDiffs ik2
 
             result `shouldBe` Right 0
@@ -358,8 +358,8 @@ postgresqlSuite = around prepareDatabase $
             contents `shouldBe` (
                 [("testers", 2), ("tests", 1), ("tests", 3), ("tests", 4)],
                 [], [],
-                [("tests", 1, 1, toJSON $ a2), ("tests", 3, 3, toJSON $ a3)],
-                [("tests", 3, 2, toJSON $ l3 !! 0)])
+                [("tests", 1, 1, toJSON a2), ("tests", 3, 3, toJSON a3)],
+                [("tests", 3, 2, toJSON $ head l3)])
 
             storeFinalise store
 
