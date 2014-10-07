@@ -16,8 +16,11 @@
 
 module Main where
 
+import Control.Monad
 import Control.Monad.IO.Class
 import Data.ByteString
+import qualified Data.Map as M
+import Data.Monoid
 import Data.Proxy
 import GHC.TypeLits
 import System.Process
@@ -89,49 +92,62 @@ suite :: Spec
 suite =
     describe "PostgreSQL marshalling" $ do
         it "can load row 1 from db1" $ do
-            state <- initialiseState
+            state <- runInitialiser mempty $ initialiseState
             _ <- run state $
                 getDocument (ForeignKey "1" :: ForeignKey "customer" "db1")
-            finaliseState state
+            runInitialiser mempty $ finaliseState state
             pass
 
         it "can load row 2 from db1" $ do
-            state <- initialiseState
+            state <- runInitialiser mempty $ initialiseState
             _ <- run state $
                 getDocument (ForeignKey "2" :: ForeignKey "customer" "db1")
-            finaliseState state
+            runInitialiser mempty $ finaliseState state
             pass
 
         it "can write db1/row1 to db2 with new key" $ do
-            state <- initialiseState
+            state <- runInitialiser mempty $ initialiseState
             Right doc3 <- run state $
                 getDocument (ForeignKey "1" :: ForeignKey "customer" "db1")
-            finaliseState state
+            runInitialiser mempty $ finaliseState state
 
-            state2 <- initialiseState
+            state2 <- runInitialiser mempty $ initialiseState
             _ <- run state2 $
                 setDocument doc3 (Nothing :: Maybe (ForeignKey "customer" "db2"))
-            finaliseState state2
+            runInitialiser mempty $ finaliseState state2
             pass
 
         it "can write db1/row2 to db2 with existing key row1" $ do
-            state <- initialiseState
+            let fk1 = ForeignKey "2" :: ForeignKey "customer" "db1"
+
+            state <- runInitialiser mempty $ initialiseState
             Right doc4 <- run state $
-                getDocument (ForeignKey "2" :: ForeignKey "customer" "db1")
-            finaliseState state
-            state2 <- initialiseState
-            _ <- run state2 $
-                setDocument doc4 (Just $ ForeignKey "1" :: Maybe (ForeignKey "customer" "db2"))
-            finaliseState state2
-            pass
+                getDocument fk1
+            runInitialiser mempty $ finaliseState state
+
+            let fk2 = ForeignKey "1" :: ForeignKey "customer" "db2"
+            state2 <- runInitialiser mempty $ initialiseState
+            res2 <- run state2 $
+                setDocument doc4 (Just fk2)
+            runInitialiser mempty $ finaliseState state2
+
+            res2 `shouldBe` Right fk2
 
         it "can delete db2/row1" $ do
-            state <- initialiseState
-            res <- run state $ do
-                doc5 <- getDocument (ForeignKey "1" :: ForeignKey "customer" "db2")
-                deleteDocument (ForeignKey "1" :: ForeignKey "customer" "db2")
-            finaliseState state
-            pass
+            let fk2 = ForeignKey "1" :: ForeignKey "customer" "db2"
+
+            state <- runInitialiser mempty $ initialiseState
+            res1 <- run state $
+                getDocument fk2
+
+            case res1 of
+                Left  _ -> error "Couldn't get the document."
+                Right _ -> return ()
+
+            res2 <- run state $
+                deleteDocument fk2
+            runInitialiser mempty $ finaliseState state
+            res2 `shouldBe` Right ()
 
 -- | get source file path
 sourceDb :: ByteString
