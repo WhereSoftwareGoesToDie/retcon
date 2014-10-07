@@ -167,6 +167,18 @@ instance RetconDataSource "dispatchtest" "dispatch2" where
         ref <- dispatch2State <$> getActionState
         deleteDocumentIORef ref fk
 
+instance RetconEntity "exception" where
+    entitySources _ = [SomeDataSource (Proxy :: Proxy "exception")]
+
+instance RetconDataSource "exception" "exception" where
+    data DataSourceState "exception" "exception" = ExcState
+
+    initialiseState = error "initialise exception"
+    finaliseState = error "finalise exception"
+    getDocument = error "getDocument exception"
+    setDocument = error "setDocument exception"
+    deleteDocument = error "deleteDocument exception"
+
 -- | Tests for code determining and applying retcon operations.
 operationSuite :: Spec
 operationSuite = do
@@ -650,17 +662,11 @@ diffDatabaseSuite = do
 --                 result `shouldBe` Right (Just 1, diffChanges testDiff)
 
 exceptionSuite :: Spec
-exceptionSuite = do
-    let opt = defaultOptions {
-          optDB = testConnection
-        , optLogging = LogNone
-        , optVerbose = True
-        }
-
+exceptionSuite =
     describe "Exception handling" $ do
         it "should allow initialiser exceptions to propagate" $ do
-            let cfg = RetconConfig []
-            (initTest cfg) `shouldThrow` anyException
+            let cfg = RetconConfig [SomeEntity (Proxy :: Proxy "exception")]
+            (initTest cfg) `shouldThrow` (== ErrorCall "initialise exception")
 
         it "should catch action exception and return them as RetconErrors" $ do
             let cfg = RetconConfig []
@@ -670,27 +676,45 @@ exceptionSuite = do
                 Left  _ -> error "Unexpected error (no the expected one)"
                 Right _ -> error "Should not have succeeded"
 
-
         it "should allow handler exceptions to propagate" $ do
             let cfg = RetconConfig []
-            (handlerTest cfg) `shouldThrow` anyException
+            (handlerTest cfg) `shouldThrow` (== ErrorCall "Handler exception")
 
   where
+    opt = defaultOptions {
+          optDB = testConnection
+        , optLogging = LogNone
+        , optVerbose = True
+        }
     -- Raise an exception in "action" code.
     actionTest cfg = bracket
         (initialiseEntities mempty (retconEntities cfg))
         (finaliseEntities mempty)
-        (const . return $ Right "LOL")
+        (\_ -> error "Action exception")
     -- Raise an exception in "action" code.
     handlerTest cfg = bracket
-        (initialiseEntities mempty (retconEntities cfg))
-        (finaliseEntities mempty)
-        (const $ return ())
+        (do
+            st <- initialiseEntities mempty (retconEntities cfg)
+            tok <- storeInitialise opt :: IO Memory.MemStorage
+            return (st, tok))
+        (\(s, t) -> do
+            _ <- finaliseEntities mempty s
+            storeFinalise t
+            return ())
+        (\(s,t) -> runRetconHandler opt s (token t) $ do
+            error "Handler exception")
     -- Raise an exception in "action" code.
     initTest cfg = bracket
-        (initialiseEntities mempty (retconEntities cfg))
-        (finaliseEntities mempty)
-        (const $ return ())
+        (do
+            st <- initialiseEntities mempty (retconEntities cfg)
+            tok <- storeInitialise opt :: IO Memory.MemStorage
+            return (st, tok))
+        (\(s, t) -> do
+            _ <- finaliseEntities mempty s
+            storeFinalise t
+            return ())
+        (\(s,t) -> runRetconHandler opt s (token t) $ do
+            error "Not initialiser exception")
 
 testHandler :: [InitialisedEntity]
             -> Memory.MemStorage
