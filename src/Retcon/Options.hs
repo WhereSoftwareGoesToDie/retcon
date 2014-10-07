@@ -21,9 +21,11 @@ import Data.Maybe
 import Data.Text (Text)
 import qualified Data.Text as T
 import Options.Applicative hiding (Parser, option)
+import Options.Applicative.Types(readerAsk)
 import qualified Options.Applicative as O
 import System.Directory
 import Text.Trifecta
+import Data.Traversable
 
 -- | Logging destinations.
 data Logging =
@@ -67,10 +69,15 @@ helpfulParser os = info (helper <*> optionsParser os) fullDesc
 optionsParser :: RetconOptions -> O.Parser RetconOptions
 optionsParser def = confOptionsParser def <*> parseID
   where
-    parseID = (\x y z -> [x,y,z])
-        <$> argument (return . T.pack) (metavar "ENTITY")
-        <*> argument (return . T.pack) (metavar "SOURCE")
-        <*> argument (return . T.pack) (metavar "ID")
+    parseID :: O.Parser [Text]
+    parseID = sequenceA
+        [ argument txt (metavar "ENTITY")
+        , argument txt (metavar "SOURCE")
+        , argument txt (metavar "ID")
+        ]
+
+    txt :: ReadM Text
+    txt = fmap T.pack readerAsk
 
 -- | Applicative parser for 'RetconOptions', including entity details.
 optionsParser' :: RetconOptions -> O.Parser RetconOptions
@@ -89,7 +96,7 @@ confOptionsParser RetconOptions{..} =
         <> short 'v'
         <> help "Produce verbose output"
     parseDB :: O.Parser ByteString
-    parseDB = O.option (return . BS.pack) $
+    parseDB = O.option (BS.pack <$> readerAsk) $
            long "db"
         <> short 'd'
         <> metavar "DATABASE"
@@ -97,7 +104,7 @@ confOptionsParser RetconOptions{..} =
         <> showDefault
         <> help "PostgreSQL connection string"
     parseLogging :: O.Parser Logging
-    parseLogging = O.option readLog $
+    parseLogging = O.option (readerAsk >>= readLog) $
            long "log"
         <> short 'l'
         <> metavar "stderr|stdout|none"
