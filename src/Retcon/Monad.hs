@@ -149,7 +149,11 @@ runRetconAction :: StoreToken s
                 => l
                 -> RetconAction l a
                 -> RetconHandler s (Either RetconError a)
-runRetconAction l = RetconMonad . withReaderT localise . unRetconMonad . handle
+runRetconAction l =
+    -- Restrict store and add the local state.
+    RetconMonad . withReaderT localise . unRetconMonad .
+    -- Do exception and error handling.
+    handle . handleAny (throwError . RetconError)
   where
     localise (st, _) =
         let st' = st { retconStore = restrictToken $ retconStore st }
