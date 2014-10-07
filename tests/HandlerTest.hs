@@ -649,6 +649,49 @@ diffDatabaseSuite = do
 
 --                 result `shouldBe` Right (Just 1, diffChanges testDiff)
 
+exceptionSuite :: Spec
+exceptionSuite = do
+    let opt = defaultOptions {
+          optDB = testConnection
+        , optLogging = LogNone
+        , optVerbose = True
+        }
+
+    describe "Exception handling" $ do
+        it "should allow initialiser exceptions to propagate" $ do
+            let cfg = RetconConfig []
+            (initTest cfg) `shouldThrow` anyException
+
+        it "should catch action exception and return them as RetconErrors" $ do
+            let cfg = RetconConfig []
+            result <- actionTest cfg
+            case result of
+                Left  (RetconError _) -> return ()
+                Left  _ -> error "Unexpected error (no the expected one)"
+                Right _ -> error "Should not have succeeded"
+
+
+        it "should allow handler exceptions to propagate" $ do
+            let cfg = RetconConfig []
+            (handlerTest cfg) `shouldThrow` anyException
+
+  where
+    -- Raise an exception in "action" code.
+    actionTest cfg = bracket
+        (initialiseEntities mempty (retconEntities cfg))
+        (finaliseEntities mempty)
+        (const . return $ Right "LOL")
+    -- Raise an exception in "action" code.
+    handlerTest cfg = bracket
+        (initialiseEntities mempty (retconEntities cfg))
+        (finaliseEntities mempty)
+        (const $ return ())
+    -- Raise an exception in "action" code.
+    initTest cfg = bracket
+        (initialiseEntities mempty (retconEntities cfg))
+        (finaliseEntities mempty)
+        (const $ return ())
+
 testHandler :: [InitialisedEntity]
             -> Memory.MemStorage
             -> RetconHandler RWToken a
@@ -666,4 +709,5 @@ main = hspec $ do
     operationSuite
     dispatchSuite
     initialDocumentSuite
+    exceptionSuite
     -- diffDatabaseSuite
