@@ -7,20 +7,66 @@
 --
 
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Main where
 
 import Control.Applicative
+import Control.Exception
+import Control.Monad
+import Control.Monad.Reader
 import qualified Data.Map.Strict as M
+import Data.Proxy
+import System.IO.Error
 import Test.Hspec
 import Text.Trifecta
 
 import Retcon.DataSource
+import Retcon.Error
 import Retcon.Options
 import Utility.Configuration
 
 testfile :: FilePath
 testfile = "tests/data/parameters.conf"
+
+instance RetconEntity "inittest" where
+    entitySources _ = [SomeDataSource (Proxy :: Proxy "initsource")]
+
+instance RetconDataSource "inittest" "initsource" where
+    data DataSourceState "inittest" "initsource" = InitSrcState
+    initialiseState = do
+        p <- ask
+        let values = (M.lookup "password" p, M.lookup "init" p, M.lookup "final" p)
+        error $ show values
+        return InitSrcState
+    finaliseState _ = return ()
+    setDocument = error "Unimplemented"
+    getDocument = error "Unimplemented"
+    deleteDocument = error "Unimplemented"
+
+initCfg :: RetconConfig
+initCfg = RetconConfig [SomeEntity (Proxy :: Proxy "inittest")]
+
+instance RetconEntity "finaltest" where
+    entitySources _ = [SomeDataSource (Proxy :: Proxy "finalsource")]
+
+instance RetconDataSource "finaltest" "finalsource" where
+    data DataSourceState "finaltest" "finalsource" = FinalSrcState
+    initialiseState = return FinalSrcState
+    finaliseState _ = do
+        p <- ask
+        let values = (M.lookup "password" p, M.lookup "init" p, M.lookup "final" p)
+        error $ show values
+        return ()
+    setDocument = error "Unimplemented"
+    getDocument = error "Unimplemented"
+    deleteDocument = error "Unimplemented"
+
+finalCfg :: RetconConfig
+finalCfg = RetconConfig [SomeEntity (Proxy :: Proxy "finaltest")]
 
 configurationSuite :: Spec
 configurationSuite = do
@@ -28,35 +74,58 @@ configurationSuite = do
         it "should parse data" $ do
             params <- parseFromFile configParser testfile
             params `shouldBe` Just
-                [ ("dispatchtest", "dispatch1", "uri", "https://api.com/")
-                , ("dispatchtest", "dispatch1", "password", "p4ssw0rd")
-                , ("dispatchtest", "dispatch2", "server", "db1.example.com")
-                , ("dispatchtest", "dispatch2", "database", "databass")
+                [ ("inittest", "initsource", "uri", "https://api.com/")
+                , ("inittest", "initsource", "password", "p4ssw0rd")
+                , ("inittest", "initsource", "init", "initial object")
+                , ("finaltest", "finalsource", "server", "db1.example.com")
+                , ("finaltest", "finalsource", "password", "databass")
+                , ("finaltest", "finalsource", "final", "final object")
                 ]
 
         it "should transform parsed data" $ do
             params <- (fmap convertConfig) <$> parseFromFile configParser testfile
             params `shouldBe` (Just $ M.fromList
-                [ (("dispatchtest", "dispatch1"), M.fromList
+                [ (("inittest", "initsource"), M.fromList
                     [ ("uri", "https://api.com/")
                     , ("password", "p4ssw0rd")
+                    , ("init", "initial object")
                     ])
-                , (("dispatchtest", "dispatch2"), M.fromList
+                , (("finaltest", "finalsource"), M.fromList
                     [ ("server", "db1.example.com")
-                    , ("database", "databass")
+                    , ("password", "databass")
+                    , ("final", "final object")
                     ])
                 ])
 
     describe "Configuration passing" $ do
-        it "should lookup data for data source" $ do
-            Just params <- (fmap convertConfig) <$> parseFromFile configParser testfile
-            pendingWith "Not implemented"
-
         it "should pass data when initialising a data source" $ do
-            pendingWith "Not implemented"
+            Just params <- (fmap convertConfig) <$> parseFromFile configParser testfile
+            -- Call initialise for testing entity; check that exceptions occur
+            -- with known values.
+            let values = ( Just "p4ssw0rd" :: Maybe String
+                         , Just "initial object" :: Maybe String
+                         , Nothing :: Maybe String
+                         )
+            initTest params initCfg `shouldThrow` (valueError $ show values)
 
         it "should pass data when finalising a data source" $ do
-            pendingWith "Not implemented"
+            Just params <- (fmap convertConfig) <$> parseFromFile configParser testfile
+            -- Call finalise for testing entity; check that exceptions occur
+            -- with known values.
+            let values = ( Just "databass" :: Maybe String
+                         , Nothing :: Maybe String
+                         , Just "final object" :: Maybe String
+                         )
+            initTest params finalCfg `shouldThrow` (valueError $ show values)
+  where
+    valueError msg = (== (ErrorCall msg))
+
+initTest :: ParamMap
+         -> RetconConfig
+         -> IO ()
+initTest params cfg = do
+    state <- initialiseEntities params (retconEntities cfg)
+    void $ finaliseEntities params state
 
 main :: IO ()
 main = hspec configurationSuite
