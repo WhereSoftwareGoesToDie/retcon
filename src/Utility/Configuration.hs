@@ -20,6 +20,9 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Text.Trifecta
 
+-- | A map of parameters for DataSource initialisers.
+type ParamMap = Map (Text, Text) (Map Text Text)
+
 -- | Parse simple configuration file format.
 configParser :: Parser [(Text, Text, Text, Text)]
 configParser = some item
@@ -32,7 +35,7 @@ configParser = some item
     word = T.pack <$> some alphaNum
 
 -- | Convert parsed configuration into a nested map.
-convertConfig :: [(Text, Text, Text, Text)] -> Map (Text, Text) (Map Text Text)
+convertConfig :: [(Text, Text, Text, Text)] -> ParamMap
 convertConfig input = foldl add M.empty input
   where
     add m (e, s, k, v) =

@@ -558,11 +558,11 @@ withConfiguration :: RetconOptions
 withConfiguration opt = bracket openConnection closeConnection
   where
     openConnection = do
-        state <- initialiseEntities (retconEntities dispatchConfig)
+        state <- initialiseEntities mempty (retconEntities dispatchConfig)
         ref <- newIORef Memory.emptyState
         return (state, Memory.MemStorage ref, opt)
     closeConnection (state, Memory.MemStorage ref, _) = do
-        finaliseEntities state
+        finaliseEntities mempty state
         writeIORef ref Memory.emptyState
         return ()
 

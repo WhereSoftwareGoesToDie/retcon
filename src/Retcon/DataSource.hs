@@ -25,10 +25,13 @@ import Control.Monad.Base
 import Control.Monad.Except
 import Control.Monad.Logger
 import Control.Monad.Reader
+import Data.Biapplicative
 import Data.Map (Map)
 import qualified Data.Map as M
+import Data.Monoid
 import Data.Proxy
 import Data.Text (Text)
+import qualified Data.Text as T
 import Data.Type.Equality
 import GHC.TypeLits
 
@@ -36,6 +39,7 @@ import Retcon.Document
 import Retcon.Error
 import {-# SOURCE #-} Retcon.Monad
 import {-# SOURCE #-} Retcon.Store
+import Utility.Configuration
 
 -- | Configuration value for retcon.
 data RetconConfig =
@@ -67,12 +71,15 @@ newtype Initialiser s a = Initialiser {
     }
   deriving (Functor, Applicative, Monad, MonadIO, MonadReader s, MonadBase IO)
 
+-- | Convenient name for the 'Initialiser' for data sources.
+type DataSourceInit a = Initialiser (Map Text Text) a
+
 -- | Run an 'Initialiser' action.
+--
+-- TODO: Catch & report exceptions in initialisation. This should probably tear
+-- down the world?
 runInitialiser :: s -> Initialiser s a -> IO a
 runInitialiser s (Initialiser a) = runReaderT a s
-
-type DataSourceInit a = Initialiser (Map Text Text) a
-type EntityInit a = Initialiser (Map (String, String) Text) a
 
 -- | The 'RetconDataSource' type class associates two 'Symbol' types: the first
 -- identifies an entity (i.e. a type of data) and the second identifies a
@@ -211,44 +218,56 @@ accessState state entity source = foldl findEntity Nothing state
     findSource r       _ = r
 
 -- | Initialise the states for a collection of entities.
-initialiseEntities :: [SomeEntity]
+initialiseEntities :: ParamMap
+                   -> [SomeEntity]
                    -> IO [InitialisedEntity]
-initialiseEntities = mapM initialiseEntity
+initialiseEntities params = mapM initialiseEntity
   where
     initialiseEntity :: SomeEntity -> IO InitialisedEntity
     initialiseEntity (SomeEntity (p :: Proxy e)) = do
-        ss <- initialiseSources $ entitySources p
+        ss <- initialiseSources params $ entitySources p
         return $ InitialisedEntity p ss
 
 -- | Finalise the states for a collection of entities.
-finaliseEntities :: [InitialisedEntity]
+finaliseEntities :: ParamMap
+                 -> [InitialisedEntity]
                  -> IO [SomeEntity]
-finaliseEntities = mapM finaliseEntity . reverse
+finaliseEntities params = mapM finaliseEntity . reverse
   where
     finaliseEntity (InitialisedEntity p s) = do
-        _ <- finaliseSources $ reverse s
+        _ <- finaliseSources params $ reverse s
         return $ SomeEntity p
 
 -- | Initialise the states for a collection of data sources.
 initialiseSources :: forall e. RetconEntity e
-                 => [SomeDataSource e]
+                 => ParamMap
+                 -> [SomeDataSource e]
                  -> IO [InitialisedSource e]
-initialiseSources = mapM initialiseSource
+initialiseSources params = mapM initialiseSource
   where
-    initialiseSource (SomeDataSource (p :: Proxy s) :: SomeDataSource e) = do
-        s <- runInitialiser (M.empty) initialiseState
-        return $ InitialisedSource p s
+    initialiseSource :: SomeDataSource e
+                     -> IO (InitialisedSource e)
+    initialiseSource ds@(SomeDataSource (p :: Proxy s) :: SomeDataSource e) =
+        do
+            let names = (T.pack, T.pack) <<*>> someDataSourceName ds
+            let param = maybe mempty id $ M.lookup (names) params
+            s <- runInitialiser param initialiseState
+            return $ InitialisedSource p s
 
 -- | Finalise the states for a collection of data sources.
 finaliseSources :: forall e. RetconEntity e
-                 => [InitialisedSource e]
+                 => ParamMap
+                 -> [InitialisedSource e]
                  -> IO [SomeDataSource e]
-finaliseSources = mapM finaliseSource
+finaliseSources params = mapM finaliseSource
   where
     finaliseSource :: InitialisedSource e -> IO (SomeDataSource e)
     finaliseSource (InitialisedSource p s) = do
-        runInitialiser (M.empty) $ finaliseState s
-        return $ SomeDataSource p
+        let ds = SomeDataSource p
+        let names = (T.pack, T.pack) <<*>> someDataSourceName ds
+        let param = maybe mempty id $ M.lookup (names) params
+        runInitialiser param $ finaliseState s
+        return ds
 
 -- * Keys
 --
