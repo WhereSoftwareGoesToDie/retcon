@@ -24,11 +24,13 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Traversable
 import Options.Applicative hiding (Parser, option)
+import Options.Applicative.Types(readerAsk)
 import qualified Options.Applicative as O
 import Prelude hiding (sequence)
 import System.Directory
 import System.FilePath
 import Text.Trifecta
+import Data.Traversable
 
 import Utility.Configuration
 
@@ -86,10 +88,15 @@ helpfulParser os = info (helper <*> optionsParser os) fullDesc
 optionsParser :: RetconOptions -> O.Parser RetconOptions
 optionsParser def = confOptionsParser def <*> parseID
   where
-    parseID = (\x y z -> [x,y,z])
-        <$> argument (return . T.pack) (metavar "ENTITY")
-        <*> argument (return . T.pack) (metavar "SOURCE")
-        <*> argument (return . T.pack) (metavar "ID")
+    parseID :: O.Parser [Text]
+    parseID = sequenceA
+        [ argument txt (metavar "ENTITY")
+        , argument txt (metavar "SOURCE")
+        , argument txt (metavar "ID")
+        ]
+
+    txt :: ReadM Text
+    txt = fmap T.pack readerAsk
 
 -- | Applicative parser for 'RetconOptions', including entity details.
 optionsParser' :: RetconOptions -> O.Parser RetconOptions
@@ -109,7 +116,7 @@ confOptionsParser RetconOptions{..} =
         <> short 'v'
         <> help "Produce verbose output"
     parseDB :: O.Parser ByteString
-    parseDB = O.option (return . BS.pack) $
+    parseDB = O.option (BS.pack <$> readerAsk) $
            long "db"
         <> short 'd'
         <> metavar "DATABASE"
@@ -117,7 +124,7 @@ confOptionsParser RetconOptions{..} =
         <> showDefault
         <> help "PostgreSQL connection string"
     parseLogging :: O.Parser Logging
-    parseLogging = O.option readLog $
+    parseLogging = O.option (readerAsk >>= readLog) $
            long "log"
         <> short 'l'
         <> metavar "stderr|stdout|none"
@@ -125,7 +132,7 @@ confOptionsParser RetconOptions{..} =
         <> O.value optLogging
         <> showDefault
     parseParams :: O.Parser (Maybe (Either FilePath (Map (Text, Text) (Map Text Text))))
-    parseParams = O.option (return . Just . Left) $
+    parseParams = O.option (Just . Left <$> readerAsk) $
            long "parameters"
         <> metavar "FILE"
         <> help "Data source parameters"
@@ -144,9 +151,10 @@ readLog _        = mzero
 parseFile :: FilePath -> IO RetconOptions
 parseFile path = do
     exists <- doesFileExist path
-    if exists
-        then maybe defaultOptions (`mergeConfig` defaultOptions) <$> parseFromFile configParser path
-        else return defaultOptions
+    cfg <- if exists
+            then parseFromFile simpleConfigParser path
+            else return Nothing
+    return $ maybe defaultOptions (`mergeConfig` defaultOptions) cfg
   where
     mergeConfig ls RetconOptions{..} = fromJust $
         RetconOptions <$> pure optVerbose
@@ -155,8 +163,8 @@ parseFile path = do
                       <*> (Just . Left <$> lookup "parameters" ls) `mplus` pure optParams
                       <*> pure []
 
-    configParser :: Parser [(String, String)]
-    configParser = some $ liftA2 (,)
+    simpleConfigParser :: Parser [(String, String)]
+    simpleConfigParser = some $ liftA2 (,)
         (spaces *> possibleKeys <* spaces <* char '=')
         (spaces *> (stringLiteral <|> stringLiteral'))
 
