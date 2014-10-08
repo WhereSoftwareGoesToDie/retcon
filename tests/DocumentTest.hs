@@ -11,8 +11,8 @@
 
 module Main where
 
+import Data.Functor (void)
 import Data.Monoid
-import Data.Functor(void)
 import Test.Hspec
 import TestHelpers
 

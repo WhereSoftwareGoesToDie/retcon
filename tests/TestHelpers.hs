@@ -10,15 +10,15 @@
 
 module TestHelpers where
 
+import Control.Monad.IO.Class
 import Data.Aeson
 import qualified Data.HashMap.Lazy as H
-import Control.Monad.IO.Class
 import System.FilePath.Posix
 
-import System.Directory
+import Retcon.DataSource.JsonDirectory
 import Retcon.Diff
 import Retcon.Document
-import Retcon.DataSource.JsonDirectory
+import System.Directory
 
 -- | Explicitly pass a test
 pass :: Monad m => m ()

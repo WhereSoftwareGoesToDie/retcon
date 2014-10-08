@@ -81,4 +81,4 @@ main = hspec suite
 suite :: Spec
 suite =
     describe "Upstream change is propogated locally" $
-        it "todo" $ pending 
+        it "todo" $ pending
