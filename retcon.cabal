@@ -43,6 +43,7 @@ library
                      , filepath
                      , free
                      , lens
+                     , mime-mail
                      , monad-control
                      , monad-logger
                      , mtl
