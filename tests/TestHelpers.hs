@@ -10,58 +10,18 @@
 
 module TestHelpers where
 
-import Control.Monad
+import Control.Monad.IO.Class
 import Data.Aeson
-import qualified Data.ByteString.Lazy as BS
 import qualified Data.HashMap.Lazy as H
-import qualified Data.Map as M
-import Data.Maybe
-import System.Directory
-import System.FilePath
-import Test.Hspec
+import System.FilePath.Posix
 
-import Retcon.DataSource
 import Retcon.DataSource.JsonDirectory
 import Retcon.Diff
 import Retcon.Document
+import System.Directory
 
-import TreeHelpers
-
--- | Get the path to a test data file.
-testDataFile :: FilePath -> IO FilePath
-testDataFile file = do
-    cwd <- getCurrentDirectory
-    return $ joinPath [cwd, "tests", "data", file]
-
--- | Load a 'Document' from a JSON file.
-testLoad :: FilePath -> IO (Maybe Document)
-testLoad name = do
-    file <- testDataFile name
-    input <- BS.readFile file
-    return $ decode input
-
--- | Load a 'Document' from a JSON file, raising an exception if it fails.
-testLoad' :: FilePath -> IO Document
-testLoad' n = liftM (fromMaybe (error $ "Couldn't load " ++ n)) (testLoad n)
-
--- | Load a 'Document' from a JSON file using the JsonDirectory source.
-testReadJsonDir :: FilePath -> ForeignKey entity source -> IO (Either DataSourceError Document)
-testReadJsonDir = getJsonDirDocument
-
--- | Write a 'Document' to a JSON file for an existing foreign key using the JsonDirectory source.
-testWriteJsonDirExisting :: FilePath -> Document -> ForeignKey entity source -> IO (Either DataSourceError (Maybe (ForeignKey entity source)))
-testWriteJsonDirExisting fp doc fk = setJsonDirDocument fp doc (Just fk)
-
--- | Write a 'Document' to a JSON file for a new foreign key using the JsonDirectory source.
-testWriteJsonDirNew :: FilePath -> Document -> IO (Either DataSourceError (Maybe (ForeignKey entity source)))
-testWriteJsonDirNew fp doc = setJsonDirDocument fp doc Nothing
-
--- | Delete a 'Document' stored as a JSON file using the JsonDirectory source.
-testDeleteJsonDir :: FilePath -> ForeignKey entity source -> IO (Either DataSourceError ())
-testDeleteJsonDir = deleteJsonDirDocument
-
--- | Explicitly pass a test.
-pass :: Expectation
+-- | Explicitly pass a test
+pass :: Monad m => m ()
 pass = return ()
 
 -- | The aeson AST encoding of a test document.
@@ -87,3 +47,13 @@ testDiff = Diff (1, "hello")
     , InsertOp (6, "up") ["name"] "Thomas Six"
     ]
 
+-- | Create a test path based on the CWD
+testJSONFilePath :: MonadIO m => m FilePath
+testJSONFilePath = liftIO $ do
+    cwd <- getCurrentDirectory
+    return $ cwd </> "tests" </> "data" </> "json"
+
+testLoad :: FilePath -> IO Document
+testLoad file = do
+    base <- testJSONFilePath
+    loadDocument $ base </> file

@@ -20,11 +20,11 @@ import Data.Text
 import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck
-import Test.QuickCheck.Arbitrary
 
 import Retcon.Diff
 import Retcon.Document
 import TestHelpers
+import TreeHelpers ()
 
 instance Arbitrary Document where
     arbitrary = fmap Document arbitrary
@@ -65,8 +65,8 @@ suite :: Spec
 suite = do
   describe "generating a diff" $
     it "should work with canned documents 01-*.json" $ do
-      source <- testLoad' "01-diff-source.json"
-      target <- testLoad' "01-diff-target.json"
+      source <- testLoad "01-diff-source.json"
+      target <- testLoad "01-diff-target.json"
       let patch = diff source target
           doc = applyDiff patch source
       doc `shouldBe` target
