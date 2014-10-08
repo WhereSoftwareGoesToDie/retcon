@@ -21,17 +21,20 @@ unprocessed notifications according to the current set of rules.
 Design
 ------
 
-The retcon database schema will be extended with a `retcon_notification`
-table to store notification details. These details will include at least the
-internal key and diff id for the conflicted merge.
+Extended database schema with a `retcon_notification` table to store
+notification details. These details will include at least the internal key and
+diff id for the conflicted merge; a time stamp for the notification; processed
+status.
 
-The core retcon code will be extended to record the details of conflicted
-merges into the `retcon_notification` table.
+Extend retcon code to record details of merges with conflicts into the 
+notifications table.
 
-A new component will be implemented to periodically process this table:
-each rule will evaluated against any outstanding notifications, the
-results, if any, will be processed and message/s sent according to the
-notification parameters.
+Implement notifier component to periodically process this table: each rule will
+evaluated against any outstanding notifications, the results, if any, will be
+processed and message/s sent according to the notification parameters.
+
+Notifications should be recorded only when enabled by the configuration file
+and/or command-line arguments.
 
 Implementation
 --------------
@@ -47,7 +50,7 @@ dispatched with the target described in the rule.
 This will allow a single notification to be sent to multiple destinations.
 
 Individual messages will be dispatched in chronological order; and should use
-the timestamp to set the Date header. This will make it easier to inspect
+the time stamp to set the Date header. This will make it easier to inspect
 a sequence of events and help understand the operation of the system.
 
 Update the `recordDiffs` operation to update `retcon_notification` when
