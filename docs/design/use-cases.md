@@ -1,5 +1,11 @@
 # Use cases
 
+This document is to be used before any production release to verify that all of
+the promised use cases are provided. The testing of these cases is automated
+and may be run via:
+
+	cabal test acceptance-test
+
 The following use cases reference two data sources, *upstream* and *local*.
 
 These are arbitrary and are named like so to provide a tangible example.

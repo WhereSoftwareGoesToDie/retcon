@@ -1,19 +1,19 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 
 module Retcon.DataSource.JsonDirectory (
-    getJsonDirDocument,
-    setJsonDirDocument,
-    deleteJsonDirDocument,
-    DataSourceError,
-    ForeignKey
-    ) where
+    getJSONDir,
+    setJSONDir,
+    deleteJSONDir,
+    JSONDirectoryError,
+    ForeignKey,
+    loadDocument
+) where
 
+import Control.Applicative
 import Control.Exception
-import qualified Data.ByteString.Lazy as BSL
-
+import Control.Monad.IO.Class
+import qualified Data.ByteString.Lazy as LBS
 import Data.Aeson
-import Data.Time
-import Data.Time.Clock.POSIX
 import Data.Typeable
 
 import System.Directory
@@ -24,84 +24,69 @@ import System.Random
 import Retcon.DataSource
 import Retcon.Document
 
-data DataSourceError = DataSourceError String deriving (Show, Typeable)
-instance Exception DataSourceError
+data JSONDirectoryError = JSONDirectoryError String deriving (Show, Typeable)
+instance Exception JSONDirectoryError
 
--- | API function getDocument
-getJsonDirDocument :: FilePath
-                   -> ForeignKey entity source
-                   -> IO (Either DataSourceError Document)
-getJsonDirDocument dir fk = do
-    readOK <- readFileFromDocument fp
-    case readOK of
-        Left err -> return $ Left (DataSourceError err)
-        Right fdoc -> return $ Right fdoc
-    where
-        fp = getFkFilename dir fk
+-- | Read a 'Document' from the given JSON directory using information from the
+-- 'ForeignKey' provided.
+getJSONDir
+    :: (MonadIO m, RetconDataSource entity source)
+    => FilePath
+    -> ForeignKey entity source
+    -> m Document
+getJSONDir dir fk = loadDocument (buildPath dir fk)
 
--- | API function setDocument
-setJsonDirDocument :: FilePath -> Document -> Maybe (ForeignKey entity source) -> IO (Either DataSourceError (Maybe (ForeignKey entity source)))
-setJsonDirDocument dir doc mfk =
-    case mfk of
-        Nothing -> do
-            nfk <- newFK dir
-            writeOK <- doWrite nfk
-            either throwException (\x -> return $ Right $ Just nfk) writeOK
-        Just fk -> do
-            writeOK <- doWrite fk
-            either throwException (\x -> return $ Right $ Just fk) writeOK
-    where
-        doWrite k      = writeDocumentToFile dir k doc
-        throwException = return . Left
+-- | Write a 'Document' to the given JSON directory using information from the
+-- 'ForeignKey' provided.
+setJSONDir
+    :: (MonadIO m, RetconDataSource entity source)
+    => FilePath
+    -> Document
+    -> Maybe (ForeignKey entity source)
+    -> m (ForeignKey entity source)
+setJSONDir dir doc m_fk = liftIO $ do
+    fk <- maybe (newFK dir) return m_fk
+    LBS.writeFile (buildPath dir fk) (encode doc)
+    return fk
 
--- | API function deleteDocument
-deleteJsonDirDocument :: FilePath -> ForeignKey entity source -> IO (Either DataSourceError ())
-deleteJsonDirDocument dir fk = do
-    exists <- fileExist fp
-    if exists
-        then try (removeFile fp)
-        else return $ Left (DataSourceError "File does not exist")
-    where
-        fp = getFkFilename dir fk
+-- | Unlink the underlying JSON file corresponding to the directory and
+-- 'ForeignKey' provided.
+deleteJSONDir
+    :: (MonadIO m, RetconDataSource entity source)
+    => FilePath
+    -> ForeignKey entity source
+    -> m ()
+deleteJSONDir dir fk = liftIO $
+    removeFile (buildPath dir fk)
 
--- | Reads retcon document from file
-readFileFromDocument :: FilePath -> IO (Either String Document)
-readFileFromDocument fp = do
-    exists <- fileExist fp
-    if exists
-        then do
-            fbs <- BSL.readFile fp
-            return $ eitherDecode fbs
-        else return $ Left "File does not exist"
-
--- | Converts a foreign key to a filename
-getFkFilename :: FilePath -> ForeignKey entity source -> FilePath
-getFkFilename dir fk = dir </> (unForeignKey fk ++ ".json")
-
--- | Generates a new foreign key using chars a-z
-newFK :: FilePath -> IO (ForeignKey entity source)
+-- | Generate a new foreign key using chars a-z.
+newFK
+    :: RetconDataSource entity source
+    => FilePath
+    -> IO (ForeignKey entity source)
 newFK dir = do
-    s <- makeSeed
-    let newKey = makeKey s
-    exists <- fileExist $ tryPath newKey
+    k <- ForeignKey . take 64 . randomRs ('a', 'z') <$> newStdGen
+    exists <- fileExist (buildPath dir k)
     if exists
         then newFK dir
-        else return newKey
-    where
-        tryPath = getFkFilename dir
+        else return k
 
--- | make key out of random seed
-makeKey :: Int -> ForeignKey entity source
-makeKey s = ForeignKey (Prelude.take 64 $ (randomRs ('a', 'z') . mkStdGen) s)
+-- | Construct a path to a JSON file given the base directory and a
+-- 'ForeignKey'.
+buildPath
+    :: RetconDataSource entity source
+    => FilePath
+    -> ForeignKey entity source
+    -> FilePath
+buildPath base fk =
+    let (entity, source, key) = foreignKeyValue fk
+    in  base </> entity </> source </> key ++ ".json"
 
--- | create random seed
-makeSeed :: IO Int
-makeSeed = do
-    t <- getPOSIXTime
-    return $ floor (t * 1000000)
-
--- | Writes a retcon document to a file
-writeDocumentToFile :: FilePath -> ForeignKey entity source -> Document -> IO (Either DataSourceError ())
-writeDocumentToFile dir fk doc = try (BSL.writeFile fp $ encode doc)
-    where
-        fp = getFkFilename dir fk
+-- | Decode a 'Document' from the JSON file at the given 'FilePath'
+loadDocument
+    :: MonadIO m
+    => FilePath
+    -> m Document
+loadDocument fp = liftIO $
+    eitherDecode <$> LBS.readFile fp 
+    >>= either (throwIO . JSONDirectoryError) return

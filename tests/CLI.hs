@@ -20,23 +20,23 @@
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE TypeFamilies          #-}
 
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+
 module Main where
 
+import Control.Applicative
 import Control.Monad
-import Control.Monad.IO.Class
 import Data.Proxy
 import Database.PostgreSQL.Simple
-import GHC.TypeLits
-import System.Directory
-import System.Environment
-import System.FilePath
 
 import Retcon.DataSource
 import Retcon.DataSource.JsonDirectory
 import Retcon.Handler
+import Retcon.Monad
 import Retcon.Options
 import Retcon.Store (token)
 import Retcon.Store.PostgreSQL
+import TestHelpers
 
 -- * Entity definitions
 
@@ -55,124 +55,74 @@ instance RetconEntity "event" where
 
 instance RetconDataSource "customer" "json" where
 
-    data DataSourceState "customer" "json" = JSONState
+    data DataSourceState "customer" "json" = CustPath FilePath
 
-    initialiseState = return JSONState
-
+    initialiseState = CustPath <$> testJSONFilePath
     finaliseState _ = return ()
 
-    getDocument key = liftIO $ do
-        f <- fp "customer" "json"
-        doc <- getJsonDirDocument f key
-        either (error . show) return doc
-
-    setDocument doc key = liftIO $ do
-        f <- fp "customer" "json"
-        key' <- setJsonDirDocument f doc key
-        either (error . show) (maybe (error "No key") return) key'
-
-    deleteDocument key = liftIO $ do
-        f <- fp "customer" "json"
-        res <- deleteJsonDirDocument f key
-        either (error . show) return res
+    getDocument key =
+        getActionState >>= \(CustPath fp) -> getJSONDir fp key
+    setDocument doc key =
+        getActionState >>= \(CustPath fp) -> setJSONDir fp doc key
+    deleteDocument key =
+        getActionState >>= \(CustPath fp) -> deleteJSONDir fp key
 
 instance RetconDataSource "customer" "json2" where
 
-    data DataSourceState "customer" "json2" = JSON2State
+    data DataSourceState "customer" "json2" = CustPath2 FilePath
 
-    initialiseState = return JSON2State
-
+    initialiseState = CustPath2 <$> testJSONFilePath
     finaliseState _ = return ()
 
-    getDocument key = liftIO $ do
-        f <- fp "customer" "json2"
-        doc <- getJsonDirDocument f key
-        either (error . show) return doc
 
-    setDocument doc key = liftIO $ do
-        f <- fp "customer" "json2"
-        key' <- setJsonDirDocument f doc key
-        either (error . show) (maybe (error "No key") return) key'
-
-    deleteDocument key = liftIO $ do
-        f <- fp "customer" "json2"
-        res <- deleteJsonDirDocument f key
-        either (error . show) return res
+    getDocument key =
+        getActionState >>= \(CustPath2 fp) -> getJSONDir fp key
+    setDocument doc key =
+        getActionState >>= \(CustPath2 fp) -> setJSONDir fp doc key
+    deleteDocument key =
+        getActionState >>= \(CustPath2 fp) -> deleteJSONDir fp key
 
 instance RetconDataSource "event" "json" where
 
-    data DataSourceState "event" "json" = JSONEventState
+    data DataSourceState "event" "json" = JSONEventPath FilePath
 
-    initialiseState = return JSONEventState
-
+    initialiseState = JSONEventPath <$> testJSONFilePath
     finaliseState _ = return ()
 
-    getDocument key = liftIO $ do
-        f <- fp "event" "json"
-        doc <- getJsonDirDocument f key
-        either (error . show) return doc
-
-    setDocument doc key = liftIO $ do
-        f <- fp "event" "json"
-        key' <- setJsonDirDocument f doc key
-        either (error . show) (maybe (error "No key") return) key'
-
-    deleteDocument key = liftIO $ do
-        f <- fp "event" "json"
-        res <- deleteJsonDirDocument f key
-        either (error . show) return res
+    getDocument key =
+        getActionState >>= \(JSONEventPath fp) -> getJSONDir fp key
+    setDocument doc key =
+        getActionState >>= \(JSONEventPath fp) -> setJSONDir fp doc key
+    deleteDocument key =
+        getActionState >>= \(JSONEventPath fp) -> deleteJSONDir fp key
 
 instance RetconDataSource "event" "icalendar" where
 
-    data DataSourceState "event" "icalendar" = CalState
+    data DataSourceState "event" "icalendar" = CalPath FilePath
 
-    initialiseState = return CalState
-
+    initialiseState = CalPath <$> testJSONFilePath
     finaliseState _ = return ()
 
-    getDocument key = liftIO $ do
-        f <- fp "event" "icalendar"
-        doc <- getJsonDirDocument f key
-        either (error . show) return doc
-
-    setDocument doc key = liftIO $ do
-        f <- fp "event" "icalendar"
-        key' <- setJsonDirDocument f doc key
-        either (error . show) (maybe (error "No key") return) key'
-
-    deleteDocument key = liftIO $ do
-        f <- fp "event" "icalendar"
-        res <- deleteJsonDirDocument f key
-        either (error . show) return res
+    getDocument key =
+        getActionState >>= \(CalPath fp) -> getJSONDir fp key
+    setDocument doc key =
+        getActionState >>= \(CalPath fp) -> setJSONDir fp doc key
+    deleteDocument key =
+        getActionState >>= \(CalPath fp) -> deleteJSONDir fp key
 
 instance RetconDataSource "event" "exchange" where
 
-    data DataSourceState "event" "exchange" = ExchangeState
+    data DataSourceState "event" "exchange" = ExchangePath FilePath
 
-    initialiseState = return ExchangeState
-
+    initialiseState = ExchangePath <$> testJSONFilePath
     finaliseState _ = return ()
 
-    getDocument key = liftIO $ do
-        f <- fp "event" "exchange"
-        doc <- getJsonDirDocument f key
-        either (error . show) return doc
-
-    setDocument doc key = liftIO $ do
-        f <- fp "event" "exchange"
-        key' <- setJsonDirDocument f doc key
-        either (error . show) (maybe (error "No key") return) key'
-
-    deleteDocument key = liftIO $ do
-        f <- fp "event" "exchange"
-        res <- deleteJsonDirDocument f key
-        either (error . show) return res
-
--- | Make file path
-fp :: String -> String -> IO FilePath
-fp entity source = do
-    cwd <- getCurrentDirectory
-    return $ joinPath [cwd, "tests", "data", entity, source]
+    getDocument key =
+        getActionState >>= \(ExchangePath fp) -> getJSONDir fp key
+    setDocument doc key =
+        getActionState >>= \(ExchangePath fp) -> setJSONDir fp doc key
+    deleteDocument key =
+        getActionState >>= \(ExchangePath fp) -> deleteJSONDir fp key
 
 -- * Retcon configuration
 

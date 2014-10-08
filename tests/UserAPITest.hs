@@ -5,22 +5,21 @@
 {-# LANGUAGE PolyKinds             #-}
 {-# LANGUAGE TypeFamilies          #-}
 
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+
 module Main where
 
 import Test.Hspec
 
-import Control.Monad.IO.Class
+import Control.Applicative
 import Data.Monoid
 import Data.Proxy
-import GHC.TypeLits
 import System.Directory
-import System.Exit
 import System.FilePath
 
 import Retcon.DataSource
 import Retcon.DataSource.JsonDirectory
 import Retcon.Error
-import Retcon.Handler
 import Retcon.Monad
 import Retcon.Options
 import Retcon.Store
@@ -44,49 +43,31 @@ instance RetconEntity "customer" where
 
 instance RetconDataSource "customer" "data" where
 
-    data DataSourceState "customer" "data" = Nowt
+    data DataSourceState "customer" "data" = Nowt FilePath
 
-    initialiseState = return Nowt
+    initialiseState = Nowt <$> testJSONFilePath
+    finaliseState _ = return ()
 
-    finaliseState Nowt = return ()
-
-    getDocument key = liftIO $ do
-        res <- getJsonDirDocument customerDataPath key
-        either (error . show) return res
-
-    setDocument doc key = liftIO $ do
-        res <- setJsonDirDocument customerDataPath doc key
-        either (error . show) (\x ->
-            case x of
-                Nothing -> error "No key"
-                Just y  -> return y) res
-
-    deleteDocument key = liftIO $ do
-        res <- deleteJsonDirDocument customerDataPath key
-        either (error . show) return res
+    getDocument key =
+        getActionState >>= \(Nowt fp) -> getJSONDir fp key
+    setDocument doc key =
+        getActionState >>= \(Nowt fp) -> setJSONDir fp doc key
+    deleteDocument key =
+        getActionState >>= \(Nowt fp) -> deleteJSONDir fp key
 
 instance RetconDataSource "customer" "test-results" where
 
-    data DataSourceState "customer" "test-results" = Blarg
+    data DataSourceState "customer" "test-results" = Blarg FilePath
 
-    initialiseState = return Blarg
+    getDocument key =
+        getActionState >>= \(Blarg fp) -> getJSONDir fp key
+    setDocument doc key =
+        getActionState >>= \(Blarg fp) -> setJSONDir fp doc key
+    deleteDocument key =
+        getActionState >>= \(Blarg fp) -> deleteJSONDir fp key
 
-    finaliseState Blarg = return ()
-
-    getDocument key = liftIO $ do
-        res <- getJsonDirDocument customerTestResultsPath key
-        either (error . show) return res
-
-    setDocument doc key = liftIO $ do
-        res <- setJsonDirDocument customerTestResultsPath doc key
-        either (error . show) (\x ->
-            case x of
-                Nothing -> error "No key"
-                Just y  -> return y) res
-
-    deleteDocument key = liftIO $ do
-        res <- deleteJsonDirDocument customerTestResultsPath key
-        either (error . show) return res
+    initialiseState = Blarg <$> testJSONFilePath
+    finaliseState _ = return ()
 
 run :: l -> RetconMonad ROToken l r -> IO (Either RetconError r)
 run l a = do
