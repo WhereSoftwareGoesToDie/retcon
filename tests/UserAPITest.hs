@@ -122,8 +122,9 @@ suite =
             runInitialiser mempty $ finaliseState state
 
             state2 <- runInitialiser mempty $ initialiseState
-            _ <- run state2 $
-                setDocument doc4 (Nothing :: Maybe (ForeignKey "customer" "test-results"))
+            _ <- run state2 $ do
+                k <- setDocument doc4 (Nothing :: Maybe (ForeignKey "customer" "test-results"))
+                deleteDocument k
             runInitialiser mempty $ finaliseState state2
             pass
 
@@ -141,6 +142,3 @@ main :: IO ()
 main = do
     createDirectoryIfMissing True customerTestResultsPath
     hspec suite
-  where
-    cfg = RetconConfig [ SomeEntity (Proxy :: Proxy "customer") ]
-
