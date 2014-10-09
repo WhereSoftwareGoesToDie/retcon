@@ -125,11 +125,14 @@ instance RetconStore PGStorage where
         return ()
 
     storeRecordDiffs (PGStore conn) ik (d, ds) = do
-        did <- storeOneDiff conn False ik $ fmap (const ()) d
-        mapM_ (storeOneDiff conn True ik . fmap (const ())) $ ds
+        -- Relabel the diffs with () instead of the arbitrary, possibly
+        -- unserialisable, labels.
+        let d' = fmap (const ()) d
+        let ds' = map (fmap (const ())) ds
+        did <- storeOneDiff conn False ik d'
+        mapM_ (storeOneDiff conn True ik) ds'
         when (not . null $ ds) $
             storeRecordNotification conn ik did
-        return ()
 
     storeDeleteDiffs (PGStore conn) ik = do
         let ikv = internalKeyValue ik
@@ -150,10 +153,8 @@ storeRecordNotification
     -> Int -- ^ Diff ID
     -> IO ()
 storeRecordNotification conn ik did = do
-    putStrLn "Recording a notification!"
     let (entity, eid) = internalKeyValue ik
-    _ <- execute conn sql (entity, eid, did)
-    return ()
+    void $ execute conn sql (entity, eid, did)
   where
     sql = "INSERT INTO retcon_notifications (entity, id, diff_id) VALUES (?, ?, ?)"
 
