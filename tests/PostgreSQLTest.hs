@@ -14,22 +14,20 @@
 {-# LANGUAGE PolyKinds             #-}
 {-# LANGUAGE TypeFamilies          #-}
 
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+
 module Main where
 
-import Control.Monad
+import Data.String
 import Control.Monad.IO.Class
-import Data.ByteString
-import qualified Data.Map as M
 import Data.Monoid
 import Data.Proxy
-import GHC.TypeLits
-import System.Process
 import Test.Hspec
+import DBHelpers
 
 import Retcon.DataSource
 import Retcon.DataSource.PostgreSQL
 import Retcon.Error
-import Retcon.Handler
 import Retcon.Monad
 import Retcon.Options
 import Retcon.Store
@@ -149,13 +147,11 @@ suite =
             runInitialiser mempty $ finaliseState state
             res2 `shouldBe` Right ()
 
--- | get source file path
-sourceDb :: ByteString
-sourceDb = "dbname='retcon_pg_test'"
+sourceDb :: DBName
+sourceDb = "retcon_pg_test"
 
--- | get target file path
-targetDb :: ByteString
-targetDb = "dbname='retcon_pg_test2'"
+targetDb :: IsString x => x
+targetDb = fromString "retcon_pg_test2"
 
 -- | Explicitly pass a test.
 pass :: Expectation
@@ -174,9 +170,6 @@ run l a = do
 
 main :: IO ()
 main = do
-    ex1 <- system "dropdb --if-exists retcon_pg_test && createdb retcon_pg_test && psql retcon_pg_test -f tests/data/retcon_pg_test.sql"
-    ex2 <- system "dropdb --if-exists retcon_pg_test2 && createdb retcon_pg_test2 && psql retcon_pg_test2 -f tests/data/retcon_pg_test2.sql"
+    resetTestDBWithFixture sourceDb "tests/data/retcon_pg_test.sql"
+    resetTestDBWithFixture targetDb "tests/data/retcon_pg_test.sql"
     hspec suite
-    where
-        cfg = RetconConfig [ SomeEntity (Proxy :: Proxy "customer") ]
-

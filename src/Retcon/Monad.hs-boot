@@ -26,7 +26,7 @@
 module Retcon.Monad (
     RetconMonad,
     RetconState,
-    retconStore,
+    _retconStore,
     carefully,
     getRetconState,
     getActionState,
@@ -46,7 +46,7 @@ import Retcon.Options
 
 data RetconState s
 
-retconStore :: RetconState s -> s
+_retconStore :: RetconState s -> s
 
 type RetconHandlerStack s l = ReaderT (RetconState s, l) (ExceptT RetconError (LoggingT IO))
 

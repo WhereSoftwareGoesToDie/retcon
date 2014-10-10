@@ -26,22 +26,27 @@ module Main where
 
 import Control.Applicative
 import Data.Proxy
+import Control.Lens
 
 import Retcon.DataSource
 import Retcon.DataSource.JsonDirectory
 import Retcon.Monad
+import Retcon.Handler
+import Retcon.Options
+import Retcon.Store.PostgreSQL
+import Database.PostgreSQL.Simple
+import Retcon.Store (token)
 
 import Test.Hspec
 import TestHelpers
 
--- * Entity definitions
+-- | Set up an upstream and downstream entity reading writing to/from a JSON
+-- directory.
 
 instance RetconEntity "entity" where
     entitySources _ = [ SomeDataSource (Proxy :: Proxy "upstream")
                       , SomeDataSource (Proxy :: Proxy "downstream")
                       ]
-
--- * Data sources
 
 instance RetconDataSource "entity" "upstream" where
 
@@ -57,7 +62,6 @@ instance RetconDataSource "entity" "upstream" where
     deleteDocument key =
         getActionState >>= \(Upstream fp) -> deleteJSONDir fp key
 
-
 instance RetconDataSource "entity" "downstream" where
 
     data DataSourceState "entity" "downstream" = Downstream FilePath
@@ -71,7 +75,6 @@ instance RetconDataSource "entity" "downstream" where
     deleteDocument key =
         getActionState >>= \(Downstream fp) -> deleteJSONDir fp key
 
--- * Retcon configuration
 cfg :: RetconConfig
 cfg = RetconConfig [ SomeEntity (Proxy :: Proxy "entity") ]
 
@@ -80,5 +83,11 @@ main = hspec suite
 
 suite :: Spec
 suite =
-    describe "Upstream change is propogated locally" $
-        it "todo" $ pending
+    describe "Run with upstream change" $
+        it "propogates locally" $ pending
+            {--
+            let opts = defaultOptions
+            tok <- token . PGStore <$> connectPostgreSQL (opts ^. optDB)
+            let (entity:source:key:_) = opts ^. optArgs
+            res <- retcon opts cfg tok $ show (entity, source, key)
+            --}

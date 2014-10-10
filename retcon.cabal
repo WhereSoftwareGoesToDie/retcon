@@ -241,6 +241,7 @@ test-suite             handler-test
                      , directory
                      , filepath
                      , hspec
+                     , lens
                      , mtl
                      , postgresql-simple
                      , process
@@ -289,4 +290,5 @@ test-suite store-postgresql-test
                      , postgresql-simple
                      , process
                      , transformers
+                     , lens
                      , retcon

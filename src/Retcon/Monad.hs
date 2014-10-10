@@ -18,8 +18,10 @@
 -- - I/O
 
 {-# LANGUAGE ExistentialQuantification  #-}
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TypeFamilies               #-}
 
 module Retcon.Monad (
@@ -30,23 +32,27 @@ module Retcon.Monad (
     runRetconMonad',
     runRetconHandler,
     runRetconAction,
-    RetconState,
-    retconStore,
+    RetconState(..),
     retconState,
+    retconStore,
     retconOptions,
     carefully,
     getRetconState,
     getActionState,
+    whenVerbose,
     ) where
 
 import Control.Applicative
 import Control.Exception.Enclosed
+import qualified Control.Lens as L
+import Control.Lens.Operators
+import Control.Lens.TH
 import Control.Monad.Base
 import Control.Monad.Except
 import Control.Monad.Logger
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
-import qualified Control.Monad.Trans.Reader as ReaderT (ask, local, reader)
+import Data.Bifunctor
 
 import Retcon.DataSource hiding (RetconAction)
 import Retcon.Error
@@ -60,10 +66,11 @@ import Retcon.Store
 
 -- | State held in the reader part of the 'RetconHandler' monad.
 data RetconState s = RetconState
-    { retconOptions :: RetconOptions
-    , retconState   :: [InitialisedEntity]
-    , retconStore   :: s
+    { _retconOptions :: RetconOptions
+    , _retconState   :: [InitialisedEntity]
+    , _retconStore   :: s
     }
+makeLenses ''RetconState
 
 -- | Monad transformer stack used in the 'RetconHandler' monad.
 type RetconHandlerStack s l = ReaderT (RetconState s, l) (ExceptT RetconError (LoggingT IO))
@@ -78,7 +85,8 @@ newtype RetconMonad s l a =
         unRetconMonad :: (RetconHandlerStack s l) a
     }
   deriving (Functor, Applicative, Monad, MonadIO, MonadLogger,
-  MonadReader (RetconState s, l), MonadError RetconError, MonadBase IO)
+            MonadReader (RetconState s, l), MonadError RetconError,
+            MonadBase IO)
 
 -- | MonadBaseControl used to catch IO exceptions
 instance MonadBaseControl IO (RetconMonad s l) where
@@ -108,18 +116,19 @@ runRetconMonad opt state store l =
     flip runReaderT (st, l) . unRetconMonad
   where
     st = RetconState opt state store
-    runLogging = case optLogging opt of
+    runLogging = case opt ^. optLogging of
       LogStderr -> runStderrLoggingT
       LogStdout -> runStdoutLoggingT
       LogNone   -> (`runLoggingT` \_ _ _ _ -> return ())
 
+-- | TODO: Document this function, also why does this ignore config?
 runRetconMonad' :: RetconOptions
                 -> RetconConfig
                 -> s
                 -> l
                 -> RetconMonad s l a
                 -> IO (Either RetconError a)
-runRetconMonad' opt conf store l = do
+runRetconMonad' opt _ store l = do
     let state = []
     runRetconMonad opt state store l
 
@@ -155,9 +164,7 @@ runRetconAction l =
     -- Do exception and error handling.
     handle . handleAny (throwError . RetconError)
   where
-    localise (st, _) =
-        let st' = st { retconStore = restrictToken $ retconStore st }
-        in (st', l)
+    localise = bimap (retconStore %~ restrictToken) (const l)
 
     -- | Handle any errors in an action, pulling them into the monad.
     handle :: (Functor m, MonadError e m) => m v -> m (Either e v)
@@ -177,3 +184,9 @@ getActionState = asks snd
 -- them as 'RetconError's.
 carefully :: RetconMonad s l a -> RetconMonad s l a
 carefully = handleAny (throwError . RetconError)
+
+-- | Do something when the verbose option is set
+whenVerbose :: (MonadReader (RetconState x, y) m) => m () -> m ()
+whenVerbose f = do
+    verbose <- L.view (L._1 . retconOptions . optVerbose)
+    when verbose f

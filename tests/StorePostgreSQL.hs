@@ -17,8 +17,7 @@
 module Main where
 
 import Control.Exception
-import Control.Monad
-import Control.Monad.IO.Class
+import Control.Lens.Operators
 import Data.Aeson
 import qualified Data.ByteString.Char8 as BS
 import Data.Maybe
@@ -39,7 +38,7 @@ dbname :: BS.ByteString
 dbname = "retcon_test"
 
 options :: RetconOptions
-options = defaultOptions { optDB = "dbname=" `BS.append` dbname }
+options = defaultOptions & optDB .~ "dbname=" <> dbname
 
 runAction :: PGStorage
           -> RetconMonad RWToken () r

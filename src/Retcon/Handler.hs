@@ -15,11 +15,11 @@
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TemplateHaskell       #-}
 {-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE FlexibleContexts          #-}
 
 module Retcon.Handler where
 
 import Control.Applicative
-import Control.Exception
 import Control.Exception.Enclosed (tryAny)
 import Control.Monad.Error.Class
 import Control.Monad.Logger
@@ -28,9 +28,7 @@ import Data.Aeson
 import Data.Bifunctor
 import Data.Either
 import Data.Maybe
-import Data.Monoid
 import Data.Proxy
-import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Type.Equality
 import Database.PostgreSQL.Simple
@@ -74,23 +72,21 @@ determineOperation :: (ReadableToken s, RetconDataSource entity source)
                    -> ForeignKey entity source
                    -> RetconHandler s (RetconOperation entity source)
 determineOperation state fk = do
-    opt <- retconOptions <$> getRetconState
-
-    when (optVerbose opt) $ $(logInfo) $ T.concat
+    whenVerbose $ $(logInfo) $ T.concat
         [ "DETERMINE: "
         , T.pack . show . foreignKeyValue $ fk
         ]
 
     ik' <- lookupInternalKey fk
 
-    when (optVerbose opt) . $(logDebug) $ T.concat
+    whenVerbose $ $(logDebug) $ T.concat
         [ "Looking for key: "
         , T.pack . show $ ik'
         ]
 
     doc' <- runRetconAction state $ getDocument fk
 
-    when (optVerbose opt) . $(logDebug) $ T.concat
+    whenVerbose $ $(logDebug) $ T.concat
         [ "Looking for document: "
         , T.pack . show $ doc'
         ]
@@ -119,7 +115,7 @@ dispatch :: forall store. (ReadableToken store, WritableToken store)
          -> RetconHandler store ()
 dispatch work = do
     let (entity_str, source_str, key) = read work :: (String, String, String)
-    entities <- retconState <$> getRetconState
+    entities <- _retconState <$> getRetconState
 
     case (someSymbolVal entity_str, someSymbolVal source_str) of
         (SomeSymbol entity, SomeSymbol source) ->
@@ -262,7 +258,7 @@ getDocuments :: forall store entity. (ReadableToken store, RetconEntity entity)
              -> RetconHandler store [Either RetconError Document]
 getDocuments ik = do
     let entity = Proxy :: Proxy entity
-    entities <- retconState <$> getRetconState
+    entities <- _retconState <$> getRetconState
 
     results <- forM entities $ \(InitialisedEntity current sources) ->
         case sameSymbol entity current of
@@ -295,7 +291,7 @@ setDocuments :: forall store entity. (ReadableToken store, WritableToken store, 
              -> RetconHandler store [Either RetconError ()]
 setDocuments ik docs = do
     let entity = Proxy :: Proxy entity
-    entities <- retconState <$> getRetconState
+    entities <- _retconState <$> getRetconState
 
     results <- forM entities $ \(InitialisedEntity current sources) ->
         case sameSymbol entity current of
@@ -318,7 +314,7 @@ deleteDocuments :: forall store entity. (ReadableToken store, WritableToken stor
                 -> RetconHandler store [Either RetconError ()]
 deleteDocuments ik = do
     let entity = Proxy :: Proxy entity
-    entities <- retconState <$> getRetconState
+    entities <- _retconState <$> getRetconState
 
     results <- forM entities $ \(InitialisedEntity current sources) ->
         case sameSymbol entity current of
@@ -344,7 +340,6 @@ deleteState :: forall store entity. (WritableToken store, RetconEntity entity)
             -> RetconHandler store ()
 deleteState ik = do
     let key = T.pack . show . internalKeyValue $ ik
-    opt <- retconOptions <$> getRetconState
 
     $logInfo $ T.concat ["DELETE state for ", key]
 
@@ -352,7 +347,7 @@ deleteState ik = do
     n_fk <- deleteForeignKeys ik
     n_ik <- deleteInternalKey ik
 
-    when (optVerbose opt) $ do
+    whenVerbose $ do
         $logDebug $ T.concat [ "Deleted foreign key/s for ", key, ": "
                              , T.pack . show $ n_fk
                              ]

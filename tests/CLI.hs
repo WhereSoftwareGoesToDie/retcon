@@ -28,6 +28,7 @@ import Control.Applicative
 import Control.Monad
 import Data.Proxy
 import Database.PostgreSQL.Simple
+import Control.Lens.Operators
 
 import Retcon.DataSource
 import Retcon.DataSource.JsonDirectory
@@ -136,12 +137,10 @@ cfg = RetconConfig [ SomeEntity (Proxy :: Proxy "event")
 -- | Parse event from command line and execute it.
 main :: IO ()
 main = do
-    opts@RetconOptions{..} <- parseArgsWithConfig "/etc/retcon.conf"
-    when optVerbose $ print opts
-    conn <- connectPostgreSQL optDB
+    opts <- parseArgsWithConfig "/etc/retcon.conf"
+    when (opts ^. optVerbose) $ print opts
 
-    let (entity:source:key:_) = optArgs
-    let tok = token $ PGStore conn
+    tok <- token . PGStore <$> connectPostgreSQL (opts ^. optDB)
+    let (entity:source:key:_) = opts ^. optArgs
     res <- retcon opts cfg tok $ show (entity, source, key)
     print res
-
