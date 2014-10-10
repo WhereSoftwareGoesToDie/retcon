@@ -23,6 +23,7 @@ import Data.Aeson
 import Database.PostgreSQL.Simple
 import Data.Proxy
 import GHC.TypeLits
+import Control.Lens.Operators
 
 import Retcon.DataSource
 import Retcon.Diff
@@ -36,7 +37,7 @@ newtype PGStorage = PGStore { unWrapConnection :: Connection }
 instance RetconStore PGStorage where
 
     storeInitialise opts = do
-        conn <- connectPostgreSQL . optDB $ opts
+        conn <- connectPostgreSQL (opts ^. optDB)
         return . PGStore $ conn
 
     storeFinalise (PGStore conn) = do

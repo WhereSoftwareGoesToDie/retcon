@@ -51,7 +51,7 @@ data RetconOptions =
     RetconOptions {
           _optVerbose :: Bool
         , _optLogging :: Logging
-        , _optDB      :: ByteString
+        , _optDB      :: BS.ByteString
         , _optParams  :: Maybe (Either FilePath (Map (Text, Text) (Map Text Text)))
         , _optArgs    :: [Text]
     }
