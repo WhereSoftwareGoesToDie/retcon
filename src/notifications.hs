@@ -110,12 +110,4 @@ process
     -> IO ()
 process tpl rules res = do
     forM_ rules $ \rule -> do
-        mapM_ (renderMail' >=> LBS.putStrLn) $ map (prepareMessage tpl rule) res
-
--- | Prepare and dispatch a message.
-dispatch
-    :: Template
-    -> NotificationRule
-    -> Notification
-    -> IO ()
-dispatch tpl rule note = return ()
+        mapM_ renderSendMail $ map (prepareMessage tpl rule) res
