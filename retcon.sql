@@ -71,7 +71,7 @@ CREATE TABLE retcon_notifications (
     entity  VARCHAR(64) NOT NULL,
     id      INTEGER NOT NULL,
     diff_id INTEGER NOT NULL,
-    created TIMESTAMP NOT NULL DEFAULT NOW(),
+    created TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
     PRIMARY KEY (entity, id, diff_id),
     FOREIGN KEY (entity, id) REFERENCES retcon (entity, id),
