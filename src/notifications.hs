@@ -100,6 +100,8 @@ send Config{..} = do
     res <- PG.query conn "SELECT created, entity, id, diff_id FROM retcon_notifications WHERE created < ?" (PG.Only t)
     process tpl rules res
 
+    void $ PG.execute conn "DELETE FROM retcon_notifications WHERE created < ?" (PG.Only t)
+
     PG.close conn
 
 -- | Process a batch of messages, dispatching messages which match each rule.
