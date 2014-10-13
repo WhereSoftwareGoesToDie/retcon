@@ -10,8 +10,8 @@
 
 module TestHelpers where
 
-import Control.Monad.IO.Class
 import Control.Applicative
+import Control.Monad.IO.Class
 import Data.Aeson
 import qualified Data.HashMap.Lazy as H
 import System.FilePath.Posix
