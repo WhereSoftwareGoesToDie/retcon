@@ -31,6 +31,7 @@ import Options.Applicative
 import qualified Options.Applicative as O
 import Options.Applicative.Types (readerAsk)
 import System.Locale
+import Text.Trifecta hiding (Parser)
 
 import Retcon.Notifications
 
@@ -90,20 +91,31 @@ main = execParser opts >>= send
 send :: Config -> IO ()
 send Config{..} = do
     msg <- T.pack <$> readFile cfgTemplate
+    Just rules <- parseFromFile rulesParser cfgRules
     let tpl = Template cfgSubject msg (Address Nothing cfgFrom)
 
     conn <- PG.connectPostgreSQL cfgDB
     t <- getCurrentTime
 
     res <- PG.query conn "SELECT created, entity, id, diff_id FROM retcon_notifications WHERE created < ?" (PG.Only t)
-    process tpl res
+    process tpl rules res
 
     PG.close conn
 
-process :: Template -> [Notification] -> IO ()
-process tpl res = do
-    mapM_ (renderMail' >=> LBS.putStrLn) $ map (prepareMessage tpl rule) res
-  where
-    rule = NotificationRule (Just "customer")
-                            Nothing
-                            "thomas.sutton@anchor.net.au"
+-- | Process a batch of messages, dispatching messages which match each rule.
+process
+    :: Template
+    -> [NotificationRule]
+    -> [Notification]
+    -> IO ()
+process tpl rules res = do
+    forM_ rules $ \rule -> do
+        mapM_ (renderMail' >=> LBS.putStrLn) $ map (prepareMessage tpl rule) res
+
+-- | Prepare and dispatch a message.
+dispatch
+    :: Template
+    -> NotificationRule
+    -> Notification
+    -> IO ()
+dispatch tpl rule note = return ()

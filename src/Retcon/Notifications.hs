@@ -46,8 +46,8 @@ data NotificationRule = NotificationRule
   deriving (Show, Eq)
 
 -- | Parse a list of 'NotificationRule's.
-parseRules :: Parser [NotificationRule]
-parseRules = some parseRule
+rulesParser :: Parser [NotificationRule]
+rulesParser = some parseRule
   where
     parseRule = NotificationRule
         <$> (parseEntity <* char ',')
@@ -55,7 +55,7 @@ parseRules = some parseRule
         <*> parseEmail
     parseEntity = optional $ spaces *> stringLiteral <* spaces
     parseSource = optional $ spaces *> stringLiteral <* spaces
-    parseEmail  = spaces *> (T.pack <$> many anyChar) <* spaces
+    parseEmail  = spaces *> char '"' *> (T.pack <$> (some $ noneOf "\"")) <* char '"' <* spaces
 
 -- | Records the details of a notification message which may be sent to
 -- recipients.
