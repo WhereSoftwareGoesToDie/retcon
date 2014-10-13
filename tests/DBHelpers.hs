@@ -12,6 +12,7 @@ module DBHelpers where
 import Data.Monoid
 import Data.List
 import System.Process
+import System.FilePath.Posix
 import System.Exit
 import Retcon.DataSource.PostgreSQL
 
@@ -20,8 +21,8 @@ resetTestDBWithFixture :: DBName -> FilePath -> IO ()
 resetTestDBWithFixture (DBName db) fixture = do
     x <- system . intercalate " && " $
         [ "dropdb --if-exists " <> db
-        , "createdb" <> db
-        , "psql retcon_pg_test -f tests/data/" <> fixture
+        , "createdb " <> db
+        , "psql " <> db <> " -f " <> "tests" </> "data" </> "sql" </> fixture
         ]
     case x of
         ExitSuccess ->

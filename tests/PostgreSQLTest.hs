@@ -150,8 +150,8 @@ suite =
 sourceDb :: DBName
 sourceDb = "retcon_pg_test"
 
-targetDb :: IsString x => x
-targetDb = fromString "retcon_pg_test2"
+targetDb :: DBName
+targetDb = "retcon_pg_test2"
 
 -- | Explicitly pass a test.
 pass :: Expectation
@@ -170,6 +170,6 @@ run l a = do
 
 main :: IO ()
 main = do
-    resetTestDBWithFixture sourceDb "tests/data/retcon_pg_test.sql"
-    resetTestDBWithFixture targetDb "tests/data/retcon_pg_test.sql"
+    resetTestDBWithFixture sourceDb "retcon_pg_test.sql"
+    resetTestDBWithFixture targetDb "retcon_pg_test2.sql"
     hspec suite
