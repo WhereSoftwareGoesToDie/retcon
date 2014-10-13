@@ -9,12 +9,12 @@
 
 module DBHelpers where
 
-import Data.Monoid
 import Data.List
-import System.Process
-import System.FilePath.Posix
-import System.Exit
+import Data.Monoid
 import Retcon.DataSource.PostgreSQL
+import System.Exit
+import System.FilePath.Posix
+import System.Process
 
 -- This is not a safe function and could be exploited for command execution.
 resetTestDBWithFixture :: DBName -> FilePath -> IO ()

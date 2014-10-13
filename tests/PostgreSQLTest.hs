@@ -18,12 +18,12 @@
 
 module Main where
 
-import Data.String
 import Control.Monad.IO.Class
 import Data.Monoid
 import Data.Proxy
-import Test.Hspec
+import Data.String
 import DBHelpers
+import Test.Hspec
 
 import Retcon.DataSource
 import Retcon.DataSource.PostgreSQL

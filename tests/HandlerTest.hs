@@ -29,8 +29,8 @@ import Retcon.Store
 import qualified Retcon.Store.Memory as Memory
 
 import Control.Applicative
-import Control.Lens
 import Control.Exception
+import Control.Lens
 import Control.Monad.Error.Class
 import Control.Monad.Reader
 import Data.Aeson

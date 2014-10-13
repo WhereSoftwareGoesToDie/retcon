@@ -25,10 +25,10 @@
 module Main where
 
 import Control.Applicative
+import Control.Lens.Operators
 import Control.Monad
 import Data.Proxy
 import Database.PostgreSQL.Simple
-import Control.Lens.Operators
 
 import Retcon.DataSource
 import Retcon.DataSource.JsonDirectory
