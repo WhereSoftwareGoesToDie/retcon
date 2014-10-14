@@ -24,7 +24,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Traversable
 import Options.Applicative hiding (Parser, option)
-import Options.Applicative.Types(readerAsk)
+import Options.Applicative.Types (readerAsk)
 import qualified Options.Applicative as O
 import Prelude hiding (sequence)
 import System.Directory

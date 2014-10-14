@@ -225,7 +225,8 @@ update state ik = do
     -- initial document may not be "valid".
     let output = map (applyDiff diff . either (const initial) id) docs
 
-    -- TODO: Record changes in database.
+    -- Record changes in database.
+    recordDiffs ik (diff, fragments)
 
     -- Save documents.
     results <- carefully $ setDocuments ik output

@@ -65,3 +65,15 @@ CREATE TABLE retcon_diff_conflicts (
     FOREIGN KEY (entity, id) REFERENCES retcon (entity, id)
 );
 
+-- | The `retcon_notifications` table records pending messages to notify humans of
+-- conflicts.
+CREATE TABLE retcon_notifications (
+    entity  VARCHAR(64) NOT NULL,
+    id      INTEGER NOT NULL,
+    diff_id INTEGER NOT NULL,
+    created TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    PRIMARY KEY (entity, id, diff_id),
+    FOREIGN KEY (entity, id) REFERENCES retcon (entity, id),
+    FOREIGN KEY (diff_id) REFERENCES retcon_diff (diff_id)
+);

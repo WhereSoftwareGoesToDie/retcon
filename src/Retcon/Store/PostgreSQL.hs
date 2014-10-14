@@ -19,9 +19,10 @@
 -- operational data storage interface using a PostgreSQL database.
 module Retcon.Store.PostgreSQL (PGStorage(..)) where
 
+import Control.Monad
 import Data.Aeson
-import Database.PostgreSQL.Simple
 import Data.Proxy
+import Database.PostgreSQL.Simple
 import GHC.TypeLits
 
 import Retcon.DataSource
@@ -124,24 +125,53 @@ instance RetconStore PGStorage where
         return ()
 
     storeRecordDiffs (PGStore conn) ik (d, ds) = do
-        _ <- storeOneDiff conn False ik $ fmap (const ()) d
-        mapM_ (storeOneDiff conn True ik . fmap (const ())) $ ds
-        return ()
+        -- Relabel the diffs with () instead of the arbitrary, possibly
+        -- unserialisable, labels.
+        let d' = fmap (const ()) d
+        let ds' = map (fmap (const ())) ds
+        did <- storeOneDiff conn False ik d'
+        mapM_ (storeOneDiff conn True ik) ds'
+        when (not . null $ ds) $
+            storeRecordNotification conn ik did
 
     storeDeleteDiffs (PGStore conn) ik = do
         let ikv = internalKeyValue ik
         let sql1 = "DELETE FROM retcon_diff_conflicts WHERE entity = ? AND id = ?"
-        let sql2 = "DELETE FROM retcon_diff WHERE entity = ? AND id = ?"
+        let sql2 = "DELETE FROM retcon_notifications WHERE entity = ? AND id = ?"
+        let sql3 = "DELETE FROM retcon_diff WHERE entity = ? AND id = ?"
         _ <- execute conn sql1 ikv
         _ <- execute conn sql2 ikv
+        _ <- execute conn sql3 ikv
         return 0
 
-storeOneDiff :: (RetconEntity entity) => Connection -> Bool -> InternalKey entity -> Diff () -> IO ()
+-- | Record the details of a merge conflict in the notifications table (if
+-- required).
+storeRecordNotification
+    :: (RetconEntity entity)
+    => Connection
+    -> InternalKey entity
+    -> Int -- ^ Diff ID
+    -> IO ()
+storeRecordNotification conn ik did = do
+    let (entity, eid) = internalKeyValue ik
+    void $ execute conn sql (entity, eid, did)
+  where
+    sql = "INSERT INTO retcon_notifications (entity, id, diff_id) VALUES (?, ?, ?)"
+
+-- | Record a single 'Diff' object into the database, returning the ID of that
+-- new diff.
+storeOneDiff
+    :: (RetconEntity entity)
+    => Connection
+    -> Bool
+    -> InternalKey entity
+    -> Diff ()
+    -> IO Int
 storeOneDiff conn isConflict ik d = do
     let (ikentity, ikid) = internalKeyValue ik
-    _ <- execute conn q (ikentity, ikid, encode d)
-    return ()
-    where
-        q = if isConflict
-                then "INSERT INTO retcon_diff_conflicts (entity, id, content) VALUES (?, ?, ?)"
-                else "INSERT INTO retcon_diff (entity, id, content) VALUES (?, ?, ?)"
+    [Only did] <- query conn q (ikentity, ikid, encode d)
+    return did
+  where
+    q = if isConflict
+        then "INSERT INTO retcon_diff_conflicts (entity, id, content) VALUES (?, ?, ?) RETURNING diff_id"
+        else "INSERT INTO retcon_diff (entity, id, content) VALUES (?, ?, ?) RETURNING diff_id"
