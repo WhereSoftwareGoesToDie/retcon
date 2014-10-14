@@ -21,6 +21,7 @@ module Retcon.Handler where
 
 import Control.Applicative
 import Control.Exception.Enclosed (tryAny)
+import Control.Lens (view)
 import Control.Monad.Error.Class
 import Control.Monad.Logger
 import Control.Monad.Reader
@@ -42,7 +43,6 @@ import Retcon.Error
 import Retcon.MergePolicy
 import Retcon.Monad
 import Retcon.Options
-import Retcon.Store
 
 -- | Check that two symbols are the same.
 same :: (KnownSymbol a, KnownSymbol b) => Proxy a -> Proxy b -> Bool
@@ -116,7 +116,7 @@ dispatch :: forall store. (ReadableToken store, WritableToken store)
          -> RetconHandler store ()
 dispatch work = do
     let (entity_str, source_str, key) = read work :: (String, String, String)
-    entities <- _retconState <$> getRetconState
+    entities <- view retconState
 
     case (someSymbolVal entity_str, someSymbolVal source_str) of
         (SomeSymbol entity, SomeSymbol source) ->
@@ -259,7 +259,7 @@ getDocuments :: forall store entity. (ReadableToken store, RetconEntity entity)
              -> RetconHandler store [Either RetconError Document]
 getDocuments ik = do
     let entity = Proxy :: Proxy entity
-    entities <- _retconState <$> getRetconState
+    entities <- view retconState
 
     results <- forM entities $ \(InitialisedEntity current sources) ->
         case sameSymbol entity current of
@@ -292,7 +292,7 @@ setDocuments :: forall store entity. (ReadableToken store, WritableToken store, 
              -> RetconHandler store [Either RetconError ()]
 setDocuments ik docs = do
     let entity = Proxy :: Proxy entity
-    entities <- _retconState <$> getRetconState
+    entities <- view retconState
 
     results <- forM entities $ \(InitialisedEntity current sources) ->
         case sameSymbol entity current of
@@ -315,7 +315,7 @@ deleteDocuments :: forall store entity. (ReadableToken store, WritableToken stor
                 -> RetconHandler store [Either RetconError ()]
 deleteDocuments ik = do
     let entity = Proxy :: Proxy entity
-    entities <- _retconState <$> getRetconState
+    entities <- view retconState
 
     results <- forM entities $ \(InitialisedEntity current sources) ->
         case sameSymbol entity current of

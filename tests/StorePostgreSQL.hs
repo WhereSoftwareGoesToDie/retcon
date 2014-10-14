@@ -31,7 +31,6 @@ import Retcon.Document
 import Retcon.Error
 import Retcon.Monad
 import Retcon.Options
-import Retcon.Store
 import Retcon.Store.PostgreSQL
 
 dbname :: BS.ByteString
@@ -41,9 +40,9 @@ options :: RetconOptions
 options = defaultOptions & optDB .~ "dbname=" <> dbname
 
 runAction :: PGStorage
-          -> RetconMonad RWToken () r
+          -> RetconMonad InitialisedEntity RWToken () r
           -> IO (Either RetconError r)
-runAction store action = runRetconMonad options [] (token store) () action
+runAction store action = runRetconMonad options (RetconMonadState options [] (token store) ()) action
 
 -- | Canned query to run to check that connections are live.
 onepluszero :: Connection -> IO [Only Int]

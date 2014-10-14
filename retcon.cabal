@@ -29,7 +29,6 @@ library
                      , Retcon.Monad
                      , Retcon.Notifications
                      , Retcon.Options
-                     , Retcon.Store
                      , Retcon.Store.PostgreSQL
                      , Retcon.Store.Memory
                      , Data.Tree.GenericTrie

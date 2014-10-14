@@ -34,7 +34,6 @@ import Data.Maybe
 import Retcon.DataSource
 import Retcon.Diff
 import Retcon.Document
-import Retcon.Store
 
 -- | Convert a triple of strings into a ForeignKey iff the entity and
 -- source names match the expected type.

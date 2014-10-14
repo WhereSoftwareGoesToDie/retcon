@@ -35,7 +35,6 @@ import Retcon.DataSource.JsonDirectory
 import Retcon.Handler
 import Retcon.Monad
 import Retcon.Options
-import Retcon.Store (token)
 import Retcon.Store.PostgreSQL
 import TestHelpers
 

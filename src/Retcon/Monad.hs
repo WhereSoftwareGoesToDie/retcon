@@ -30,19 +30,23 @@ module Retcon.Monad (
     -- $ Retcon handlers (i.e. actions which process and response to an event)
     -- are actions in the 'RetconHandler' monad.
     RetconMonad(..),
-    RetconHandler,
 
     RetconMonadState(..),
-    globalState,
+    retconOptions,
+    retconState,
+    retconStore,
     localState,
+
+    getRetconState,
+    getActionState,
+    whenVerbose,
 
     -- ** Evaluators
     runRetconMonad,
 ) where
 
 import Control.Applicative
-import Control.Lens.Operators
-import Control.Lens.TH
+import Control.Lens
 import Control.Monad.Base
 import Control.Monad.Except
 import Control.Monad.Logger
@@ -53,15 +57,17 @@ import Retcon.Error
 import Retcon.Options
 
 -- | Monad transformer stack used in the 'RetconHandler' monad.
-type RetconHandlerStack global_state local_state =
-    ReaderT (RetconMonadState global_state local_state)
+type RetconHandlerStack entity store local_state =
+    ReaderT (RetconMonadState entity store local_state)
             (ExceptT RetconError (LoggingT IO))
 
 -- | Product type wrapper for global and local state components. This is
 -- instantiated in Core.hs
-data RetconMonadState global local = RetconMonadState
-    { _globalState :: global
-    , _localState :: local
+data RetconMonadState entity store local = RetconMonadState
+    { _retconOptions :: RetconOptions
+    , _retconState   :: [entity]
+    , _retconStore   :: store
+    , _localState    :: local
     }
 makeLenses ''RetconMonadState
 
@@ -70,18 +76,18 @@ makeLenses ''RetconMonadState
 -- This monad provides access to an environment containing the "global" state
 -- of the retcon system and the "local" state of the current action; error
 -- handling through exceptions; logging; and I/O.
-newtype RetconMonad global_state local_state a =
+newtype RetconMonad entity store local_state a =
     RetconMonad {
-        unRetconMonad :: (RetconHandlerStack global_state local_state) a
+        unRetconMonad :: (RetconHandlerStack entity store local_state) a
     }
   deriving (Functor, Applicative, Monad, MonadIO, MonadLogger,
-            MonadReader (RetconMonadState global_state local_state),
+            MonadReader (RetconMonadState entity store local_state),
             MonadError RetconError, MonadBase IO)
 
 -- | MonadBaseControl used to catch IO exceptions
-instance MonadBaseControl IO (RetconMonad s l) where
-    newtype StM (RetconMonad s l) a = StHandler {
-        unStHandler :: StM (RetconHandlerStack s l) a
+instance MonadBaseControl IO (RetconMonad e s l) where
+    newtype StM (RetconMonad e s l) a = StHandler {
+        unStHandler :: StM (RetconHandlerStack e s l) a
     }
 
     -- Unwrap the bits in our monad to get to the base.
@@ -93,8 +99,8 @@ instance MonadBaseControl IO (RetconMonad s l) where
 
 -- | Execute an action in the 'RetconMonad' monad.
 runRetconMonad :: RetconOptions
-               -> RetconMonadState global_state local_state
-               -> RetconMonad global_state local_state a
+               -> RetconMonadState entity store local_state
+               -> RetconMonad entity store local_state a
                -> IO (Either RetconError a)
 runRetconMonad opt state =
     runLogging .
@@ -105,5 +111,17 @@ runRetconMonad opt state =
       LogStderr -> runStderrLoggingT
       LogStdout -> runStdoutLoggingT
       LogNone   -> (`runLoggingT` \_ _ _ _ -> return ())
-type RetconHandler s a = RetconMonad s () a
 
+-- | Get the retcon component of the environment.
+getRetconState :: RetconMonad e s l [e]
+getRetconState = view retconState
+
+-- | Get the action-specific component of the environment.
+getActionState :: RetconMonad e s l l
+getActionState = view localState
+
+-- | Do something when the verbose option is set
+whenVerbose :: (MonadReader (RetconMonadState e s x) m) => m () -> m ()
+whenVerbose f = do
+    verbose <- view (retconOptions . optVerbose)
+    when verbose f

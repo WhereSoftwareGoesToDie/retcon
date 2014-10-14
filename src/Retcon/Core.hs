@@ -9,11 +9,13 @@
 
 module Retcon.Core
 (
-    runRetconAction
+    runRetconAction,
+    runRetconMonadOnce,
 ) where
 
 import Control.Applicative
 import Control.Exception.Enclosed
+import Control.Exception
 import Control.Lens.Operators
 import Control.Lens(view)
 import Control.Monad.Except
@@ -22,21 +24,8 @@ import Data.Bifunctor
 
 import Retcon.Error
 import Retcon.Monad
-import Retcon.Store
-
--- | State held in the reader part of the 'RetconHandler' monad.
-data RetconState s = RetconState
-    { _retconOptions :: RetconOptions
-    , _retconState   :: [InitialisedEntity]
-    , _retconStore   :: s
-    }
-makeLenses ''RetconState
-
--- * Action monad
-
-type RetconAction l a = RetconMonad ROToken l a
-
-    st = RetconState opt state store
+import Retcon.DataSource
+import Retcon.Options
 
 -- | Run an action in the 'RetconAction' monad (aka the 'RetconMonad' with
 -- read-only storage).
@@ -49,15 +38,21 @@ runRetconAction :: StoreToken s
                 -> RetconHandler s (Either RetconError a)
 runRetconAction l =
     -- Restrict store and add the local state.
-    RetconMonad . withReaderT localise . unRetconMonad .
+    RetconMonad . withReaderT (localise l) . unRetconMonad .
     -- Do exception and error handling.
     handle . handleAny (throwError . RetconError)
   where
-    localise = bimap (retconStore %~ restrictToken) (const l)
-
     -- | Handle any errors in an action, pulling them into the monad.
     handle :: (Functor m, MonadError e m) => m v -> m (Either e v)
     handle a = (Right <$> a) `catchError` (return . Left)
+
+-- | "Localise" the state as appropriate to run a 'RetconAction' in a 'RetconHandler' context.
+localise
+    :: StoreToken s
+    => l -- ^ Local state value
+    -> RetconMonadState e s () -- ^ Handler state
+    -> RetconMonadState e ROToken l
+localise l (RetconMonadState opt state store local) = RetconMonadState opt state (restrictToken store) l
 
 -- | Execute an action in the 'RetconMonad' monad with configuration
 -- initialized and finalized.
@@ -66,24 +61,11 @@ runRetconMonadOnce
     -> RetconConfig
     -> s
     -> l
-    -> RetconMonad s l a
+    -> RetconMonad InitialisedEntity s l a
     -> IO (Either RetconError a)
 runRetconMonadOnce opt (RetconConfig entities) store l action =
     let params = pickParams opt
+        stater = \inited -> RetconMonadState opt inited store l
     in bracket (initialiseEntities params entities)
                (void . finaliseEntities params)
-               (\state -> runRetconMonad opt state store l action)
-
--- | Get the retcon component of the environment.
-getRetconState :: RetconMonad s l (RetconState s)
-getRetconState = asks _globalState
-
--- | Get the action-specific component of the environment.
-getActionState :: RetconMonad s l l
-getActionState = asks _localState
-
--- | Do something when the verbose option is set
-whenVerbose :: (MonadReader (RetconMonadState (RetconState s) x) m) => m () -> m ()
-whenVerbose f = do
-    verbose <- view (globalState . retconOptions . optVerbose)
-    when verbose f
+               (\state -> runRetconMonad opt (stater state) action)
