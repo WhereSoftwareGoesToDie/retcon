@@ -30,10 +30,10 @@ import qualified Retcon.Store.Memory as Memory
 
 import Control.Applicative
 import Control.Exception
+import Control.Lens
 import Control.Monad.Error.Class
 import Control.Monad.Reader
 import Data.Aeson
-import Data.Bifunctor
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.HashMap.Strict as HM
@@ -179,15 +179,14 @@ instance RetconDataSource "exception" "exception" where
     setDocument = error "setDocument exception"
     deleteDocument = error "deleteDocument exception"
 
+testOpts = defaultOptions & optDB .~ testConnection
+                          & optLogging .~ LogNone
+                          & optVerbose .~ True
+
+
 -- | Tests for code determining and applying retcon operations.
 operationSuite :: Spec
 operationSuite = do
-    let opt = defaultOptions {
-          optDB = testConnection
-        , optLogging = LogNone
-        , optVerbose = True
-        }
-
     describe "Mapping keys" $ do
         it "should map from internal to foreign keys" $
             pendingWith "Unimplemented"
@@ -200,7 +199,7 @@ operationSuite = do
 
     describe "Determining operations" $ do
         it "should result in a create when new key is seen, with document." $
-            withConfiguration opt $ \(state, store, _) -> do
+            withConfiguration testOpts $ \(state, store, opts) -> do
                 -- Create a document in dispatch1; leave dispatch2 and the
                 -- database tables empty.
 
@@ -210,24 +209,24 @@ operationSuite = do
 
                 (fk', _) <- newTestDocument "dispatch1-" Nothing ref
                 let fk = ForeignKey (T.unpack fk') :: ForeignKey "dispatchtest" "dispatch1"
-                op <- run opt state $ determineOperation st fk
+                op <- run opts state $ determineOperation st fk
 
                 op `shouldBe` (Right $ RetconCreate fk)
 
         it "should result in an error when new key is seen, but no document." $
-            withConfiguration opt $ \(state, store, _) -> do
+            withConfiguration testOpts $ \(state, store, opts) -> do
 
                 let entity = Proxy :: Proxy "dispatchtest"
                 let source = Proxy :: Proxy "dispatch1"
                 let Just st@(Dispatch1 ref) = accessState state entity source
 
                 let fk = ForeignKey "this is new" :: ForeignKey "dispatchtest" "dispatch1"
-                op <- run opt state $ determineOperation st fk
+                op <- run opts state $ determineOperation st fk
 
                 op `shouldBe` (Right $ RetconProblem fk RetconFailed)
 
         it "should result in a update when old key is seen, with document." $
-            withConfiguration opt $ \(state, store, opts) -> do
+            withConfiguration testOpts $ \(state, store, opts) -> do
                 result <- testHandler state store $ do
 
                     let es = "dispatchtest" :: String
@@ -254,7 +253,7 @@ operationSuite = do
                     _ -> error "Does not match"
 
         it "should result in a delete when old key is seen, but no document." $
-            withConfiguration opt $ \(state, store, opts) -> do
+            withConfiguration testOpts $ \(state, store, opts) -> do
                 let fk1 = "dispatch1-deleted-docid" :: String
 
                 result <- testHandler state store $ do
@@ -279,7 +278,7 @@ operationSuite = do
 
     describe "Evaluating operations" $ do
         it "should process a create operation." $
-            withConfiguration opt $ \(state, store, opts) -> do
+            withConfiguration testOpts $ \(state, store, opts) -> do
 
                 let es = "dispatchtest" :: String
                 let ds = "dispatch1" :: String
@@ -305,7 +304,7 @@ operationSuite = do
                 (result, M.size iks, M.size fks) `shouldBe` (Right (), 1, 2)
 
         it "should process an error operation." $
-            withConfiguration opt $ \(state, store, opts) -> do
+            withConfiguration testOpts $ \(state, store, opts) -> do
                 let es = "dispatchtest" :: String
                 let ds = "dispatch1" :: String
                 let entity = Proxy :: Proxy "dispatchtest"
@@ -316,12 +315,12 @@ operationSuite = do
                 let fk = ForeignKey (T.unpack fk')
                 let op = RetconProblem fk (RetconUnknown "Testing error reporting.") :: RetconOperation "dispatchtest" "dispatch1"
 
-                res <- run opt state $ runOperation st op
+                res <- run opts state $ runOperation st op
 
                 res `shouldBe` Right ()
 
         it "should process an update operation." $
-            withConfiguration opt $ \(state, store, opts) -> do
+            withConfiguration testOpts $ \(state, store, opts) -> do
                 let entity = Proxy :: Proxy "dispatchtest"
                 let source1 = Proxy :: Proxy "dispatch1"
                 let source2 = Proxy :: Proxy "dispatch2"
@@ -358,7 +357,7 @@ operationSuite = do
                 (M.size d1, M.size d2, M.size iks, M.size fks) `shouldBe` (1, 1, 1, 2)
 
         it "should process a delete operation." $
-            withConfiguration opt $ \(state, store, opts) -> do
+            withConfiguration testOpts $ \(state, store, opts) -> do
                 let entity = Proxy :: Proxy "dispatchtest"
                 let source1 = Proxy :: Proxy "dispatch1"
                 let source2 = Proxy :: Proxy "dispatch2"
@@ -393,22 +392,21 @@ operationSuite = do
                 (M.size d1, M.size d2, n_ik, n_fk) `shouldBe` (0, 0, 0, 0)
   where
     run opt state action =
-        withConfiguration opt $ \(state, store, opts) ->
+        withConfiguration testOpts $ \(state, store, opts) ->
             runRetconHandler opts state (token store) action
 
 -- | Test suite for dispatching logic.
 dispatchSuite :: Spec
 dispatchSuite = do
-    let opts = defaultOptions {
-          optDB = testConnection
-        , optLogging = LogNone
-        , optVerbose = True
-        }
+
+    let opts = defaultOptions & optDB .~ testConnection
+                              & optLogging .~ LogNone
+                              & optVerbose .~ True
 
     describe "Dispatching changes" $ do
         -- NEW and EXISTS
         it "should create when new id and source has the document" $
-            withConfiguration opts $ \(state, store, opts) -> do
+            withConfiguration testOpts $ \(state, store, opts) -> do
 
                 let entity = Proxy :: Proxy "dispatchtest"
                 let ds1 = Proxy :: Proxy "dispatch1"
@@ -421,7 +419,7 @@ dispatchSuite = do
                 (fk, doc) <- newTestDocument "dispatch1-" Nothing ref1
 
                 -- Dispatch the event.
-                let opts' = opts { optArgs = ["dispatchtest", "dispatch1", fk] }
+                let opts' = opts & optArgs .~ ["dispatchtest", "dispatch1", fk]
                 let input = show ("dispatchtest", "dispatch1", fk)
 
                 res <- run opts' state store $ dispatch input
@@ -441,7 +439,7 @@ dispatchSuite = do
 
         -- NEW and NO EXIST
         it "should error when new id and source hasn't the document" $
-            withConfiguration opts $ \(state, store, opts) -> do
+            withConfiguration testOpts $ \(state, store, opts) -> do
                 let entity = Proxy :: Proxy "dispatchtest"
                 let ds1 = Proxy :: Proxy "dispatch1"
                 let ds2 = Proxy :: Proxy "dispatch2"
@@ -452,7 +450,7 @@ dispatchSuite = do
                 -- still empty.
 
                 -- Dispatch the event.
-                let opts' = opts { optArgs = ["dispatchtest", "dispatch1", "999"] }
+                let opts' = opts & optArgs .~ ["dispatchtest", "dispatch1", "999"]
                 let input = show ("dispatchtest", "dispatch1", "999")
                 res <- run opts' state store $ dispatch input
 
@@ -471,7 +469,7 @@ dispatchSuite = do
 
         -- OLD and EXISTS
         it "should update when old id and source has the document" $
-            withConfiguration opts $ \(state, store, opts) -> do
+            withConfiguration testOpts $ \(state, store, opts) -> do
                 let entity = Proxy :: Proxy "dispatchtest"
                 let ds1 = Proxy :: Proxy "dispatch1"
                 let ds2 = Proxy :: Proxy "dispatch2"
@@ -507,7 +505,7 @@ dispatchSuite = do
 
         -- OLD and NO EXIST
         it "should delete when old id and source hasn't the document" $
-            withConfiguration opts $ \(state, store, opts) -> do
+            withConfiguration testOpts $ \(state, store, opts) -> do
 
                 let entity = Proxy :: Proxy "dispatchtest"
                 let ds1 = Proxy :: Proxy "dispatch1"
@@ -601,15 +599,9 @@ instance RetconDataSource "alicorn_invoice" "alicorn_source" where
 -- | Test suite for initial document.
 initialDocumentSuite :: Spec
 initialDocumentSuite = do
-    let opt = defaultOptions {
-          optDB = testConnection
-        , optLogging = LogNone
-        , optVerbose = True
-        }
-
     describe "Initial documents" $ do
         it "reads and writes initial documents" $
-            withConfiguration opt $ \(state, store, _) -> do
+            withConfiguration testOpts $ \(state, store, _) -> do
                 let testDoc = Document [(["key"], "value")]
                 result <- testHandler state store $ do
 
@@ -622,7 +614,7 @@ initialDocumentSuite = do
                 result `shouldBe` Right ((), Just testDoc)
 
         it "deletes initial documents" $
-            withConfiguration opt $ \(state, store, _) -> do
+            withConfiguration testOpts $ \(state, store, _) -> do
                 let testDoc = Document [(["isThisGoingToGetDeleted"], "yes")]
                 result <- testHandler state store $ do
                     (ik :: InternalKey "alicorn_invoice") <- createInternalKey
@@ -636,15 +628,9 @@ initialDocumentSuite = do
 -- | Test suite for diff database handling.
 diffDatabaseSuite :: Spec
 diffDatabaseSuite = do
-    let opt = defaultOptions {
-          optDB = testConnection
-        , optLogging = LogNone
-        , optVerbose = True
-        }
-
     describe "Database diffs" $
         it "writes a diff to database and reads it" $
-            withConfiguration opt $ \(state, store,_ ) -> do
+            withConfiguration testOpts $ \(state, store,_ ) -> do
                 let testDiff = Diff 1 [InsertOp 1 ["a", "b", "c"] "foo"]
                 pendingWith "Data storage API changes."
 
@@ -678,22 +664,17 @@ exceptionSuite =
             (handlerTest cfg) `shouldThrow` (== ErrorCall "Handler exception")
 
   where
-    opt = defaultOptions {
-          optDB = testConnection
-        , optLogging = LogNone
-        , optVerbose = True
-        }
     -- Raise an exception in "action" code.
     actionTest cfg = bracket
         (do
             st <- initialiseEntities mempty (retconEntities cfg)
-            tok <- storeInitialise opt :: IO Memory.MemStorage
+            tok <- storeInitialise testOpts :: IO Memory.MemStorage
             return (st, tok))
         (\(s, t) -> do
             _ <- finaliseEntities mempty s
             storeFinalise t
             return ())
-        (\(s,t) -> runRetconHandler opt s (token t) $ do
+        (\(s,t) -> runRetconHandler testOpts s (token t) $ do
             runRetconAction ExcState $ do
                 error "Action exception"
                 return 1)
@@ -701,37 +682,32 @@ exceptionSuite =
     handlerTest cfg = bracket
         (do
             st <- initialiseEntities mempty (retconEntities cfg)
-            tok <- storeInitialise opt :: IO Memory.MemStorage
+            tok <- storeInitialise testOpts :: IO Memory.MemStorage
             return (st, tok))
         (\(s, t) -> do
             _ <- finaliseEntities mempty s
             storeFinalise t
             return ())
-        (\(s,t) -> runRetconHandler opt s (token t) $ do
+        (\(s,t) -> runRetconHandler testOpts s (token t) $ do
             error "Handler exception")
     -- Raise an exception in "action" code.
     initTest cfg = bracket
         (do
             st <- initialiseEntities mempty (retconEntities cfg)
-            tok <- storeInitialise opt :: IO Memory.MemStorage
+            tok <- storeInitialise testOpts :: IO Memory.MemStorage
             return (st, tok))
         (\(s, t) -> do
             _ <- finaliseEntities mempty s
             storeFinalise t
             return ())
-        (\(s,t) -> runRetconHandler opt s (token t) $ do
+        (\(s,t) -> runRetconHandler testOpts s (token t) $ do
             error "Not initialiser exception")
 
 testHandler :: [InitialisedEntity]
             -> Memory.MemStorage
             -> RetconHandler RWToken a
             -> IO (Either RetconError a)
-testHandler state store a = runRetconHandler opts state (token store) a
-  where
-    opts = defaultOptions
-        { optLogging = LogNone
-        , optVerbose = True
-        }
+testHandler state store a = runRetconHandler testOpts state (token store) a
 
 main :: IO ()
 main = hspec $ do

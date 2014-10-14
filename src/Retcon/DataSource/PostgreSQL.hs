@@ -1,25 +1,30 @@
-{-# LANGUAGE DeriveDataTypeable        #-}
-{-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE FlexibleInstances         #-}
-{-# LANGUAGE OverloadedStrings         #-}
-{-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE DeriveDataTypeable         #-}
+{-# LANGUAGE ExistentialQuantification  #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Retcon.DataSource.PostgreSQL (
     getPgDocument,
     setPgDocument,
     deletePgDocument,
+    DBName(..),
+    pgConnStr,
     DataSourceError,
     ForeignKey
     ) where
 
 import Control.Applicative
 import qualified Control.Exception as Ex
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as BSL
-import qualified Data.ByteString.Lazy.Char8 as BSL8
+import qualified Data.ByteString.Char8 as BS
+import Data.Monoid
+import Data.String
 
 import Data.Aeson
-import Data.Maybe
+import Data.ByteString (ByteString)
 import Data.Typeable
 import qualified Database.PostgreSQL.Simple as PG
 import Database.PostgreSQL.Simple.FromRow
@@ -27,6 +32,17 @@ import qualified Database.PostgreSQL.Simple.Types as PGT
 
 import Retcon.DataSource
 import Retcon.Document
+
+
+-- | A wrapper for a string that represents a PostgreSQL database name. This is
+-- used to escape for various things.
+newtype DBName = DBName { unDBName :: String }
+  deriving IsString
+
+-- | Convert a 'DBName' to a database connection string for postgres. i.e.
+-- "dbname='magical_db'"
+pgConnStr :: DBName -> ByteString
+pgConnStr (DBName db) = "dbname='" <> BS.pack db <> "'"
 
 data DataSourceError = DataSourceError String deriving (Show, Typeable)
 instance Ex.Exception DataSourceError
@@ -36,8 +52,8 @@ instance FromRow (Maybe Document) where
     fromRow = decode <$> field
 
 -- | API function getDocument
-getPgDocument :: BS.ByteString -> ForeignKey entity source -> IO (Either DataSourceError Document)
-getPgDocument connString fk = Ex.bracket (PG.connectPostgreSQL connString) PG.close run
+getPgDocument :: DBName -> ForeignKey entity source -> IO (Either DataSourceError Document)
+getPgDocument db fk = Ex.bracket (PG.connectPostgreSQL $ pgConnStr db) PG.close run
     where
         run conn = do
             results <- PG.query conn selectQ (PGT.Only $ unForeignKey fk)
@@ -50,11 +66,11 @@ getPgDocument connString fk = Ex.bracket (PG.connectPostgreSQL connString) PG.cl
 
 -- | API function setDocument
 setPgDocument :: forall entity source. RetconDataSource entity source
-              => BS.ByteString
+              => DBName
               -> Document
               -> Maybe (ForeignKey entity source)
               -> IO (Either DataSourceError (Maybe (ForeignKey entity source)))
-setPgDocument connString doc mfk = Ex.bracket (PG.connectPostgreSQL connString) PG.close run
+setPgDocument db doc mfk = Ex.bracket (PG.connectPostgreSQL $ pgConnStr db) PG.close run
     where
         run conn =
             case mfk of
@@ -73,8 +89,8 @@ setPgDocument connString doc mfk = Ex.bracket (PG.connectPostgreSQL connString) 
         updateQ = "UPDATE retcon SET data = ? WHERE id = ?"
 
 -- | API function deleteDocument
-deletePgDocument :: BS.ByteString -> ForeignKey entity source -> IO (Either DataSourceError ())
-deletePgDocument connString fk = Ex.bracket (PG.connectPostgreSQL connString) PG.close run
+deletePgDocument :: DBName -> ForeignKey entity source -> IO (Either DataSourceError ())
+deletePgDocument db fk = Ex.bracket (PG.connectPostgreSQL $ pgConnStr db) PG.close run
     where
         run conn = do
             deleted <- PG.execute conn deleteQ (PGT.Only $ unForeignKey fk)

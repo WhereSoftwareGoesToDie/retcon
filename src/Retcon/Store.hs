@@ -235,15 +235,15 @@ instance StoreToken ROToken where
 
 instance ReadableToken ROToken where
     lookupInternalKey fk = do
-        ROToken store <- retconStore <$> getRetconState
+        ROToken store <- _retconStore <$> getRetconState
         liftIO $ storeLookupInternalKey store fk
 
     lookupForeignKey ik = do
-        ROToken store <- retconStore <$> getRetconState
+        ROToken store <- _retconStore <$> getRetconState
         liftIO $ storeLookupForeignKey store ik
 
     lookupInitialDocument ik = do
-        ROToken store <- retconStore <$> getRetconState
+        ROToken store <- _retconStore <$> getRetconState
         liftIO $ storeLookupInitialDocument store ik
 
 -- | A token exposing both the 'ReadableToken' and 'WritableToken' APIs.
@@ -254,50 +254,50 @@ instance StoreToken RWToken where
 
 instance ReadableToken RWToken where
     lookupInternalKey fk = do
-        RWToken store <- retconStore <$> getRetconState
+        RWToken store <- _retconStore <$> getRetconState
         liftIO $ storeLookupInternalKey store fk
 
     lookupForeignKey ik = do
-        RWToken store <- retconStore <$> getRetconState
+        RWToken store <- _retconStore <$> getRetconState
         liftIO $ storeLookupForeignKey store ik
 
     lookupInitialDocument ik = do
-        RWToken store <- retconStore <$> getRetconState
+        RWToken store <- _retconStore <$> getRetconState
         liftIO $ storeLookupInitialDocument store ik
 
 instance WritableToken RWToken where
     createInternalKey = do
-        RWToken store <- retconStore <$> getRetconState
+        RWToken store <- _retconStore <$> getRetconState
         liftIO $ storeCreateInternalKey store
 
     deleteInternalKey ik = do
-        RWToken store <- retconStore <$> getRetconState
+        RWToken store <- _retconStore <$> getRetconState
         liftIO $ storeDeleteInternalKey store ik
 
     recordForeignKey ik fk = do
-        RWToken store <- retconStore <$> getRetconState
+        RWToken store <- _retconStore <$> getRetconState
         liftIO $ storeRecordForeignKey store ik fk
 
     deleteForeignKey fk = do
-        RWToken store <- retconStore <$> getRetconState
+        RWToken store <- _retconStore <$> getRetconState
         liftIO $ storeDeleteForeignKey store fk
 
     deleteForeignKeys ik = do
-        RWToken store <- retconStore <$> getRetconState
+        RWToken store <- _retconStore <$> getRetconState
         liftIO $ storeDeleteForeignKeys store ik
 
     recordInitialDocument ik doc = do
-        RWToken store <- retconStore <$> getRetconState
+        RWToken store <- _retconStore <$> getRetconState
         liftIO $ storeRecordInitialDocument store ik doc
 
     deleteInitialDocument ik = do
-        RWToken store <- retconStore <$> getRetconState
+        RWToken store <- _retconStore <$> getRetconState
         liftIO $ storeDeleteInitialDocument store ik
 
     recordDiffs ik diffs = do
-        RWToken store <- retconStore <$> getRetconState
+        RWToken store <- _retconStore <$> getRetconState
         liftIO $ storeRecordDiffs store ik diffs
 
     deleteDiffs ik = do
-        RWToken store <- retconStore <$> getRetconState
+        RWToken store <- _retconStore <$> getRetconState
         liftIO $ storeDeleteDiffs store ik

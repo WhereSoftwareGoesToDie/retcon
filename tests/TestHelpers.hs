@@ -10,6 +10,7 @@
 
 module TestHelpers where
 
+import Control.Applicative
 import Control.Monad.IO.Class
 import Data.Aeson
 import qualified Data.HashMap.Lazy as H
@@ -49,11 +50,10 @@ testDiff = Diff (1, "hello")
 
 -- | Create a test path based on the CWD
 testJSONFilePath :: MonadIO m => m FilePath
-testJSONFilePath = liftIO $ do
-    cwd <- getCurrentDirectory
-    return $ cwd </> "tests" </> "data" </> "json"
+testJSONFilePath = liftIO $
+    (</> "tests" </> "data" </> "json") <$> getCurrentDirectory
 
 testLoad :: FilePath -> IO Document
 testLoad file = do
-    base <- testJSONFilePath
-    loadDocument $ base </> file
+    path <- (</> file) <$> testJSONFilePath
+    loadDocument path

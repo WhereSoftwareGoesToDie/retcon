@@ -11,6 +11,7 @@
 
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE TemplateHaskell   #-}
 
 module Retcon.Options where
 
@@ -28,9 +29,8 @@ import Options.Applicative.Types (readerAsk)
 import qualified Options.Applicative as O
 import Prelude hiding (sequence)
 import System.Directory
-import System.FilePath
 import Text.Trifecta
-import Data.Traversable
+import Control.Lens.TH
 
 import Utility.Configuration
 
@@ -49,13 +49,14 @@ instance Show Logging where
 -- | Options to control the operation of retcon.
 data RetconOptions =
     RetconOptions {
-          optVerbose :: Bool
-        , optLogging :: Logging
-        , optDB      :: ByteString
-        , optParams  :: Maybe (Either FilePath (Map (Text, Text) (Map Text Text)))
-        , optArgs    :: [Text]
+          _optVerbose :: Bool
+        , _optLogging :: Logging
+        , _optDB      :: BS.ByteString
+        , _optParams  :: Maybe (Either FilePath (Map (Text, Text) (Map Text Text)))
+        , _optArgs    :: [Text]
     }
   deriving (Show, Eq)
+makeLenses ''RetconOptions
 
 -- | Default options which probably won't let you do much of anything.
 defaultOptions :: RetconOptions
@@ -70,8 +71,8 @@ parseArgsWithConfig = parseFile >=> execParser . helpfulParser >=> includeParams
 -- | Load the parameters from the path specified in the options.
 includeParams :: RetconOptions -> IO RetconOptions
 includeParams opt = do
-    params <- sequence $ (either readParams return) <$> optParams opt
-    return $ opt { optParams = Right <$> params }
+    params <- sequence $ either readParams return <$> _optParams opt
+    return $ opt { _optParams = Right <$> params }
   where
     readParams :: FilePath -> IO (Map (Text, Text) (Map Text Text))
     readParams path = do
@@ -120,7 +121,7 @@ confOptionsParser RetconOptions{..} =
            long "db"
         <> short 'd'
         <> metavar "DATABASE"
-        <> O.value optDB
+        <> O.value _optDB
         <> showDefault
         <> help "PostgreSQL connection string"
     parseLogging :: O.Parser Logging
@@ -129,7 +130,7 @@ confOptionsParser RetconOptions{..} =
         <> short 'l'
         <> metavar "stderr|stdout|none"
         <> help "Log messages to an output"
-        <> O.value optLogging
+        <> O.value _optLogging
         <> showDefault
     parseParams :: O.Parser (Maybe (Either FilePath (Map (Text, Text) (Map Text Text))))
     parseParams = O.option (Just . Left <$> readerAsk) $
@@ -157,10 +158,10 @@ parseFile path = do
     return $ maybe defaultOptions (`mergeConfig` defaultOptions) cfg
   where
     mergeConfig ls RetconOptions{..} = fromJust $
-        RetconOptions <$> pure optVerbose
-                      <*> (lookup "logging" ls >>= readLog) `mplus` pure optLogging
-                      <*> liftM BS.pack (lookup "database" ls) `mplus` pure optDB
-                      <*> (Just . Left <$> lookup "parameters" ls) `mplus` pure optParams
+        RetconOptions <$> pure _optVerbose
+                      <*> (lookup "logging" ls >>= readLog) `mplus` pure _optLogging
+                      <*> liftM BS.pack (lookup "database" ls) `mplus` pure _optDB
+                      <*> (Just . Left <$> lookup "parameters" ls) `mplus` pure _optParams
                       <*> pure []
 
     simpleConfigParser :: Parser [(String, String)]
