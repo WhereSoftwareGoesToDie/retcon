@@ -34,6 +34,7 @@ import Data.Type.Equality
 import Database.PostgreSQL.Simple
 import GHC.TypeLits
 
+import Retcon.Core
 import Retcon.DataSource
 import Retcon.Diff
 import Retcon.Document
@@ -133,7 +134,7 @@ retcon :: (ReadableToken s, WritableToken s)
        -> String
        -> IO (Either RetconError ())
 retcon opts config store key =
-    runRetconMonad' opts config store () $ dispatch key
+    runRetconMonadOnce opts config store () $ dispatch key
 
 -- | Process an event on a specified 'ForeignKey'.
 --
@@ -186,7 +187,7 @@ delete state ik = do
     $logDebug "DELETE"
 
     -- Delete from data sources.
-    results <- carefully $ deleteDocuments ik
+    results <- deleteDocuments ik
 
     -- TODO: Log things.
 
@@ -202,7 +203,7 @@ update state ik = do
     $logDebug "UPDATE"
 
     -- Fetch documents.
-    docs <- carefully $ getDocuments ik
+    docs <- getDocuments ik
     let valid = rights docs
 
     -- Find or calculate the initial document.
@@ -225,7 +226,7 @@ update state ik = do
     recordDiffs ik (diff, fragments)
 
     -- Save documents.
-    results <- carefully $ setDocuments ik output
+    results <- setDocuments ik output
 
     -- TODO: Log all the failures.
 

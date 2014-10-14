@@ -8,7 +8,7 @@
 --
 
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE RecordWildCards   #-}
 
 -- | Description: Command-line tool to process and dispatch retcon notifications.
 module Main where
@@ -35,13 +35,13 @@ import Text.Trifecta hiding (Parser)
 
 import Retcon.Notifications
 
--- | Configuration for 
+-- | Configuration for
 data Config = Config
-    { cfgDB :: BS.ByteString
-    , cfgRules :: FilePath
-    , cfgSubject :: Text
+    { cfgDB       :: BS.ByteString
+    , cfgRules    :: FilePath
+    , cfgSubject  :: Text
     , cfgTemplate :: FilePath
-    , cfgFrom :: Text
+    , cfgFrom     :: Text
     }
   deriving (Show, Ord, Eq)
 
@@ -59,7 +59,7 @@ configParser = Config
         <> metavar "CONNECTION"
         <> help "retcon database connection string"
         )
-    rulesParser = O.option str 
+    rulesParser = O.option str
         ( long "rules"
         <> metavar "FILE"
         <> help "message dispatch rules path"
@@ -69,7 +69,7 @@ configParser = Config
         <> metavar "STRING"
         <> help "email subject template"
         )
-    tplParser = O.option str 
+    tplParser = O.option str
         ( long "message"
         <> metavar "FILE"
         <> help "email message template path"

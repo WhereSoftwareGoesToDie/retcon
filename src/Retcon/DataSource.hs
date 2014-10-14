@@ -23,7 +23,6 @@ module Retcon.DataSource where
 import Control.Applicative
 import Control.Monad.Base
 import Control.Monad.Except
-import Control.Monad.Logger
 import Control.Monad.Reader
 import Data.Biapplicative
 import Data.Map (Map)
@@ -36,13 +35,11 @@ import Data.Type.Equality
 import GHC.TypeLits
 
 import Retcon.Document
-import Retcon.Error
-import {-# SOURCE #-} Retcon.Monad
-import {-# SOURCE #-} Retcon.Store
+import Retcon.Store
 import Utility.Configuration
 
 -- | Configuration value for retcon.
-data RetconConfig =
+newtype RetconConfig =
     RetconConfig { retconEntities :: [SomeEntity] }
 
 -- | Restricted monad with read-only access to the retcon storage.

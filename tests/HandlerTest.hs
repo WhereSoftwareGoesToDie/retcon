@@ -26,6 +26,7 @@ import Retcon.Handler
 import Retcon.Monad
 import Retcon.Options
 import Retcon.Store
+import Retcon.Core
 import qualified Retcon.Store.Memory as Memory
 
 import Control.Applicative

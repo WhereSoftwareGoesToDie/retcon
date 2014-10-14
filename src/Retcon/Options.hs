@@ -31,6 +31,7 @@ import Prelude hiding (sequence)
 import System.Directory
 import Text.Trifecta
 import Control.Lens.TH
+import Control.Lens.Operators
 
 import Utility.Configuration
 
@@ -52,11 +53,17 @@ data RetconOptions =
           _optVerbose :: Bool
         , _optLogging :: Logging
         , _optDB      :: BS.ByteString
-        , _optParams  :: Maybe (Either FilePath (Map (Text, Text) (Map Text Text)))
+        -- TODO: This is nuts
+        , _optParams  :: Maybe (Either FilePath ParamMap)
         , _optArgs    :: [Text]
     }
   deriving (Show, Eq)
 makeLenses ''RetconOptions
+
+
+-- | Extract data source 'ParamMap' from 'RetconOptions' with empty defaults.
+pickParams :: RetconOptions -> ParamMap
+pickParams opts = maybe mempty (either mempty id) (opts ^. optParams)
 
 -- | Default options which probably won't let you do much of anything.
 defaultOptions :: RetconOptions

@@ -25,26 +25,22 @@
 {-# LANGUAGE TypeFamilies               #-}
 
 module Retcon.Monad (
-    RetconMonad,
+    -- * Retcon monad
+
+    -- $ Retcon handlers (i.e. actions which process and response to an event)
+    -- are actions in the 'RetconHandler' monad.
+    RetconMonad(..),
     RetconHandler,
-    RetconAction,
+
+    RetconMonadState(..),
+    globalState,
+    localState,
+
+    -- ** Evaluators
     runRetconMonad,
-    runRetconMonad',
-    runRetconHandler,
-    runRetconAction,
-    RetconState(..),
-    retconState,
-    retconStore,
-    retconOptions,
-    carefully,
-    getRetconState,
-    getActionState,
-    whenVerbose,
-    ) where
+) where
 
 import Control.Applicative
-import Control.Exception.Enclosed
-import qualified Control.Lens as L
 import Control.Lens.Operators
 import Control.Lens.TH
 import Control.Monad.Base
@@ -52,41 +48,35 @@ import Control.Monad.Except
 import Control.Monad.Logger
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
-import Data.Bifunctor
 
-import Retcon.DataSource hiding (RetconAction)
 import Retcon.Error
 import Retcon.Options
-import Retcon.Store
-
--- * Retcon monad
-
--- $ Retcon handlers (i.e. actions which process and response to an event) are
--- actions in the 'RetconHandler' monad.
-
--- | State held in the reader part of the 'RetconHandler' monad.
-data RetconState s = RetconState
-    { _retconOptions :: RetconOptions
-    , _retconState   :: [InitialisedEntity]
-    , _retconStore   :: s
-    }
-makeLenses ''RetconState
 
 -- | Monad transformer stack used in the 'RetconHandler' monad.
-type RetconHandlerStack s l = ReaderT (RetconState s, l) (ExceptT RetconError (LoggingT IO))
+type RetconHandlerStack global_state local_state =
+    ReaderT (RetconMonadState global_state local_state)
+            (ExceptT RetconError (LoggingT IO))
+
+-- | Product type wrapper for global and local state components. This is
+-- instantiated in Core.hs
+data RetconMonadState global local = RetconMonadState
+    { _globalState :: global
+    , _localState :: local
+    }
+makeLenses ''RetconMonadState
 
 -- | Monad for the retcon system.
 --
 -- This monad provides access to an environment containing the "global" state
 -- of the retcon system and the "local" state of the current action; error
 -- handling through exceptions; logging; and I/O.
-newtype RetconMonad s l a =
+newtype RetconMonad global_state local_state a =
     RetconMonad {
-        unRetconMonad :: (RetconHandlerStack s l) a
+        unRetconMonad :: (RetconHandlerStack global_state local_state) a
     }
   deriving (Functor, Applicative, Monad, MonadIO, MonadLogger,
-            MonadReader (RetconState s, l), MonadError RetconError,
-            MonadBase IO)
+            MonadReader (RetconMonadState global_state local_state),
+            MonadError RetconError, MonadBase IO)
 
 -- | MonadBaseControl used to catch IO exceptions
 instance MonadBaseControl IO (RetconMonad s l) where
@@ -101,92 +91,19 @@ instance MonadBaseControl IO (RetconMonad s l) where
     -- Wrap things back up into our monad.
     restoreM       = RetconMonad . restoreM . unStHandler
 
--- ** Evaluators
-
 -- | Execute an action in the 'RetconMonad' monad.
 runRetconMonad :: RetconOptions
-               -> [InitialisedEntity]
-               -> s
-               -> l
-               -> RetconMonad s l a
+               -> RetconMonadState global_state local_state
+               -> RetconMonad global_state local_state a
                -> IO (Either RetconError a)
-runRetconMonad opt state store l =
+runRetconMonad opt state =
     runLogging .
     runExceptT .
-    flip runReaderT (st, l) . unRetconMonad
+    flip runReaderT state . unRetconMonad
   where
-    st = RetconState opt state store
     runLogging = case opt ^. optLogging of
       LogStderr -> runStderrLoggingT
       LogStdout -> runStdoutLoggingT
       LogNone   -> (`runLoggingT` \_ _ _ _ -> return ())
-
--- | TODO: Document this function, also why does this ignore config?
-runRetconMonad' :: RetconOptions
-                -> RetconConfig
-                -> s
-                -> l
-                -> RetconMonad s l a
-                -> IO (Either RetconError a)
-runRetconMonad' opt _ store l = do
-    let state = []
-    runRetconMonad opt state store l
-
--- * Handler monad
-
 type RetconHandler s a = RetconMonad s () a
 
--- | Run an action in the 'RetconHandler' monad (aka the 'RetconMonad' with
--- '()' local state).
-runRetconHandler :: RetconOptions
-                 -> [InitialisedEntity]
-                 -> s
-                 -> RetconHandler s a
-                 -> IO (Either RetconError a)
-runRetconHandler opt state store = runRetconMonad opt state store ()
-
--- * Action monad
-
-type RetconAction l a = RetconMonad ROToken l a
-
--- | Run an action in the 'RetconAction' monad (aka the 'RetconMonad' with
--- read-only storage).
---
--- Errors which occur in the action are handled and will not propagate up into
--- the parent handler.
-runRetconAction :: StoreToken s
-                => l
-                -> RetconAction l a
-                -> RetconHandler s (Either RetconError a)
-runRetconAction l =
-    -- Restrict store and add the local state.
-    RetconMonad . withReaderT localise . unRetconMonad .
-    -- Do exception and error handling.
-    handle . handleAny (throwError . RetconError)
-  where
-    localise = bimap (retconStore %~ restrictToken) (const l)
-
-    -- | Handle any errors in an action, pulling them into the monad.
-    handle :: (Functor m, MonadError e m) => m v -> m (Either e v)
-    handle a = (Right <$> a) `catchError` (return . Left)
-
--- * Monad operations
-
--- | Get the retcon component of the environment.
-getRetconState :: RetconMonad s l (RetconState s)
-getRetconState = asks fst
-
--- | Get the action-specific component of the environment.
-getActionState :: RetconMonad s l l
-getActionState = asks snd
-
--- | Run an action in 'RetconHandler', catching any exceptions and propagating
--- them as 'RetconError's.
-carefully :: RetconMonad s l a -> RetconMonad s l a
-carefully = handleAny (throwError . RetconError)
-
--- | Do something when the verbose option is set
-whenVerbose :: (MonadReader (RetconState x, y) m) => m () -> m ()
-whenVerbose f = do
-    verbose <- L.view (L._1 . retconOptions . optVerbose)
-    when verbose f
