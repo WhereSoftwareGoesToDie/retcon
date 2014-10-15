@@ -27,8 +27,11 @@ module Main where
 import Control.Applicative
 import Control.Lens.Operators
 import Control.Monad
+import Control.Monad.IO.Class
 import Data.Proxy
 import Database.PostgreSQL.Simple
+import System.Directory
+import System.FilePath
 
 import Retcon.DataSource
 import Retcon.DataSource.JsonDirectory
@@ -36,7 +39,6 @@ import Retcon.Handler
 import Retcon.Monad
 import Retcon.Options
 import Retcon.Store.PostgreSQL
-import TestHelpers
 
 -- * Entity definitions
 
@@ -57,7 +59,7 @@ instance RetconDataSource "customer" "json" where
 
     data DataSourceState "customer" "json" = CustPath FilePath
 
-    initialiseState = CustPath <$> testJSONFilePath
+    initialiseState = CustPath <$> jsonFilePath
     finaliseState _ = return ()
 
     getDocument key =
@@ -71,7 +73,7 @@ instance RetconDataSource "customer" "json2" where
 
     data DataSourceState "customer" "json2" = CustPath2 FilePath
 
-    initialiseState = CustPath2 <$> testJSONFilePath
+    initialiseState = CustPath2 <$> jsonFilePath
     finaliseState _ = return ()
 
 
@@ -86,7 +88,7 @@ instance RetconDataSource "event" "json" where
 
     data DataSourceState "event" "json" = JSONEventPath FilePath
 
-    initialiseState = JSONEventPath <$> testJSONFilePath
+    initialiseState = JSONEventPath <$> jsonFilePath
     finaliseState _ = return ()
 
     getDocument key =
@@ -100,7 +102,7 @@ instance RetconDataSource "event" "icalendar" where
 
     data DataSourceState "event" "icalendar" = CalPath FilePath
 
-    initialiseState = CalPath <$> testJSONFilePath
+    initialiseState = CalPath <$> jsonFilePath
     finaliseState _ = return ()
 
     getDocument key =
@@ -114,7 +116,7 @@ instance RetconDataSource "event" "exchange" where
 
     data DataSourceState "event" "exchange" = ExchangePath FilePath
 
-    initialiseState = ExchangePath <$> testJSONFilePath
+    initialiseState = ExchangePath <$> jsonFilePath
     finaliseState _ = return ()
 
     getDocument key =
@@ -130,6 +132,12 @@ cfg :: RetconConfig
 cfg = RetconConfig [ SomeEntity (Proxy :: Proxy "event")
                    , SomeEntity (Proxy :: Proxy "customer")
                    ]
+
+
+-- | Create a test path based on the CWD.
+jsonFilePath :: MonadIO m => m FilePath
+jsonFilePath = liftIO $
+    (</> "tests" </> "data" </> "json") <$> getCurrentDirectory
 
 -- * Parse and execute commands
 
