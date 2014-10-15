@@ -32,16 +32,17 @@ import Utility.Configuration
 testfile :: FilePath
 testfile = "tests/data/parameters.conf"
 
+explodeAfterLookup = do
+    p <- ask
+    let values = (M.lookup "password" p, M.lookup "init" p, M.lookup "final" p)
+    error $ show values
+
 instance RetconEntity "inittest" where
     entitySources _ = [SomeDataSource (Proxy :: Proxy "initsource")]
 
 instance RetconDataSource "inittest" "initsource" where
     data DataSourceState "inittest" "initsource" = InitSrcState
-    initialiseState = do
-        p <- ask
-        let values = (M.lookup "password" p, M.lookup "init" p, M.lookup "final" p)
-        error $ show values
-        return InitSrcState
+    initialiseState = explodeAfterLookup
     finaliseState _ = return ()
     setDocument = error "Unimplemented"
     getDocument = error "Unimplemented"
@@ -56,11 +57,7 @@ instance RetconEntity "finaltest" where
 instance RetconDataSource "finaltest" "finalsource" where
     data DataSourceState "finaltest" "finalsource" = FinalSrcState
     initialiseState = return FinalSrcState
-    finaliseState _ = do
-        p <- ask
-        let values = (M.lookup "password" p, M.lookup "init" p, M.lookup "final" p)
-        error $ show values
-        return ()
+    finaliseState _ = explodeAfterLookup
     setDocument = error "Unimplemented"
     getDocument = error "Unimplemented"
     deleteDocument = error "Unimplemented"
@@ -83,7 +80,7 @@ configurationSuite = do
                 ]
 
         it "should transform parsed data" $ do
-            params <- (fmap convertConfig) <$> parseFromFile configParser testfile
+            params <- fmap convertConfig <$> parseFromFile configParser testfile
             params `shouldBe` (Just $ M.fromList
                 [ (("inittest", "initsource"), M.fromList
                     [ ("uri", "https://api.com/")
@@ -99,14 +96,14 @@ configurationSuite = do
 
     describe "Configuration passing" $ do
         it "should pass data when initialising a data source" $ do
-            Just params <- (fmap convertConfig) <$> parseFromFile configParser testfile
+            Just params <- fmap convertConfig <$> parseFromFile configParser testfile
             -- Call initialise for testing entity; check that exceptions occur
             -- with known values.
             let values = ( Just "p4ssw0rd" :: Maybe String
                          , Just "initial object" :: Maybe String
                          , Nothing :: Maybe String
                          )
-            initTest params initCfg `shouldThrow` (valueError $ show values)
+            initTest params initCfg `shouldThrow` valueError (show values)
 
         it "should pass data when finalising a data source" $ do
             Just params <- (fmap convertConfig) <$> parseFromFile configParser testfile

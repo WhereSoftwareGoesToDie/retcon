@@ -7,11 +7,11 @@
 -- the 3-clause BSD licence.
 --
 
-{-# LANGUAGE Rank2Types #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE InstanceSigs #-}
+{-# LANGUAGE InstanceSigs          #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE Rank2Types            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
 
 -- | Description: PostgreSQL storage for operational data.
 --
@@ -19,12 +19,14 @@
 -- operational data storage interface using a PostgreSQL database.
 module Retcon.Store.PostgreSQL (PGStorage(..)) where
 
+import Control.Lens.Operators
 import Control.Monad
 import Data.Aeson
+import Data.List
 import Data.Proxy
+import Data.String
 import Database.PostgreSQL.Simple
 import GHC.TypeLits
-import Control.Lens.Operators
 
 import Retcon.DataSource
 import Retcon.Diff
@@ -34,6 +36,9 @@ import Retcon.Options
 -- | A persistent, PostgreSQL storage backend for Retcon.
 newtype PGStorage = PGStore { unWrapConnection :: Connection }
 
+joinSQL :: IsString x => [String] -> x
+joinSQL = fromString . intercalate ";"
+
 -- | Persistent PostgreSQL-backed data storage.
 instance RetconStore PGStorage where
 
@@ -41,7 +46,7 @@ instance RetconStore PGStorage where
         conn <- connectPostgreSQL (opts ^. optDB)
         return . PGStore $ conn
 
-    storeFinalise (PGStore conn) = do
+    storeFinalise (PGStore conn) =
         close conn
 
     -- | Create a new 'InternalKey' by inserting a row in the database and
@@ -63,34 +68,26 @@ instance RetconStore PGStorage where
             []         -> return Nothing
 
     storeDeleteInternalKey (PGStore conn) ik = do
-        let ikv = internalKeyValue ik
-        let sql = "DELETE FROM retcon_initial WHERE entity = ? AND id = ?"
-        _ <- execute conn sql ikv
-        let sql = "DELETE FROM retcon_diff WHERE entity = ? AND id = ?"
-        _ <- execute conn sql ikv
-        let sql = "DELETE FROM retcon_fk WHERE entity = ? AND id = ?"
-        _ <- execute conn sql ikv
-        let sql = "DELETE FROM retcon WHERE entity = ? AND id = ?"
-        _ <- execute conn sql ikv
-        return ()
+        let execute' sql = void $ execute conn sql (internalKeyValue ik)
+        execute' "DELETE FROM retcon_initial WHERE entity = ? AND id = ?"
+        execute' "DELETE FROM retcon_diff WHERE entity = ? AND id = ?"
+        execute' "DELETE FROM retcon_fk WHERE entity = ? AND id = ?"
+        execute' "DELETE FROM retcon WHERE entity = ? AND id = ?"
 
     storeRecordForeignKey (PGStore conn) ik fk = do
         let (entity, source, fid) = foreignKeyValue fk
         let (_, iid) = internalKeyValue ik
         let values = (entity, iid, source, fid)
         let sql = "INSERT INTO retcon_fk (entity, id, source, fk) VALUES (?, ?, ?, ?)"
-        _ <- execute conn sql values
-        return ()
+        void $ execute conn sql values
 
     storeDeleteForeignKey (PGStore conn) fk = do
         let sql = "DELETE FROM retcon_fk WHERE entity = ? AND source = ? AND fk = ?"
-        _ <- execute conn sql $ foreignKeyValue fk
-        return ()
+        void . execute conn sql $ foreignKeyValue fk
 
     storeDeleteForeignKeys (PGStore conn) ik = do
         let sql = "DELETE FROM retcon_fk WHERE entity = ? AND id = ?"
-        _ <- execute conn sql $ internalKeyValue ik
-        return ()
+        void . execute conn sql $ internalKeyValue ik
 
     storeLookupForeignKey :: forall entity source. (RetconDataSource entity source)
                      => PGStorage
@@ -107,7 +104,11 @@ instance RetconStore PGStorage where
 
     storeRecordInitialDocument (PGStore conn) ik doc = do
         let (entity, ik') = internalKeyValue ik
-        let sql = "BEGIN; DELETE FROM retcon_initial WHERE entity = ? AND id = ?; INSERT INTO retcon_initial (id, entity, document) VALUES (?, ?, ?); COMMIT;"
+        let sql = joinSQL [ "BEGIN"
+                          , "DELETE FROM retcon_initial WHERE entity = ? AND id = ?"
+                          , "INSERT INTO retcon_initial (id, entity, document) VALUES (?, ?, ?)"
+                          , "COMMIT"
+                          ]
         _ <- execute conn sql (entity, ik', ik', entity, toJSON doc)
         return ()
 
@@ -128,17 +129,15 @@ instance RetconStore PGStorage where
     storeRecordDiffs (PGStore conn) ik (d, ds) = do
         -- Relabel the diffs with () instead of the arbitrary, possibly
         -- unserialisable, labels.
-        let d' = fmap (const ()) d
-        let ds' = map (fmap (const ())) ds
-        did <- storeOneDiff conn False ik d'
-        mapM_ (storeOneDiff conn True ik) ds'
+        did <- storeOneDiff conn False ik (void d)
+        mapM_ (storeOneDiff conn True ik . void) ds
         return did
 
     storeLookupDiff (PGStore conn) diff_id = do
         let oid = Only diff_id
 
         -- Load the merged diff.
-        diff <- query conn "SELECT content FROM retcon_diff WHERE diff_id = ?" oid
+        diff <- query conn "SELECT content FROM retcon_diff WHERE diff_gd = ?" oid
         let diff' = map (fromJSON . fromOnly) diff
 
         -- Load the conflicting fragments.
@@ -162,13 +161,11 @@ instance RetconStore PGStorage where
         void $ execute conn "DELETE FROM retcon_diff WHERE diff_id = ?" (Only diff_id)
 
     storeDeleteDiffs (PGStore conn) ik = do
-        let ikv = internalKeyValue ik
-        let sql1 = "DELETE FROM retcon_diff_conflicts WHERE entity = ? AND id = ?"
-        let sql2 = "DELETE FROM retcon_notifications WHERE entity = ? AND id = ?"
-        let sql3 = "DELETE FROM retcon_diff WHERE entity = ? AND id = ?"
-        _ <- execute conn sql1 ikv
-        _ <- execute conn sql2 ikv
-        _ <- execute conn sql3 ikv
+        let execute' sql = void $ execute conn sql (internalKeyValue ik)
+        execute' "DELETE FROM retcon_diff_conflicts WHERE entity = ? AND id = ?"
+        execute' "DELETE FROM retcon_notifications WHERE entity = ? AND id = ?"
+        execute' "DELETE FROM retcon_diff WHERE entity = ? AND id = ?"
+        -- TODO: Count the number of items deleted and return that here.
         return 0
 
     storeRecordNotification (PGStore conn) ik did = do

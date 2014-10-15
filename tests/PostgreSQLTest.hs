@@ -89,26 +89,26 @@ suite :: Spec
 suite =
     describe "PostgreSQL marshalling" $ do
         it "can load row 1 from db1" $ do
-            state <- runInitialiser mempty $ initialiseState
+            state <- runInitialiser mempty initialiseState
             _ <- run state $
                 getDocument (ForeignKey "1" :: ForeignKey "customer" "db1")
             runInitialiser mempty $ finaliseState state
             pass
 
         it "can load row 2 from db1" $ do
-            state <- runInitialiser mempty $ initialiseState
+            state <- runInitialiser mempty initialiseState
             _ <- run state $
                 getDocument (ForeignKey "2" :: ForeignKey "customer" "db1")
             runInitialiser mempty $ finaliseState state
             pass
 
         it "can write db1/row1 to db2 with new key" $ do
-            state <- runInitialiser mempty $ initialiseState
+            state <- runInitialiser mempty initialiseState
             Right doc3 <- run state $
                 getDocument (ForeignKey "1" :: ForeignKey "customer" "db1")
             runInitialiser mempty $ finaliseState state
 
-            state2 <- runInitialiser mempty $ initialiseState
+            state2 <- runInitialiser mempty initialiseState
             _ <- run state2 $
                 setDocument doc3 (Nothing :: Maybe (ForeignKey "customer" "db2"))
             runInitialiser mempty $ finaliseState state2
@@ -117,13 +117,13 @@ suite =
         it "can write db1/row2 to db2 with existing key row1" $ do
             let fk1 = ForeignKey "2" :: ForeignKey "customer" "db1"
 
-            state <- runInitialiser mempty $ initialiseState
+            state <- runInitialiser mempty initialiseState
             Right doc4 <- run state $
                 getDocument fk1
             runInitialiser mempty $ finaliseState state
 
             let fk2 = ForeignKey "1" :: ForeignKey "customer" "db2"
-            state2 <- runInitialiser mempty $ initialiseState
+            state2 <- runInitialiser mempty initialiseState
             res2 <- run state2 $
                 setDocument doc4 (Just fk2)
             runInitialiser mempty $ finaliseState state2
@@ -133,7 +133,7 @@ suite =
         it "can delete db2/row1" $ do
             let fk2 = ForeignKey "1" :: ForeignKey "customer" "db2"
 
-            state <- runInitialiser mempty $ initialiseState
+            state <- runInitialiser mempty initialiseState
             res1 <- run state $
                 getDocument fk2
 

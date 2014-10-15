@@ -22,10 +22,10 @@ import Retcon.Document
 suite :: Spec
 suite = do
   describe "JSON marhsalling" $ do
-    it "can load 01-diff-source.json" $ do
+    it "can load 01-diff-source.json" $
       void $ testLoad "01-diff-source.json"
 
-    it "can load 01-diff-target.json" $ do
+    it "can load 01-diff-target.json" $
       void $ testLoad "01-diff-target.json"
 
   describe "initial document calculation" $ do

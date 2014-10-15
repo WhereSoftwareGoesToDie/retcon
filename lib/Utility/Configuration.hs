@@ -36,7 +36,7 @@ configParser = some item
 
 -- | Convert parsed configuration into a nested map.
 convertConfig :: [(Text, Text, Text, Text)] -> ParamMap
-convertConfig input = foldl add M.empty input
+convertConfig = foldl add M.empty
   where
     add m (e, s, k, v) =
         let new = M.singleton k v

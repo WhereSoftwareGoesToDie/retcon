@@ -28,10 +28,8 @@ import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
 import Data.Time
 import Database.PostgreSQL.Simple
-import Database.PostgreSQL.Simple.FromField
 import Database.PostgreSQL.Simple.FromRow
 import Network.Mail.Mime
-import System.FilePath
 import System.Locale
 import Text.StringTemplate
 import Text.Trifecta hiding (render)
@@ -55,7 +53,7 @@ rulesParser = some parseRule
         <*> parseEmail
     parseEntity = optional $ spaces *> stringLiteral <* spaces
     parseSource = optional $ spaces *> stringLiteral <* spaces
-    parseEmail  = spaces *> char '"' *> (T.pack <$> (some $ noneOf "\"")) <* char '"' <* spaces
+    parseEmail  = spaces *> char '"' *> (T.pack <$> some (noneOf "\"")) <* char '"' <* spaces
 
 -- | Records the details of a notification message which may be sent to
 -- recipients.
