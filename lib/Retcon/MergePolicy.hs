@@ -13,6 +13,7 @@
 -- changes from different sources.
 
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TupleSections     #-}
 
 module Retcon.MergePolicy where
 
@@ -54,17 +55,14 @@ mergeWithPolicy policy ds = fst $ mergeDiffs policy ds
 
 -- | Policy: reject all changes.
 rejectAll :: MergePolicy ()
-rejectAll = MergePolicy (const ()) merge
-  where
-    merge ds = (Diff () [], ds)
+rejectAll = MergePolicy (const ()) (Diff () [],)
 
 -- | Policy: accept all changes.
 --
 -- All changes will be applied in whatever arbitrary order they are encountered.
 acceptAll :: MergePolicy ()
-acceptAll = MergePolicy (const ()) merge
-  where
-    merge ds = (Diff () $ concatMap diffChanges ds, [])
+acceptAll = MergePolicy (const ())
+                        (\ds -> (Diff () (concatMap diffChanges ds), []))
 
 -- | Policy: reject all conflicting changes.
 ignoreConflicts :: MergePolicy ()
@@ -74,8 +72,8 @@ ignoreConflicts = MergePolicy (const ()) merge
         let ops = concatMap diffChanges ds
             keys = group . sort . map diffOpTarget $ ops
             keyconflicts = map head . filter (\l -> length l > 1) $ keys
-            noclash = filter (not . flip diffOpAffects keyconflicts) ops
-            scraps = map (\(Diff l ops) -> Diff l $ filter (flip diffOpAffects keyconflicts) ops) ds
+            noclash = filter (not . (`diffOpAffects` keyconflicts)) ops
+            scraps = map (\(Diff l ops) -> Diff l $ filter (`diffOpAffects` keyconflicts) ops) ds
         in (Diff () noclash, scraps)
 
 -- | TODO: sources should *not* be identified by their strings.

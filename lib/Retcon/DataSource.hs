@@ -253,7 +253,7 @@ initialiseSources params = mapM initialiseSource
     initialiseSource ds@(SomeDataSource (p :: Proxy s) :: SomeDataSource e) =
         do
             let names = (T.pack, T.pack) <<*>> someDataSourceName ds
-            let param = maybe mempty id $ M.lookup (names) params
+            let param = M.findWithDefault mempty names params
             s <- runInitialiser param initialiseState
             return $ InitialisedSource p s
 
@@ -268,7 +268,7 @@ finaliseSources params = mapM finaliseSource
     finaliseSource (InitialisedSource p s) = do
         let ds = SomeDataSource p
         let names = (T.pack, T.pack) <<*>> someDataSourceName ds
-        let param = maybe mempty id $ M.lookup (names) params
+        let param = M.findWithDefault mempty names params
         runInitialiser param $ finaliseState s
         return ds
 
