@@ -44,12 +44,13 @@ import Retcon.Notifications
 -- source names match the expected type.
 --
 -- What is this witchery?!?
-convert :: forall (entity :: Symbol) (source :: Symbol).
-           (RetconDataSource entity source)
-        => Proxy entity
-        -> Proxy source
-        -> (String, String, String)
-        -> Maybe (ForeignKey entity source)
+convert
+    :: forall (entity :: Symbol) (source :: Symbol).
+       (RetconDataSource entity source)
+    => Proxy entity
+    -> Proxy source
+    -> (String, String, String)
+    -> Maybe (ForeignKey entity source)
 convert e s (en, sn, k) =
     case (someSymbolVal en, someSymbolVal sn) of
         (SomeSymbol es, SomeSymbol ss) ->
@@ -129,10 +130,11 @@ instance RetconStore MemStorage where
                                  }
                     in (st', ())
 
-    storeLookupForeignKey :: forall (e :: Symbol) (d :: Symbol). RetconDataSource e d
-                     => MemStorage
-                     -> InternalKey e
-                     -> IO (Maybe (ForeignKey e d))
+    storeLookupForeignKey
+        :: forall (e :: Symbol) (d :: Symbol). RetconDataSource e d
+        => MemStorage
+        -> InternalKey e
+        -> IO (Maybe (ForeignKey e d))
     storeLookupForeignKey (MemStorage ref) ik =
         atomicModifyIORef' ref get
       where
