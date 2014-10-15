@@ -30,12 +30,15 @@ import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
 import Data.Maybe
 import Data.Proxy
+import qualified Data.Text as T
+import Data.Time
 import Data.Type.Equality
 import GHC.TypeLits
 
 import Retcon.DataSource
 import Retcon.Diff
 import Retcon.Document
+import Retcon.Notifications
 
 -- | Convert a triple of strings into a ForeignKey iff the entity and
 -- source names match the expected type.
@@ -61,18 +64,20 @@ data State = MemoryStore
     , memFtoI    :: Map (String, String, String) Int
     , memInits   :: Map (String, Int) Document
     , memDiffs   :: Map (String, Int) [(Diff (), [Diff ()])]
+    , memNotes   :: [Notification]
     }
-    deriving (Eq, Show)
+  deriving (Eq, Show)
 
 -- | An empty 'State' value.
 emptyState :: State
-emptyState = MemoryStore nextKey i2fMap f2iMap docs diffs
+emptyState = MemoryStore nextKey i2fMap f2iMap docs diffs notes
   where
     nextKey = 0
     i2fMap = M.empty
     f2iMap = M.empty
     docs   = M.empty
     diffs  = M.empty
+    notes  = []
 
 -- | An ephemeral in-memory storage backend for Retcon.
 newtype MemStorage = MemStorage { unwrapMemStorage :: IORef State }
@@ -199,9 +204,28 @@ instance RetconStore MemStorage where
         ins st = let new' = bimap void (map void) new
                      ds = memDiffs st
                      ikv = internalKeyValue ik
-                     ds' = M.alter (Just . maybe [new'] (new':)) ikv ds
+                     ds' = M.alter (Just . maybe [new'] (++[new'])) ikv ds
+                     did = length $ maybe [] id $ M.lookup ikv ds'
                      st' = st { memDiffs = ds' }
-                 in (st', ())
+                 in (st', did)
+
+    -- TODO Implement
+    storeLookupDiff (MemStorage ref) did =
+        atomicModifyIORef' ref get
+      where
+        get st = (st, Nothing)
+
+    -- TODO Implement
+    storeLookupDiffIds (MemStorage ref) ik =
+        atomicModifyIORef' ref get
+      where
+        get st = (st, [])
+
+    -- TODO: Implement
+    storeDeleteDiff (MemStorage ref) did =
+        atomicModifyIORef' ref del
+      where
+        del st = (st, ())
 
     storeDeleteDiffs (MemStorage ref) ik =
         atomicModifyIORef' ref del
@@ -211,3 +235,22 @@ instance RetconStore MemStorage where
                      ds' = M.delete ikv ds
                      st' = st { memDiffs = ds' }
                  in (st', 0)
+
+    storeRecordNotification (MemStorage ref) ik did = do
+        t <- getCurrentTime
+        atomicModifyIORef' ref (ins t)
+      where
+        ins t st =
+            let (entity, key) = internalKeyValue ik
+                note = Notification t (T.pack entity) key did
+                st' = st { memNotes = (memNotes st) ++ [note] }
+            in (st', ())
+
+    storeFetchNotifications (MemStorage ref) limit =
+        atomicModifyIORef' ref get
+      where
+        get st =
+            let (del, keep) = splitAt limit $ memNotes st
+                remaining = length keep
+                st' = st { memNotes = keep }
+            in (st', (remaining, del))

@@ -30,6 +30,7 @@ import GHC.TypeLits
 
 import Retcon.DataSource
 import Retcon.Diff
+import Retcon.Notifications
 import Retcon.Options
 
 -- | A persistent, PostgreSQL storage backend for Retcon.
@@ -130,30 +131,61 @@ instance RetconStore PGStorage where
         -- unserialisable, labels.
         did <- storeOneDiff conn False ik (void d)
         mapM_ (storeOneDiff conn True ik . void) ds
-        -- Notify of storage unless we didn't do anything
-        unless (null ds) (storeRecordNotification conn ik did)
+        return did
+
+    storeLookupDiff (PGStore conn) diff_id = do
+        let oid = Only diff_id
+
+        -- Load the merged diff.
+        diff <- query conn "SELECT content FROM retcon_diff WHERE diff_gd = ?" oid
+        let diff' = map (fromJSON . fromOnly) diff
+
+        -- Load the conflicting fragments.
+        (conflicts) <- query conn "SELECT content FROM retcon_diff WHERE diff_id = ?" oid
+        let conflicts' = map fromSuccess . filter isSuccess . map (fromJSON . fromOnly) $ conflicts
+
+        return $ case diff' of
+            ((Success d):_) -> Just (d, conflicts')
+            _               -> Nothing
+      where
+        fromSuccess (Success a) = a
+        fromSuccess _ = error "fromSuccess: Cannot unwrap not-a-success."
+        isSuccess (Success _) = True
+        isSuccess _ = False
+
+    storeLookupDiffIds (PGStore conn) ik = do
+        r <- query conn "SELECT diff_id FROM retcon_diff WHERE entity = ? AND id = ?" $ internalKeyValue ik
+        return . map fromOnly $ r
+
+    storeDeleteDiff (PGStore conn) diff_id = do
+        void $ execute conn "DELETE FROM retcon_diff WHERE diff_id = ?" (Only diff_id)
 
     storeDeleteDiffs (PGStore conn) ik = do
         let execute' sql = void $ execute conn sql (internalKeyValue ik)
         execute' "DELETE FROM retcon_diff_conflicts WHERE entity = ? AND id = ?"
         execute' "DELETE FROM retcon_notifications WHERE entity = ? AND id = ?"
         execute' "DELETE FROM retcon_diff WHERE entity = ? AND id = ?"
-        -- TODO: Document
+        -- TODO: Count the number of items deleted and return that here.
         return 0
 
--- | Record the details of a merge conflict in the notifications table (if
--- required).
-storeRecordNotification
-    :: (RetconEntity entity)
-    => Connection
-    -> InternalKey entity
-    -> Int -- ^ Diff ID
-    -> IO ()
-storeRecordNotification conn ik did = do
-    let (entity, eid) = internalKeyValue ik
-    void $ execute conn sql (entity, eid, did)
-  where
-    sql = "INSERT INTO retcon_notifications (entity, id, diff_id) VALUES (?, ?, ?)"
+    storeRecordNotification (PGStore conn) ik did = do
+        let (entity, eid) = internalKeyValue ik
+        void $ execute conn sql (entity, eid, did)
+      where
+        sql = "INSERT INTO retcon_notifications (entity, id, diff_id) VALUES (?, ?, ?)"
+
+    storeFetchNotifications (PGStore conn) limit = do
+        (ids :: [Only Int]) <- query conn sqlI (Only limit)
+        let ids' = map fromOnly ids
+        let least = minimum ids'
+        let greatest = maximum ids'
+        notifications <- query conn sqlN (least, greatest)
+        [Only remaining] <- query conn sqlD (least, greatest)
+        return (remaining, notifications)
+      where
+        sqlI = "SELECT id FROM retcon_notifications ORDER BY created ASC LIMIT ?"
+        sqlN = "SELECT created, entity, key, diff_id FROM retcon_notifications WHERE id >= ? AND id <= ?"
+        sqlD = "DELETE FROM retcon_notifications WHERE id >= ? AND id <= ?; SELECT count(*) FROM retcon_notifications"
 
 -- | Record a single 'Diff' object into the database, returning the ID of that
 -- new diff.

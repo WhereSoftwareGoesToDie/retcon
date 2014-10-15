@@ -21,6 +21,7 @@ import Control.Lens.Operators
 import Data.Aeson
 import qualified Data.ByteString.Char8 as BS
 import Data.Maybe
+import Control.Applicative
 import Data.Monoid
 import Database.PostgreSQL.Simple
 import System.Process
@@ -330,12 +331,12 @@ postgresqlSuite = around prepareDatabase $
                 (ik4 :: InternalKey "tests") <- createInternalKey
                 return (ik1, ik2, ik3, ik4)
 
-            result <- runAction store $ do
-                recordDiffs ik1 ds1
-                recordDiffs ik2 ds2
-                recordDiffs ik3 ds3
+            result <- runAction store $ 
+                (,,) <$> recordDiffs ik1 ds1
+                     <*> recordDiffs ik2 ds2
+                     <*> recordDiffs ik3 ds3
 
-            result `shouldBe` Right ()
+            result `shouldBe` Right (1,2,3)
             count <- countStore store
             count `shouldBe` (4, 0, 0, 3)
 

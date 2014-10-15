@@ -223,7 +223,11 @@ update state ik = do
     let output = map (applyDiff diff . either (const initial) id) docs
 
     -- Record changes in database.
-    recordDiffs ik (diff, fragments)
+    did <- recordDiffs ik (diff, fragments)
+
+    -- Record notifications, if required.
+    when (not . null $ fragments) $
+        recordNotification ik did
 
     -- Save documents.
     results <- setDocuments ik output
