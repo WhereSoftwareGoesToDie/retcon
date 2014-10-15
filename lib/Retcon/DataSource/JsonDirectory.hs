@@ -1,4 +1,30 @@
-{-# LANGUAGE DeriveDataTypeable #-}
+--
+-- Copyright © 2013-2014 Anchor Systems, Pty Ltd and Others
+--
+-- The code in this file, and the program it is a part of, is
+-- made available to you by its authors as open source software:
+-- you can redistribute it and/or modify it under the terms of
+-- the 3-clause BSD licence.
+--
+
+{-# LANGUAGE DeriveDataTypeable    #-}
+{-# LANGUAGE InstanceSigs          #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE Rank2Types            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+
+-- | Description: Json directory storage for a DataSource
+--
+-- This module provides helper functions to quicly implement a data source
+-- which stores documents within a directory as JSON files within
+-- sub-directories.
+--
+-- Here is an example mapping:
+--
+--      getJSONDir "dir" (ForeignKey "customer" "json-source-1")
+--
+--      dir/customer/json-source-1.json
 
 module Retcon.DataSource.JsonDirectory (
     getJSONDir,
@@ -12,8 +38,8 @@ module Retcon.DataSource.JsonDirectory (
 import Control.Applicative
 import Control.Exception
 import Control.Monad.IO.Class
-import qualified Data.ByteString.Lazy as LBS
 import Data.Aeson
+import qualified Data.ByteString.Lazy as LBS
 import Data.Typeable
 
 import System.Directory
@@ -88,5 +114,5 @@ loadDocument
     => FilePath
     -> m Document
 loadDocument fp = liftIO $
-    eitherDecode <$> LBS.readFile fp 
+    eitherDecode <$> LBS.readFile fp
     >>= either (throwIO . JSONDirectoryError) return

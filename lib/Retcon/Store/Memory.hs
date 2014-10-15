@@ -7,12 +7,12 @@
 -- the 3-clause BSD licence.
 --
 
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE DataKinds    #-}
-{-# LANGUAGE InstanceSigs #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE InstanceSigs          #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeFamilies          #-}
 
 -- | Description: In-memory storage for operational data.
 --
@@ -22,15 +22,16 @@
 module Retcon.Store.Memory where
 
 import Control.Monad
-import Data.List
+import Data.Bifunctor
 import Data.Functor
 import Data.IORef
+import Data.List
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
-import Data.Proxy
-import GHC.TypeLits
-import Data.Type.Equality
 import Data.Maybe
+import Data.Proxy
+import Data.Type.Equality
+import GHC.TypeLits
 
 import Retcon.DataSource
 import Retcon.Diff
@@ -95,7 +96,7 @@ instance RetconStore MemStorage where
       where
         get st = let f2i = memFtoI st
                      k = foreignKeyValue fk
-                     ik = fmap (InternalKey) $ M.lookup k f2i
+                     ik = InternalKey <$> M.lookup k f2i
                  in (st, ik)
 
     storeDeleteInternalKey (MemStorage ref) ik =
@@ -135,10 +136,10 @@ instance RetconStore MemStorage where
                      e = Proxy :: Proxy e
                      s = Proxy :: Proxy d
                      fks = M.lookup k i2f
-                     fk = join $ listToMaybe . catMaybes . map (convert e s) <$> fks
+                     fk = join $ listToMaybe . mapMaybe (convert e s) <$> fks
                  in (st, fk)
 
-    storeDeleteForeignKey (MemStorage ref) fk = do
+    storeDeleteForeignKey (MemStorage ref) fk =
         atomicModifyIORef' ref del
       where
         del st = let i2f = memItoF st
@@ -160,7 +161,7 @@ instance RetconStore MemStorage where
                      ikv = unInternalKey ik
                      fks = M.lookup ikv i2f
                      i2f' = M.delete ikv i2f
-                     f2i' = maybe f2i (foldr (M.delete) f2i) fks
+                     f2i' = maybe f2i (foldr M.delete f2i) fks
                      st' = st { memItoF = i2f'
                               , memFtoI = f2i'
                               }
@@ -192,10 +193,10 @@ instance RetconStore MemStorage where
                      st' = st { memInits = ids' }
                  in (st', ())
 
-    storeRecordDiffs (MemStorage ref) ik (new, news) =
+    storeRecordDiffs (MemStorage ref) ik new =
         atomicModifyIORef' ref ins
       where
-        ins st = let new' = (fmap (const ()) new, map (fmap (const ())) news)
+        ins st = let new' = bimap void (map void) new
                      ds = memDiffs st
                      ikv = internalKeyValue ik
                      ds' = M.alter (Just . maybe [new'] (new':)) ikv ds

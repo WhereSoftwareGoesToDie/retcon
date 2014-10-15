@@ -42,7 +42,8 @@ options = defaultOptions & optDB .~ "dbname=" <> dbname
 runAction :: PGStorage
           -> RetconMonad InitialisedEntity RWToken () r
           -> IO (Either RetconError r)
-runAction store action = runRetconMonad options (RetconMonadState options [] (token store) ()) action
+runAction store =
+    runRetconMonad options (RetconMonadState options [] (token store) ())
 
 -- | Canned query to run to check that connections are live.
 onepluszero :: Connection -> IO [Only Int]
