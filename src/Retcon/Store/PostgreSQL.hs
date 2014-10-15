@@ -28,7 +28,6 @@ import Control.Lens.Operators
 
 import Retcon.DataSource
 import Retcon.Diff
-import Retcon.Store
 import Retcon.Options
 
 -- | A persistent, PostgreSQL storage backend for Retcon.

@@ -30,17 +30,17 @@ import Data.Time
 import Database.PostgreSQL.Simple
 import Database.PostgreSQL.Simple.FromField
 import Database.PostgreSQL.Simple.FromRow
+import Network.Mail.Mime
 import System.FilePath
 import System.Locale
 import Text.StringTemplate
 import Text.Trifecta hiding (render)
-import Network.Mail.Mime
 
 -- | Rules describe the notifications to be included and the processing to be
 -- applied when generating messages.
 data NotificationRule = NotificationRule
-    { ruleEntity :: Maybe Text
-    , ruleSource :: Maybe Text
+    { ruleEntity  :: Maybe Text
+    , ruleSource  :: Maybe Text
     , ruleAddress :: Text
     }
   deriving (Show, Eq)
@@ -61,9 +61,9 @@ rulesParser = some parseRule
 -- recipients.
 data Notification = Notification
     { noteCreated :: UTCTime -- ^ Timestamp of the event
-    , noteEntity :: Text -- ^ Name of the RetconEntity.
-    , noteKey    :: Int  -- ^ 'InternalKey' of the affected object.
-    , noteDiff   :: Int  -- ^ ID of the conflicted diff.
+    , noteEntity  :: Text -- ^ Name of the RetconEntity.
+    , noteKey     :: Int  -- ^ 'InternalKey' of the affected object.
+    , noteDiff    :: Int  -- ^ ID of the conflicted diff.
     }
   deriving (Show, Eq, Ord)
 
@@ -74,7 +74,7 @@ instance FromRow Notification where
 data Template = Template
     { tplSubject :: Text -- ^ Message subject
     , tplMessage :: Text -- ^ Message body
-    , tplFrom :: Address -- ^ Message from address
+    , tplFrom    :: Address -- ^ Message from address
     }
 
 -- | Generate a human-readable description of a rule.

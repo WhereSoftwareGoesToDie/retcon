@@ -27,7 +27,6 @@ import Retcon.Document
 import Retcon.Error
 import Retcon.Monad
 import Retcon.Options
-import Retcon.Store
 import Retcon.Store.Memory
 
 options :: RetconOptions
@@ -97,9 +96,9 @@ instance RetconDataSource "testers" "tester2" where
 -- $ Test Helpers
 
 runAction :: MemStorage
-          -> RetconMonad RWToken () r
+          -> RetconMonad InitialisedEntity RWToken () r
           -> IO (Either RetconError r)
-runAction store action = runRetconMonad options [] (token store) () action
+runAction store action = runRetconMonad options (RetconMonadState options [] (token store) ()) action
 
 -- $ Memory Storage Tests
 

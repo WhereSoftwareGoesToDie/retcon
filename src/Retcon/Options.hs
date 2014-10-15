@@ -15,6 +15,8 @@
 
 module Retcon.Options where
 
+import Control.Lens.Operators
+import Control.Lens.TH
 import Control.Monad hiding (sequence)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BS
@@ -25,12 +27,11 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Traversable
 import Options.Applicative hiding (Parser, option)
-import Options.Applicative.Types (readerAsk)
 import qualified Options.Applicative as O
+import Options.Applicative.Types (readerAsk)
 import Prelude hiding (sequence)
 import System.Directory
 import Text.Trifecta
-import Control.Lens.TH
 
 import Utility.Configuration
 
@@ -52,11 +53,17 @@ data RetconOptions =
           _optVerbose :: Bool
         , _optLogging :: Logging
         , _optDB      :: BS.ByteString
-        , _optParams  :: Maybe (Either FilePath (Map (Text, Text) (Map Text Text)))
+        -- TODO: This is nuts
+        , _optParams  :: Maybe (Either FilePath ParamMap)
         , _optArgs    :: [Text]
     }
   deriving (Show, Eq)
 makeLenses ''RetconOptions
+
+
+-- | Extract data source 'ParamMap' from 'RetconOptions' with empty defaults.
+pickParams :: RetconOptions -> ParamMap
+pickParams opts = maybe mempty (either mempty id) (opts ^. optParams)
 
 -- | Default options which probably won't let you do much of anything.
 defaultOptions :: RetconOptions

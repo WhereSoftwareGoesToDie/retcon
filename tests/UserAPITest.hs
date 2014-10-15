@@ -22,7 +22,6 @@ import Retcon.DataSource.JsonDirectory
 import Retcon.Error
 import Retcon.Monad
 import Retcon.Options
-import Retcon.Store
 import Retcon.Store.Memory
 
 import TestHelpers
@@ -69,10 +68,10 @@ instance RetconDataSource "customer" "test-results" where
     initialiseState = Blarg <$> testJSONFilePath
     finaliseState _ = return ()
 
-run :: l -> RetconMonad ROToken l r -> IO (Either RetconError r)
+run :: l -> RetconMonad InitialisedEntity ROToken l r -> IO (Either RetconError r)
 run l a = do
     store <- storeInitialise opt :: IO MemStorage
-    result <- runRetconMonad opt state (restrictToken . token $ store) l a
+    result <- runRetconMonad opt (RetconMonadState opt state (restrictToken . token $ store) l) a
     storeFinalise store
     return result
   where

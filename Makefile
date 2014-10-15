@@ -6,8 +6,6 @@ CTAGS=$(if $(HOTHASKTAGS),$(HOTHASKTAGS),/bin/false)
 STYLISHHASKELL=$(shell which stylish-haskell 2>/dev/null)
 STYLISH=$(if $(STYLISHHASKELL),$(STYLISHHASKELL),/bin/false)
 
-# Hack for stylish haskell munging SOURCE pragmas. We skip those files.
-FORMATTABLE=$(foreach S,$(SOURCES),$(shell grep -L SOURCE $S))
 all: tags
 
 .PHONY: all test clean
@@ -31,5 +29,5 @@ test:
 build:
 	cabal build
 
-format: $(FORMATTABLE)
+format: $(SOURCES)
 	for i in $^; do stylish-haskell -i $$i; done

@@ -18,6 +18,7 @@ module Main where
 
 import Test.Hspec
 
+import Retcon.Core
 import Retcon.DataSource
 import Retcon.Diff
 import Retcon.Document
@@ -25,7 +26,6 @@ import Retcon.Error
 import Retcon.Handler
 import Retcon.Monad
 import Retcon.Options
-import Retcon.Store
 import qualified Retcon.Store.Memory as Memory
 
 import Control.Applicative
@@ -73,7 +73,7 @@ newTestDocument n doc' ref = do
 deleteDocumentIORef :: (RetconDataSource entity source)
                     => IORef (Map Text Value)
                     -> ForeignKey entity source
-                    -> RetconMonad t (DataSourceState entity source) ()
+                    -> RetconMonad InitialisedEntity t (DataSourceState entity source) ()
 deleteDocumentIORef ref (ForeignKey fk') = do
     let k = T.pack fk'
     liftIO $ atomicModifyIORef' ref (\m -> (M.delete k m, ()))
@@ -83,7 +83,7 @@ setDocumentIORef :: (RetconDataSource entity source)
                  -> IORef (Map Text Value)
                  -> Document
                  -> Maybe (ForeignKey entity source)
-                 -> RetconMonad t (DataSourceState entity source) (ForeignKey entity source)
+                 -> RetconMonad InitialisedEntity t (DataSourceState entity source) (ForeignKey entity source)
 setDocumentIORef name ref doc (Nothing) = do
     k <- liftIO $ atomicModifyIORef' ref
         (\m -> let k = T.pack $ name ++ (show . M.size $ m)
@@ -99,7 +99,7 @@ setDocumentIORef name ref doc (Just (ForeignKey fk')) = do
 getDocumentIORef :: (RetconDataSource entity source)
                  => IORef (Map Text Value)
                  -> ForeignKey entity source
-                 -> RetconMonad t (DataSourceState entity source) Document
+                 -> RetconMonad InitialisedEntity t (DataSourceState entity source) Document
 getDocumentIORef ref (ForeignKey fk') = do
     let key = T.pack fk'
     doc' <- liftIO $ atomicModifyIORef' ref
@@ -393,7 +393,7 @@ operationSuite = do
   where
     run opt state action =
         withConfiguration testOpts $ \(state, store, opts) ->
-            runRetconHandler opts state (token store) action
+            runRetconHandler opts state store action
 
 -- | Test suite for dispatching logic.
 dispatchSuite :: Spec
@@ -547,7 +547,7 @@ dispatchSuite = do
                 (d1, d2, iks, fks) `shouldBe` (mempty, mempty, mempty, mempty)
 
   where
-    run opt state store action = runRetconHandler opt state (token store) action
+    run opt state store action = runRetconHandler opt state store action
 
 -- | Test operations for dealing with entity and data source names.
 namesSuite :: Spec
@@ -674,7 +674,7 @@ exceptionSuite =
             _ <- finaliseEntities mempty s
             storeFinalise t
             return ())
-        (\(s,t) -> runRetconHandler testOpts s (token t) $ do
+        (\(s,t) -> runRetconHandler testOpts s t $ do
             runRetconAction ExcState $ do
                 error "Action exception"
                 return 1)
@@ -688,7 +688,7 @@ exceptionSuite =
             _ <- finaliseEntities mempty s
             storeFinalise t
             return ())
-        (\(s,t) -> runRetconHandler testOpts s (token t) $ do
+        (\(s,t) -> runRetconHandler testOpts s t $ do
             error "Handler exception")
     -- Raise an exception in "action" code.
     initTest cfg = bracket
@@ -700,14 +700,17 @@ exceptionSuite =
             _ <- finaliseEntities mempty s
             storeFinalise t
             return ())
-        (\(s,t) -> runRetconHandler testOpts s (token t) $ do
+        (\(s,t) -> runRetconHandler testOpts s t $ do
             error "Not initialiser exception")
 
 testHandler :: [InitialisedEntity]
             -> Memory.MemStorage
             -> RetconHandler RWToken a
             -> IO (Either RetconError a)
-testHandler state store a = runRetconHandler testOpts state (token store) a
+testHandler state store a = runRetconHandler testOpts state store a
+
+runRetconHandler :: (RetconStore s) => RetconOptions -> [InitialisedEntity] -> s -> RetconHandler RWToken a -> IO (Either RetconError a)
+runRetconHandler opt state store a = runRetconMonad opt (RetconMonadState opt state (token store) ()) a
 
 main :: IO ()
 main = hspec $ do

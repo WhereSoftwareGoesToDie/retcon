@@ -30,7 +30,6 @@ import Retcon.DataSource.PostgreSQL
 import Retcon.Error
 import Retcon.Monad
 import Retcon.Options
-import Retcon.Store
 import Retcon.Store.Memory
 
 instance RetconEntity "customer" where
@@ -158,10 +157,10 @@ pass :: Expectation
 pass = return ()
 
 -- | Helper to execute an "action".
-run :: l -> RetconMonad ROToken l r -> IO (Either RetconError r)
+run :: l -> RetconMonad InitialisedEntity ROToken l r -> IO (Either RetconError r)
 run l a = do
     store <- storeInitialise opt :: IO MemStorage
-    result <- runRetconMonad opt state (restrictToken . token $ store) l a
+    result <- runRetconMonad opt (RetconMonadState opt state (restrictToken . token $ store) l) a
     storeFinalise store
     return result
   where
