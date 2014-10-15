@@ -85,9 +85,10 @@ newtype RetconMonad entity store local_state a =
             MonadError RetconError, MonadBase IO)
 
 -- | MonadBaseControl used to catch IO exceptions
-instance MonadBaseControl IO (RetconMonad e s l) where
-    newtype StM (RetconMonad e s l) a = StHandler {
-        unStHandler :: StM (RetconHandlerStack e s l) a
+instance MonadBaseControl IO (RetconMonad entity store local_state) where
+    newtype StM (RetconMonad entity store local_state) a = StHandler {
+        unStHandler :: StM (RetconHandlerStack entity store
+                            local_state) a
     }
 
     -- Unwrap the bits in our monad to get to the base.

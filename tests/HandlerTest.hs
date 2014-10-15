@@ -18,6 +18,7 @@ module Main where
 
 import Test.Hspec
 
+import Retcon.Core
 import Retcon.DataSource
 import Retcon.Diff
 import Retcon.Document
@@ -25,7 +26,6 @@ import Retcon.Error
 import Retcon.Handler
 import Retcon.Monad
 import Retcon.Options
-import Retcon.Core
 import qualified Retcon.Store.Memory as Memory
 
 import Control.Applicative

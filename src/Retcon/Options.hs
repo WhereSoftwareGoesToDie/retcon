@@ -15,6 +15,8 @@
 
 module Retcon.Options where
 
+import Control.Lens.Operators
+import Control.Lens.TH
 import Control.Monad hiding (sequence)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BS
@@ -25,13 +27,11 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Traversable
 import Options.Applicative hiding (Parser, option)
-import Options.Applicative.Types (readerAsk)
 import qualified Options.Applicative as O
+import Options.Applicative.Types (readerAsk)
 import Prelude hiding (sequence)
 import System.Directory
 import Text.Trifecta
-import Control.Lens.TH
-import Control.Lens.Operators
 
 import Utility.Configuration
 
