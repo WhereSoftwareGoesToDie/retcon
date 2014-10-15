@@ -495,7 +495,16 @@ class StoreToken s => ReadableToken s where
                           => InternalKey entity
                           -> RetconMonad e s l (Maybe Document)
 
-    -- TODO: Add wrappers for new RetconStore methods here.
+    -- | Lookup IDs of 'Diff's related to a 'InternalKey'.
+    lookupDiffIds
+        :: (RetconEntity entity)
+        => InternalKey entity
+        -> RetconMonad e s l [Int]
+
+    -- | Lookup a 'Diff' by ID.
+    lookupDiff
+        :: Int
+        -> RetconMonad e s l (Maybe (Diff (), [Diff ()]))
 
 -- | Storage tokens which support writing operations.
 class StoreToken s => WritableToken s where
@@ -542,6 +551,11 @@ class StoreToken s => WritableToken s where
                 -> (Diff l, [Diff l])
                 -> RetconMonad e s l Int
 
+    -- | Delete the 'Diff' with an ID.
+    deleteDiff
+        :: Int
+        -> RetconMonad e s l ()
+
     -- | Delete the 'Diff's associated with an 'InternalKey'.
     deleteDiffs :: (RetconEntity entity)
                 => InternalKey entity
@@ -555,7 +569,13 @@ class StoreToken s => WritableToken s where
         -> Int
         -> RetconMonad e s l ()
 
-    -- TODO: Add wrappers for new RetconStore methods here.
+    -- | Fetch and delete up to @n@ 'Notifications from the data store.
+    --
+    -- Returns the number of 'Notification's remaining in the data store along
+    -- with the list of 'Notification'.
+    fetchNotifications
+        :: Int -- ^ Maximum number to fetch.
+        -> RetconMonad e s l (Int, [Notification])
 
 -- | A token exposing only the 'ReadableToken' API.
 data ROToken = forall s. RetconStore s => ROToken s
@@ -576,6 +596,14 @@ instance ReadableToken ROToken where
         ROToken store <- view retconStore
         liftIO $ storeLookupInitialDocument store ik
 
+    lookupDiff did = do
+        ROToken store <- view retconStore
+        liftIO $ storeLookupDiff store did
+
+    lookupDiffIds ik = do
+        ROToken store <- view retconStore
+        liftIO $ storeLookupDiffIds store ik
+
 -- | A token exposing both the 'ReadableToken' and 'WritableToken' APIs.
 data RWToken = forall s. RetconStore s => RWToken s
 
@@ -594,6 +622,14 @@ instance ReadableToken RWToken where
     lookupInitialDocument ik = do
         RWToken store <- view retconStore
         liftIO $ storeLookupInitialDocument store ik
+
+    lookupDiff did = do
+        RWToken store <- view retconStore
+        liftIO $ storeLookupDiff store did
+
+    lookupDiffIds ik = do
+        RWToken store <- view retconStore
+        liftIO $ storeLookupDiffIds store ik
 
 instance WritableToken RWToken where
     createInternalKey = do
@@ -628,6 +664,10 @@ instance WritableToken RWToken where
         RWToken store <- view retconStore
         liftIO $ storeRecordDiffs store ik diffs
 
+    deleteDiff did = do
+        RWToken store <- view retconStore
+        liftIO $ storeDeleteDiff store did
+
     deleteDiffs ik = do
         RWToken store <- view retconStore
         liftIO $ storeDeleteDiffs store ik
@@ -636,3 +676,6 @@ instance WritableToken RWToken where
         RWToken store <- view retconStore
         liftIO $ storeRecordNotification store ik did
 
+    fetchNotifications limit = do
+        RWToken store <- view retconStore
+        liftIO $ storeFetchNotifications store limit
