@@ -8,10 +8,13 @@ operates by generating, merging, and applying diffs according.
 
 This package contains:
 
-- A library `retcon` which implements the functionality
+- A library `retcon` which implements the functionality (code in `lib/`)
 
 - A command-line application `retcon-demo` which provides a simple example for
-implementing `retcon`.
+implementing `retcon` (in `src/`).
+
+- A command-line application `send-notifications` which send email messages
+warning of conflicts (in `src/`).
 
 In future it will also contain a Snap-based daemon exposing a REST-ish API.
 
