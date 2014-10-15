@@ -37,6 +37,7 @@ import GHC.TypeLits
 import Retcon.Diff
 import Retcon.Document
 import Retcon.Monad
+import Retcon.Notifications
 import Retcon.Options
 import Utility.Configuration
 
@@ -363,6 +364,13 @@ class RetconStore s where
                           -> ForeignKey e d
                           -> IO ()
 
+    -- | Find the 'ForeignKey' corresponding to an 'InternalKey' in a particular
+    -- data source.
+    storeLookupForeignKey :: (RetconDataSource e d)
+                          => s
+                          -> InternalKey e
+                          -> IO (Maybe (ForeignKey e d))
+
     -- | Delete a 'ForeignKey'.
     storeDeleteForeignKey :: (RetconDataSource e d)
                           => s
@@ -374,13 +382,6 @@ class RetconStore s where
                            => s
                            -> InternalKey e
                            -> IO ()
-
-    -- | Find the 'ForeignKey' corresponding to an 'InternalKey' in a particular
-    -- data source.
-    storeLookupForeignKey :: (RetconDataSource e d)
-                          => s
-                          -> InternalKey e
-                          -> IO (Maybe (ForeignKey e d))
 
     -- | Record the initial 'Document' associated with an 'InternalKey'.
     storeRecordInitialDocument :: (RetconEntity e)
@@ -403,17 +404,58 @@ class RetconStore s where
 
     -- | Record the success 'Diff' and a list of failed 'Diff's associated with a
     -- processed 'InternalKey'.
+    --
+    -- Returns the ID of the recorded 'Diff's.
     storeRecordDiffs :: (RetconEntity e)
                      => s
                      -> InternalKey e
                      -> (Diff l, [Diff l])
-                     -> IO ()
+                     -> IO Int
+
+    -- | Lookup the list of 'Diff' IDs associated with an 'InternalKey'.
+    storeLookupDiffIds
+        :: (RetconEntity e)
+        => s
+        -> InternalKey e
+        -> IO [Int]
+
+    -- | Lookup the merged and conflicting 'Diff's with a given ID.
+    storeLookupDiff
+        :: s
+        -> Int -- 'Diff' ID.
+        -> IO (Maybe (Diff (), [Diff ()]))
+
+    -- | Delete the 'Diff', if any, with a given ID.
+    storeDeleteDiff
+        :: s
+        -> Int -- ^ 'Diff' ID.
+        -> IO ()
 
     -- | Delete the 'Diff's associated with an 'InternalKey'.
+    --
+    -- Returns the number of 'Diff's deleted.
     storeDeleteDiffs :: (RetconEntity e)
                      => s
                      -> InternalKey e
                      -> IO Int
+
+    -- | Record a 'Notification' associated with a given 'InternalKey'
+    -- and 'Diff' ID.
+    storeRecordNotification
+        :: (RetconEntity e)
+        => s
+        -> InternalKey e
+        -> Int -- ^ 'Diff' ID
+        -> IO ()
+
+    -- | Fetch and delete 'Notification's from the store.
+    --
+    -- Returns the number of remaining 'Notification's in the store and a list of
+    -- 'Notification's for processing.
+    storeFetchNotifications
+        :: s
+        -> Int -- ^ Maximum number to return.
+        -> IO (Int, [Notification])
 
 -- * Tokens
 
@@ -452,6 +494,8 @@ class StoreToken s => ReadableToken s where
     lookupInitialDocument :: (RetconEntity entity)
                           => InternalKey entity
                           -> RetconMonad e s l (Maybe Document)
+
+    -- TODO: Add wrappers for new RetconStore methods here.
 
 -- | Storage tokens which support writing operations.
 class StoreToken s => WritableToken s where
@@ -496,12 +540,22 @@ class StoreToken s => WritableToken s where
     recordDiffs :: (RetconEntity entity)
                 => InternalKey entity
                 -> (Diff l, [Diff l])
-                -> RetconMonad e s l ()
+                -> RetconMonad e s l Int
 
     -- | Delete the 'Diff's associated with an 'InternalKey'.
     deleteDiffs :: (RetconEntity entity)
                 => InternalKey entity
                 -> RetconMonad e s l Int
+
+    -- | Record a 'Notification' associated with a given 'InternalKey'
+    -- and 'Diff' ID.
+    recordNotification
+        :: (RetconEntity entity)
+        => InternalKey entity
+        -> Int
+        -> RetconMonad e s l ()
+
+    -- TODO: Add wrappers for new RetconStore methods here.
 
 -- | A token exposing only the 'ReadableToken' API.
 data ROToken = forall s. RetconStore s => ROToken s
@@ -577,3 +631,8 @@ instance WritableToken RWToken where
     deleteDiffs ik = do
         RWToken store <- view retconStore
         liftIO $ storeDeleteDiffs store ik
+
+    recordNotification ik did = do
+        RWToken store <- view retconStore
+        liftIO $ storeRecordNotification store ik did
+
