@@ -7,6 +7,8 @@
 -- the 3-clause BSD licence.
 --
 
+{-# LANGUAGE MultiParamTypeClasses #-}
+
 module Retcon.Core
 (
     runRetconAction,
@@ -14,17 +16,14 @@ module Retcon.Core
 ) where
 
 import Control.Applicative
-import Control.Exception.Enclosed
 import Control.Exception
-import Control.Lens.Operators
-import Control.Lens(view)
+import Control.Exception.Enclosed
 import Control.Monad.Except
 import Control.Monad.Reader
-import Data.Bifunctor
 
+import Retcon.DataSource
 import Retcon.Error
 import Retcon.Monad
-import Retcon.DataSource
 import Retcon.Options
 
 -- | Run an action in the 'RetconAction' monad (aka the 'RetconMonad' with
@@ -52,7 +51,7 @@ localise
     => l -- ^ Local state value
     -> RetconMonadState e s () -- ^ Handler state
     -> RetconMonadState e ROToken l
-localise l (RetconMonadState opt state store local) = RetconMonadState opt state (restrictToken store) l
+localise l (RetconMonadState opt state store _) = RetconMonadState opt state (restrictToken store) l
 
 -- | Execute an action in the 'RetconMonad' monad with configuration
 -- initialized and finalized.
@@ -65,7 +64,6 @@ runRetconMonadOnce
     -> IO (Either RetconError a)
 runRetconMonadOnce opt (RetconConfig entities) store l action =
     let params = pickParams opt
-        stater = \inited -> RetconMonadState opt inited store l
     in bracket (initialiseEntities params entities)
                (void . finaliseEntities params)
-               (\state -> runRetconMonad opt (stater state) action)
+               (\state -> runRetconMonad opt (RetconMonadState opt state store l) action)
