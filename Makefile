@@ -1,4 +1,4 @@
-SOURCES=$(shell find src tests -name '*.hs' -type f)
+SOURCES=$(shell find lib tests -name '*.hs' -type f)
 
 HOTHASKTAGS=$(shell which hothasktags 2>/dev/null)
 CTAGS=$(if $(HOTHASKTAGS),$(HOTHASKTAGS),/bin/false)
