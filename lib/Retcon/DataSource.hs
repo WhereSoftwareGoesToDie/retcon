@@ -284,7 +284,10 @@ finaliseSources params = mapM finaliseSource
 -- retcon.
 newtype RetconEntity entity => InternalKey entity =
     InternalKey { unInternalKey :: Int }
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord)
+
+instance RetconEntity entity => Show (InternalKey entity) where
+    show = show . internalKeyValue
 
 -- | Extract the type-level information from an 'InternalKey'.
 --
@@ -300,7 +303,10 @@ internalKeyValue (InternalKey key) =
 -- 'entity' it stores.
 newtype RetconDataSource entity source => ForeignKey entity source =
     ForeignKey { unForeignKey :: String }
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord)
+
+instance (RetconDataSource entity source) => Show (ForeignKey entity source) where
+    show = show . foreignKeyValue
 
 -- | Extract the type-level information from a 'ForeignKey'.
 --
