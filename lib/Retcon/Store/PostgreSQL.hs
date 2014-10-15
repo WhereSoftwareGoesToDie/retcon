@@ -7,11 +7,12 @@
 -- the 3-clause BSD licence.
 --
 
-{-# LANGUAGE Rank2Types #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE InstanceSigs #-}
+{-# LANGUAGE InstanceSigs          #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE Rank2Types            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TemplateHaskell       #-}
 
 -- | Description: PostgreSQL storage for operational data.
 --
@@ -19,12 +20,12 @@
 -- operational data storage interface using a PostgreSQL database.
 module Retcon.Store.PostgreSQL (PGStorage(..)) where
 
+import Control.Lens.Operators
 import Control.Monad
 import Data.Aeson
 import Data.Proxy
 import Database.PostgreSQL.Simple
 import GHC.TypeLits
-import Control.Lens.Operators
 
 import Retcon.DataSource
 import Retcon.Diff

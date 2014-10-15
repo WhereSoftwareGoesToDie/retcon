@@ -7,12 +7,12 @@
 -- the 3-clause BSD licence.
 --
 
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE DataKinds    #-}
-{-# LANGUAGE InstanceSigs #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE InstanceSigs          #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeFamilies          #-}
 
 -- | Description: In-memory storage for operational data.
 --
@@ -22,15 +22,15 @@
 module Retcon.Store.Memory where
 
 import Control.Monad
-import Data.List
 import Data.Functor
 import Data.IORef
+import Data.List
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
-import Data.Proxy
-import GHC.TypeLits
-import Data.Type.Equality
 import Data.Maybe
+import Data.Proxy
+import Data.Type.Equality
+import GHC.TypeLits
 
 import Retcon.DataSource
 import Retcon.Diff
