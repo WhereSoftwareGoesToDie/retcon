@@ -27,21 +27,21 @@ module Retcon.Document (
     calculateInitialDocument
 ) where
 
-import           Control.Applicative
-import           Control.Lens hiding ((.=))
-import           Control.Monad
-import           Data.Aeson
-import           Data.Aeson.Types (Parser)
+import Control.Applicative
+import Control.Lens hiding ((.=))
+import Control.Monad
+import Data.Aeson
+import Data.Aeson.Types (Parser)
 import qualified Data.HashMap.Lazy as H hiding (lookup)
-import           Data.HashMap.Strict (lookup)
-import           Data.List hiding (lookup)
+import Data.HashMap.Strict (lookup)
+import Data.List hiding (lookup)
 import qualified Data.Map as M
-import           Data.Monoid
-import           Data.Text (Text, unpack)
+import Data.Monoid
+import Data.Text (Text, unpack)
 import qualified Data.Text as T
-import           Data.Tree.GenericTrie
-import           GHC.Exts (IsList (..))
-import           Prelude hiding (lookup)
+import Data.Tree.GenericTrie
+import GHC.Exts (IsList (..))
+import Prelude hiding (lookup)
 
 -- | A retcon 'Document' is an edge-labelled tree with 'Text' labels on
 -- both nodes and edges.

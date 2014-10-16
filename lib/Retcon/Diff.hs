@@ -31,17 +31,17 @@ module Retcon.Diff (
     applyDiff
 ) where
 
-import           Control.Applicative
-import           Control.Monad
-import           Data.Aeson
-import           Data.Tree.GenericTrie
+import Control.Applicative
+import Control.Monad
+import Data.Aeson
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Map as M
-import           Data.Maybe
-import           Data.Monoid
-import           Data.Text (Text)
-import           GHC.Exts (IsList (..))
-import           Retcon.Document
+import Data.Maybe
+import Data.Monoid
+import Data.Text (Text)
+import Data.Tree.GenericTrie
+import GHC.Exts (IsList (..))
+import Retcon.Document
 
 -- | A 'Diff' describes a collection of changes to a 'Document'.
 data Diff l = Diff
