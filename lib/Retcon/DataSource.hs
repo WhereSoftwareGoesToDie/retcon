@@ -15,6 +15,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE PolyKinds                  #-}
+{-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeFamilies               #-}
 
@@ -40,12 +41,6 @@ import Retcon.Monad
 import Retcon.Notifications
 import Retcon.Options
 import Utility.Configuration
-
-import Control.Lens
-
--- | Configuration value for retcon.
-newtype RetconConfig =
-    RetconConfig { retconEntities :: [SomeEntity] }
 
 -- | Restricted monad with read-only access to the retcon storage.
 type RetconAction l a = RetconMonad InitialisedEntity ROToken l a
@@ -206,7 +201,7 @@ accessState state entity source = foldl findEntity Nothing state
     findEntity :: Maybe (DataSourceState e d)
                -> InitialisedEntity
                -> Maybe (DataSourceState e d)
-    findEntity Nothing (InitialisedEntity entityProxy entityState) =
+    findEntity Nothing InitialisedEntity{..} =
         case sameSymbol entityProxy entity of
             Just Refl -> foldl findSource Nothing entityState
             Nothing   -> Nothing
@@ -215,7 +210,7 @@ accessState state entity source = foldl findEntity Nothing state
     findSource :: Maybe (DataSourceState e d)
                -> InitialisedSource e
                -> Maybe (DataSourceState e d)
-    findSource Nothing (InitialisedSource sourceProxy sourceState) =
+    findSource Nothing InitialisedSource{..} =
         case sameSymbol sourceProxy source of
             Just Refl -> Just sourceState
             Nothing   -> Nothing
@@ -289,16 +284,6 @@ newtype RetconEntity entity => InternalKey entity =
 instance RetconEntity entity => Show (InternalKey entity) where
     show = show . internalKeyValue
 
--- | Extract the type-level information from an 'InternalKey'.
---
--- The pair contains the entity, and the key in that order.
-internalKeyValue :: forall entity. (RetconEntity entity)
-                 => InternalKey entity
-                 -> (String, Int)
-internalKeyValue (InternalKey key) =
-    let entity = symbolVal (Proxy :: Proxy entity)
-    in (entity, key)
-
 -- | The unique identifier used by the 'source' data source to refer to an
 -- 'entity' it stores.
 newtype RetconDataSource entity source => ForeignKey entity source =
@@ -308,18 +293,42 @@ newtype RetconDataSource entity source => ForeignKey entity source =
 instance (RetconDataSource entity source) => Show (ForeignKey entity source) where
     show = show . foreignKeyValue
 
+-- Aliases for clarity, all of these are value level fragments identifying
+-- Internal and Foreign Keys.
+type EntityName = String
+type SourceName = String
+type InternalID = Int
+type ForeignID  = String
+
+-- Unique, complete value level identifiers for looking up and storing Internal and
+-- Foreign Keys.
+type InternalKeyIdentifier = (EntityName, InternalID)
+type ForeignKeyIdentifier  = (EntityName, SourceName, ForeignID)
+
+-- | Extract the type-level information from an 'InternalKey'.
+--
+-- The pair contains the entity, and the key in that order.
+internalKeyValue :: forall entity. (RetconEntity entity)
+                 => InternalKey entity
+                 -> InternalKeyIdentifier
+internalKeyValue (InternalKey key) =
+    let entity = symbolVal (Proxy :: Proxy entity)
+    in (entity, key)
+
 -- | Extract the type-level information from a 'ForeignKey'.
 --
 -- The triple contains the entity, data source, and key in that order.
 foreignKeyValue :: forall entity source. (RetconDataSource entity source)
                 => ForeignKey entity source
-                -> (String, String, String)
+                -> ForeignKeyIdentifier
 foreignKeyValue (ForeignKey key) =
     let entity = symbolVal (Proxy :: Proxy entity)
         source = symbolVal (Proxy :: Proxy source)
     in (entity, source, key)
 
--- | Encode a 'ForeignKey' as a 'String'.
+-- | Encode a 'ForeignKey' as an opaque 'String'.
+--
+-- Under the hood this is represented as a showed 'ForeignKeyIdentifier'
 encodeForeignKey :: forall entity source. (RetconDataSource entity source)
                  => ForeignKey entity source
                  -> String
@@ -591,23 +600,23 @@ instance StoreToken ROToken where
 
 instance ReadableToken ROToken where
     lookupInternalKey fk = do
-        ROToken store <- view retconStore
+        ROToken store <- getRetconStore
         liftIO $ storeLookupInternalKey store fk
 
     lookupForeignKey ik = do
-        ROToken store <- view retconStore
+        ROToken store <- getRetconStore
         liftIO $ storeLookupForeignKey store ik
 
     lookupInitialDocument ik = do
-        ROToken store <- view retconStore
+        ROToken store <- getRetconStore
         liftIO $ storeLookupInitialDocument store ik
 
     lookupDiff did = do
-        ROToken store <- view retconStore
+        ROToken store <- getRetconStore
         liftIO $ storeLookupDiff store did
 
     lookupDiffIds ik = do
-        ROToken store <- view retconStore
+        ROToken store <- getRetconStore
         liftIO $ storeLookupDiffIds store ik
 
 -- | A token exposing both the 'ReadableToken' and 'WritableToken' APIs.
@@ -618,70 +627,70 @@ instance StoreToken RWToken where
 
 instance ReadableToken RWToken where
     lookupInternalKey fk = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeLookupInternalKey store fk
 
     lookupForeignKey ik = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeLookupForeignKey store ik
 
     lookupInitialDocument ik = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeLookupInitialDocument store ik
 
     lookupDiff did = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeLookupDiff store did
 
     lookupDiffIds ik = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeLookupDiffIds store ik
 
 instance WritableToken RWToken where
     createInternalKey = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeCreateInternalKey store
 
     deleteInternalKey ik = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeDeleteInternalKey store ik
 
     recordForeignKey ik fk = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeRecordForeignKey store ik fk
 
     deleteForeignKey fk = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeDeleteForeignKey store fk
 
     deleteForeignKeys ik = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeDeleteForeignKeys store ik
 
     recordInitialDocument ik doc = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeRecordInitialDocument store ik doc
 
     deleteInitialDocument ik = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeDeleteInitialDocument store ik
 
     recordDiffs ik diffs = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeRecordDiffs store ik diffs
 
     deleteDiff did = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeDeleteDiff store did
 
     deleteDiffs ik = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeDeleteDiffs store ik
 
     recordNotification ik did = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeRecordNotification store ik did
 
     fetchNotifications limit = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeFetchNotifications store limit

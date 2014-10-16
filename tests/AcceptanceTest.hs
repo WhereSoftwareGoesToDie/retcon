@@ -17,7 +17,6 @@
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
-{-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE TypeFamilies          #-}
 
 {-# OPTIONS_GHC -fno-warn-orphans #-}
@@ -74,8 +73,8 @@ instance RetconDataSource "entity" "downstream" where
     deleteDocument key =
         getActionState >>= \(Downstream fp) -> deleteJSONDir fp key
 
-cfg :: RetconConfig
-cfg = RetconConfig [ SomeEntity (Proxy :: Proxy "entity") ]
+entities :: [SomeEntity]
+entities = [ SomeEntity (Proxy :: Proxy "entity") ]
 
 main :: IO ()
 main = hspec suite
@@ -83,7 +82,7 @@ main = hspec suite
 suite :: Spec
 suite =
     describe "Run with upstream change" $
-        it "propogates locally" $ pending
+        it "propogates locally" pending
             {--
             let opts = defaultOptions
             tok <- token . PGStore <$> connectPostgreSQL (opts ^. optDB)

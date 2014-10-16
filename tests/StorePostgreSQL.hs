@@ -44,7 +44,14 @@ runAction :: PGStorage
           -> RetconMonad InitialisedEntity RWToken () r
           -> IO (Either RetconError r)
 runAction store =
-    runRetconMonad options (RetconMonadState options [] (token store) ())
+    let cfg = RetconConfig
+                (options ^. optVerbose)
+                (options ^. optLogging)
+                (token store)
+                mempty
+                (options ^. optArgs)
+                []
+    in runRetconMonad (RetconMonadState cfg ())
 
 -- | Canned query to run to check that connections are live.
 onepluszero :: Connection -> IO [Only Int]

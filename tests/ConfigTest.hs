@@ -48,8 +48,8 @@ instance RetconDataSource "inittest" "initsource" where
     getDocument = error "Unimplemented"
     deleteDocument = error "Unimplemented"
 
-initCfg :: RetconConfig
-initCfg = RetconConfig [SomeEntity (Proxy :: Proxy "inittest")]
+initCfg :: [SomeEntity]
+initCfg = [SomeEntity (Proxy :: Proxy "inittest")]
 
 instance RetconEntity "finaltest" where
     entitySources _ = [SomeDataSource (Proxy :: Proxy "finalsource")]
@@ -62,8 +62,8 @@ instance RetconDataSource "finaltest" "finalsource" where
     getDocument = error "Unimplemented"
     deleteDocument = error "Unimplemented"
 
-finalCfg :: RetconConfig
-finalCfg = RetconConfig [SomeEntity (Proxy :: Proxy "finaltest")]
+finalCfg :: [SomeEntity]
+finalCfg = [SomeEntity (Proxy :: Proxy "finaltest")]
 
 configurationSuite :: Spec
 configurationSuite = do
@@ -106,22 +106,22 @@ configurationSuite = do
             initTest params initCfg `shouldThrow` valueError (show values)
 
         it "should pass data when finalising a data source" $ do
-            Just params <- (fmap convertConfig) <$> parseFromFile configParser testfile
+            Just params <- fmap convertConfig <$> parseFromFile configParser testfile
             -- Call finalise for testing entity; check that exceptions occur
             -- with known values.
             let values = ( Just "databass" :: Maybe String
                          , Nothing :: Maybe String
                          , Just "final object" :: Maybe String
                          )
-            initTest params finalCfg `shouldThrow` (valueError $ show values)
+            initTest params finalCfg `shouldThrow` valueError (show values)
   where
-    valueError msg = (== (ErrorCall msg))
+    valueError msg = (== ErrorCall msg)
 
 initTest :: ParamMap
-         -> RetconConfig
+         -> [SomeEntity]
          -> IO ()
 initTest params cfg = do
-    state <- initialiseEntities params (retconEntities cfg)
+    state <- initialiseEntities params cfg
     void $ finaliseEntities params state
 
 main :: IO ()

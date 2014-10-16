@@ -21,7 +21,6 @@ module Retcon.Handler where
 
 import Control.Applicative
 import Control.Exception.Enclosed (tryAny)
-import Control.Lens (view)
 import Control.Monad.Error.Class
 import Control.Monad.Logger
 import Control.Monad.Reader
@@ -52,13 +51,11 @@ import Retcon.Options
 -- | Run the retcon process on an event.
 retcon
     :: (ReadableToken s, WritableToken s)
-    => RetconOptions
-    -> RetconConfig
-    -> s
+    => RetconConfig SomeEntity s
     -> String
     -> IO (Either RetconError ())
-retcon opts config store key =
-    runRetconMonadOnce opts config store () . dispatch $ read key
+retcon config key =
+    runRetconMonadOnce config () . dispatch $ read key
 
 -- | Parse a request string and handle an event.
 dispatch
@@ -66,7 +63,7 @@ dispatch
     => (String, String, String)
     -> RetconHandler store ()
 dispatch (entity_str, source_str, key) = do
-    entities <- view retconState
+    entities <- getRetconState
 
     case (someSymbolVal entity_str, someSymbolVal source_str) of
         (SomeSymbol entity, SomeSymbol source) ->
@@ -268,8 +265,8 @@ update ik = do
     -- Record changes in database.
     did <- recordDiffs ik (merged, fragments)
 
-    -- Record notification, if required.
-    when (not . null $ fragments) $
+    -- Record notifications, if required.
+    unless (null fragments) $
         recordNotification ik did
 
     -- Save documents, logging any errors.
@@ -311,7 +308,7 @@ getDocuments
     -> RetconHandler store [Either RetconError Document]
 getDocuments ik = do
     let entity = Proxy :: Proxy entity
-    entities <- view retconState
+    entities <- getRetconState
 
     results <- forM entities $ \(InitialisedEntity current sources) ->
         case sameSymbol entity current of
@@ -346,7 +343,7 @@ setDocuments
     -> RetconHandler store [Either RetconError ()]
 setDocuments ik docs = do
     let entity = Proxy :: Proxy entity
-    entities <- view retconState
+    entities <- getRetconState
 
     results <- forM entities $ \(InitialisedEntity current sources) ->
         case sameSymbol entity current of
@@ -371,7 +368,7 @@ deleteDocuments
     -> RetconHandler store [Either RetconError ()]
 deleteDocuments ik = do
     let entity = Proxy :: Proxy entity
-    entities <- view retconState
+    entities <- getRetconState
 
     -- Iterate over the list of entities.
     results <- forM entities $ \(InitialisedEntity current sources) ->

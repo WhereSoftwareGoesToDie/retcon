@@ -17,21 +17,27 @@
 --
 -- Retcon maintains quite a lot of operational data. This implements the
 -- operational data storage interface using a PostgreSQL database.
-module Retcon.Store.PostgreSQL (PGStorage(..)) where
+module Retcon.Store.PostgreSQL (PGStorage(..), prepareConfig) where
 
 import Control.Lens.Operators
 import Control.Monad
 import Data.Aeson
 import Data.List
+import Data.Map.Strict (Map)
+import Data.Monoid
 import Data.Proxy
 import Data.String
+import Data.Text (Text)
 import Database.PostgreSQL.Simple
 import GHC.TypeLits
+import Text.Trifecta hiding (Success, token)
 
 import Retcon.DataSource
 import Retcon.Diff
 import Retcon.Notifications
 import Retcon.Options
+
+import Utility.Configuration
 
 -- | A persistent, PostgreSQL storage backend for Retcon.
 newtype PGStorage = PGStore { unWrapConnection :: Connection }
@@ -148,8 +154,8 @@ instance RetconStore PGStorage where
         let conflicts' = map fromSuccess . filter isSuccess . map (fromJSON . fromOnly) $ conflicts
 
         return $ case diff' of
-            ((Success d):_) -> Just (d, conflicts')
-            _               -> Nothing
+            Success d:_ -> Just (d, conflicts')
+            _           -> Nothing
       where
         fromSuccess (Success a) = a
         fromSuccess _ = error "fromSuccess: Cannot unwrap not-a-success."
@@ -208,3 +214,25 @@ storeOneDiff conn isConflict ik d = do
     q = if isConflict
         then "INSERT INTO retcon_diff_conflicts (entity, id, content) VALUES (?, ?, ?) RETURNING diff_id"
         else "INSERT INTO retcon_diff (entity, id, content) VALUES (?, ?, ?) RETURNING diff_id"
+
+
+-- | Load the parameters from the path specified in the options.
+prepareConfig
+    :: RetconOptions
+    -> [entity]
+    -> IO (RetconConfig entity RWToken)
+prepareConfig opt entities = do
+    params <- maybe (return mempty) readParams $ opt ^. optParams
+    store :: PGStorage <- storeInitialise opt
+    return $ RetconConfig
+        (opt ^. optVerbose)
+        (opt ^. optLogging)
+        (token store)
+        params
+        (opt ^. optArgs)
+        entities
+  where
+    readParams :: FilePath -> IO (Map (Text, Text) (Map Text Text))
+    readParams path = do
+        results <- parseFromFile configParser path
+        return $ maybe mempty convertConfig results

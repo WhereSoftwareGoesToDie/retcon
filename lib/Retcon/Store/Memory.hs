@@ -40,23 +40,6 @@ import Retcon.Diff
 import Retcon.Document
 import Retcon.Notifications
 
--- Aliases for clarity, all of these are value level fragments identifying
--- Internal and Foreign Keys.
-type EntityName = String
-type SourceName = String
-type InternalID = Int
-type ForeignID  = String
-
--- Unique, complete value level identifiers for looking up and storing Internal and
--- Foreign Keys.
-type InternalKeyIdentifier = ( EntityName
-                             , InternalID
-                             )
-type ForeignKeyIdentifier  = ( EntityName
-                             , SourceName
-                             , ForeignID
-                             )
-
 -- | Collection of in-memory data-structures to store retcon internal state.
 data MemoryStore = MemoryStore
     { _memNextKey :: Int
@@ -91,7 +74,7 @@ instance RetconStore MemStorage where
         st <- readIORef ref
         return $ st ^? memFtoI . ix (foreignKeyValue fk) . to InternalKey
 
-    storeDeleteInternalKey (MemStorage ref) ik = do
+    storeDeleteInternalKey (MemStorage ref) ik =
         atomicModifyIORef' ref $ \st ->
             (st & memItoF . at (internalKeyValue ik) .~ Nothing, 0)
 
