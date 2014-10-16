@@ -52,20 +52,21 @@ localise
     => l -- ^ Local state value
     -> RetconMonadState e s () -- ^ Handler state
     -> RetconMonadState e ROToken l
-localise l (RetconMonadState cfg store _) = RetconMonadState cfg (restrictToken store) l
+localise local state =
+    state & retconConfig . cfgDB %~ restrictToken
+          & localState .~ local
 
 -- | Execute an action in the 'RetconMonad' monad with configuration
 -- initialized and finalized.
 runRetconMonadOnce
-    :: RetconConfig SomeEntity
-    -> s
+    :: RetconConfig SomeEntity s
     -> l
     -> RetconMonad InitialisedEntity s l a
     -> IO (Either RetconError a)
-runRetconMonadOnce cfg store l action =
+runRetconMonadOnce cfg l action =
     let params = cfg ^. cfgParams
         entities = cfg ^. cfgEntities
     in bracket (initialiseEntities params entities)
                (void . finaliseEntities params)
                (\state -> let cfg' = cfg & cfgEntities .~ state
-                          in runRetconMonad cfg' (RetconMonadState cfg' store l) action)
+                          in runRetconMonad (RetconMonadState cfg' l) action)

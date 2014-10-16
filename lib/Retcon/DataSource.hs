@@ -591,23 +591,23 @@ instance StoreToken ROToken where
 
 instance ReadableToken ROToken where
     lookupInternalKey fk = do
-        ROToken store <- view retconStore
+        ROToken store <- getRetconStore
         liftIO $ storeLookupInternalKey store fk
 
     lookupForeignKey ik = do
-        ROToken store <- view retconStore
+        ROToken store <- getRetconStore
         liftIO $ storeLookupForeignKey store ik
 
     lookupInitialDocument ik = do
-        ROToken store <- view retconStore
+        ROToken store <- getRetconStore
         liftIO $ storeLookupInitialDocument store ik
 
     lookupDiff did = do
-        ROToken store <- view retconStore
+        ROToken store <- getRetconStore
         liftIO $ storeLookupDiff store did
 
     lookupDiffIds ik = do
-        ROToken store <- view retconStore
+        ROToken store <- getRetconStore
         liftIO $ storeLookupDiffIds store ik
 
 -- | A token exposing both the 'ReadableToken' and 'WritableToken' APIs.
@@ -618,70 +618,70 @@ instance StoreToken RWToken where
 
 instance ReadableToken RWToken where
     lookupInternalKey fk = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeLookupInternalKey store fk
 
     lookupForeignKey ik = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeLookupForeignKey store ik
 
     lookupInitialDocument ik = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeLookupInitialDocument store ik
 
     lookupDiff did = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeLookupDiff store did
 
     lookupDiffIds ik = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeLookupDiffIds store ik
 
 instance WritableToken RWToken where
     createInternalKey = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeCreateInternalKey store
 
     deleteInternalKey ik = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeDeleteInternalKey store ik
 
     recordForeignKey ik fk = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeRecordForeignKey store ik fk
 
     deleteForeignKey fk = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeDeleteForeignKey store fk
 
     deleteForeignKeys ik = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeDeleteForeignKeys store ik
 
     recordInitialDocument ik doc = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeRecordInitialDocument store ik doc
 
     deleteInitialDocument ik = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeDeleteInitialDocument store ik
 
     recordDiffs ik diffs = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeRecordDiffs store ik diffs
 
     deleteDiff did = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeDeleteDiff store did
 
     deleteDiffs ik = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeDeleteDiffs store ik
 
     recordNotification ik did = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeRecordNotification store ik did
 
     fetchNotifications limit = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeFetchNotifications store limit

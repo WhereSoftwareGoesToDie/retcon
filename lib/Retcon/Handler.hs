@@ -133,12 +133,11 @@ dispatch work = do
 
 -- | Run the retcon process on an event.
 retcon :: (ReadableToken s, WritableToken s)
-       => RetconConfig SomeEntity
-       -> s
+       => RetconConfig SomeEntity s
        -> String
        -> IO (Either RetconError ())
-retcon config store key =
-    runRetconMonadOnce config store () $ dispatch key
+retcon config key =
+    runRetconMonadOnce config () $ dispatch key
 
 -- | Process an event on a specified 'ForeignKey'.
 --

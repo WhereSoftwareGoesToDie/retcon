@@ -147,7 +147,6 @@ main = do
     cfg <- prepareConfig opts entities
     when (opts ^. optVerbose) $ print opts
 
-    tok <- token . PGStore <$> connectPostgreSQL (opts ^. optDB)
     let (entity:source:key:_) = opts ^. optArgs
-    res <- retcon cfg tok $ show (entity, source, key)
+    res <- retcon cfg $ show (entity, source, key)
     print res

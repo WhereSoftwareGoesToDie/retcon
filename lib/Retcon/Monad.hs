@@ -33,10 +33,10 @@ module Retcon.Monad (
 
     RetconMonadState(..),
     retconConfig,
-    retconStore,
     localState,
 
     getRetconState,
+    getRetconStore,
     getActionState,
     whenVerbose,
 
@@ -63,8 +63,7 @@ type RetconHandlerStack entity store local_state =
 -- | Product type wrapper for global and local state components. This is
 -- instantiated in Core.hs
 data RetconMonadState entity store local = RetconMonadState
-    { _retconConfig  :: RetconConfig entity
-    , _retconStore   :: store
+    { _retconConfig  :: RetconConfig entity store
     , _localState    :: local
     }
 makeLenses ''RetconMonadState
@@ -97,16 +96,15 @@ instance MonadBaseControl IO (RetconMonad entity store local_state) where
     restoreM       = RetconMonad . restoreM . unStHandler
 
 -- | Execute an action in the 'RetconMonad' monad.
-runRetconMonad :: RetconConfig entity
-               -> RetconMonadState entity store local_state
+runRetconMonad :: RetconMonadState entity store local_state
                -> RetconMonad entity store local_state a
                -> IO (Either RetconError a)
-runRetconMonad cfg state =
+runRetconMonad state =
     runLogging .
     runExceptT .
     flip runReaderT state . unRetconMonad
   where
-    runLogging = case cfg ^. cfgLogging of
+    runLogging = case state ^. retconConfig . cfgLogging of
       LogStderr -> runStderrLoggingT
       LogStdout -> runStdoutLoggingT
       LogNone   -> (`runLoggingT` \_ _ _ _ -> return ())
@@ -118,6 +116,9 @@ getRetconState = view (retconConfig . cfgEntities)
 -- | Get the action-specific component of the environment.
 getActionState :: RetconMonad e s l l
 getActionState = view localState
+
+getRetconStore :: RetconMonad e s l s
+getRetconStore = view $ retconConfig . cfgDB
 
 -- | Do something when the verbose option is set
 whenVerbose :: (MonadReader (RetconMonadState e s x) m) => m () -> m ()

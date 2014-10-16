@@ -15,12 +15,10 @@
 
 module Retcon.Options where
 
-import Control.Lens.Operators
 import Control.Lens.TH
 import Control.Monad hiding (sequence)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BS
-import Data.Map.Strict (Map)
 import Data.Maybe
 import Data.Monoid
 import Data.Text (Text)
@@ -164,30 +162,13 @@ parseFile path = do
 
 
 -- | Configuration value for retcon.
-data RetconConfig e =
+data RetconConfig entity store =
     RetconConfig {
           _cfgVerbose  :: Bool
         , _cfgLogging  :: Logging
-        , _cfgDB       :: BS.ByteString
+        , _cfgDB       :: store
         , _cfgParams   :: ParamMap
         , _cfgArgs     :: [Text]
-        , _cfgEntities :: [e]
+        , _cfgEntities :: [entity]
     }
 makeLenses ''RetconConfig
-
--- | Load the parameters from the path specified in the options.
-prepareConfig :: RetconOptions -> [e] -> IO (RetconConfig e)
-prepareConfig opt entities = do
-    params <- maybe (return mempty) readParams $ opt ^. optParams
-    return $ RetconConfig
-        (opt ^. optVerbose)
-        (opt ^. optLogging)
-        (opt ^. optDB)
-        params
-        (opt ^. optArgs)
-        entities
-  where
-    readParams :: FilePath -> IO (Map (Text, Text) (Map Text Text))
-    readParams path = do
-        results <- parseFromFile configParser path
-        return $ maybe mempty convertConfig results
