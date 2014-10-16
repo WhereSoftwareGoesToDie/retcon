@@ -16,6 +16,7 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TypeFamilies               #-}
 
 module Retcon.DataSource where
@@ -25,6 +26,7 @@ import Control.Monad.Base
 import Control.Monad.Except
 import Control.Monad.Reader
 import Data.Biapplicative
+import qualified Data.ByteString.Char8 as BS
 import Data.Map (Map)
 import qualified Data.Map as M
 import Data.Monoid
@@ -33,6 +35,8 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Type.Equality
 import GHC.TypeLits
+import Options.Applicative hiding (Parser, option)
+import Text.Trifecta
 
 import Retcon.Diff
 import Retcon.Document
@@ -42,10 +46,6 @@ import Retcon.Options
 import Utility.Configuration
 
 import Control.Lens
-
--- | Configuration value for retcon.
-newtype RetconConfig =
-    RetconConfig { retconEntities :: [SomeEntity] }
 
 -- | Restricted monad with read-only access to the retcon storage.
 type RetconAction l a = RetconMonad InitialisedEntity ROToken l a
