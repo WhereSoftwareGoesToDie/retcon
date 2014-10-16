@@ -43,6 +43,12 @@ import Retcon.MergePolicy
 import Retcon.Monad
 import Retcon.Options
 
+-- * Retcon
+
+-- $ An invocation of the retcon system will recieve and process a single event from
+-- the outside world. It does this by first determining the type of operation to be
+-- performed and then executing that command.
+
 -- | Run the retcon process on an event.
 retcon
     :: (ReadableToken s, WritableToken s)
@@ -400,7 +406,7 @@ deleteState ik = do
     -- Delete the initial document.
     n_id <- deleteInitialDocument ik
     whenVerbose . $logDebug . fromString $
-        "Deleted initial document for " <> show ik <> ": " <> show n_id
+        "Deleted initial document for " <> show ik <> ". Deleted " <> show n_id
 
     -- TODO: Do we need to delete notifications here? I think we do!
 
