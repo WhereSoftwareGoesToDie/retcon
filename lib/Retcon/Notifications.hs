@@ -23,6 +23,7 @@ module Retcon.Notifications where
 import Control.Applicative
 import Data.List
 import qualified Data.Map as M
+import Data.Monoid
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
@@ -32,7 +33,7 @@ import Database.PostgreSQL.Simple.FromRow
 import Network.Mail.Mime
 import System.Locale
 import Text.StringTemplate
-import Text.Trifecta hiding (render)
+import Text.Trifecta hiding (render, source)
 
 -- | Rules describe the notifications to be included and the processing to be
 -- applied when generating messages.
@@ -44,16 +45,18 @@ data NotificationRule = NotificationRule
   deriving (Show, Eq)
 
 -- | Parse a list of 'NotificationRule's.
-rulesParser :: Parser [NotificationRule]
+rulesParser
+    :: Parser [NotificationRule]
 rulesParser = some parseRule
   where
     parseRule = NotificationRule
         <$> (parseEntity <* char ',')
         <*> (parseSource <* char ',')
         <*> parseEmail
-    parseEntity = optional $ spaces *> stringLiteral <* spaces
-    parseSource = optional $ spaces *> stringLiteral <* spaces
-    parseEmail  = spaces *> char '"' *> (T.pack <$> some (noneOf "\"")) <* char '"' <* spaces
+    quoted p = char '"' *> p <* char '"'
+    parseEntity = optional $ spaces *> quoted (T.pack <$> some alphaNum) <* spaces
+    parseSource = optional $ spaces *> quoted (T.pack <$> some alphaNum) <* spaces
+    parseEmail  = spaces *> quoted (T.pack <$> some (noneOf "\"")) <* spaces
 
 -- | Records the details of a notification message which may be sent to
 -- recipients.
@@ -82,20 +85,9 @@ describeRule
 describeRule NotificationRule{..} =
     case (ruleEntity, ruleSource) of
         (Nothing, Nothing) -> "all notifications"
-        (Just entity, Nothing) -> T.concat ["all ", entity, " notifications"]
-        (Nothing, Just source) -> T.concat ["all notifications from ", source]
-        (Just entity, Just source) -> T.concat [entity, " notifications from ", source]
-
--- | Generate a query.
-ruleQuery
-    :: NotificationRule
-    -> Query
-ruleQuery NotificationRule{..} =
-    case (ruleEntity, ruleSource) of
-        (Nothing, Nothing) -> ""
-        (Just entity, Nothing) -> ""
-        (Nothing, Just source) -> ""
-        (Just entity, Just source) -> ""
+        (Just entity, Nothing) -> "all " <> entity <> " notifications"
+        (Nothing, Just source) -> "all notifications from " <> source
+        (Just entity, Just source) -> entity <> " notifications from " <> source
 
 -- | Prepare a 'Mail' message specific to a notification and the rule which
 -- matched it.
@@ -104,7 +96,7 @@ prepareMessage
     -> NotificationRule -- ^ Matching rule
     -> Notification -- ^ Notification
     -> Mail
-prepareMessage Template{..} rule@NotificationRule{..} note@Notification{..} =
+prepareMessage Template{..} rule@NotificationRule{..} Notification{..} =
     let addr = Address Nothing ruleAddress
         attrs = M.map T.unpack $ M.fromList
             [ ("recipient", ruleAddress)
@@ -131,4 +123,3 @@ prepareMessage Template{..} rule@NotificationRule{..} note@Notification{..} =
   where
     renderTpl :: Text -> M.Map String String -> Text
     renderTpl t a = T.pack . render $ withContext (newSTMP . T.unpack $ t) a
-
