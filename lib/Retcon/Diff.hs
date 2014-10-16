@@ -29,7 +29,7 @@ module Retcon.Diff (
     diffOpAffects,
     diff,
     applyDiff
-    ) where
+) where
 
 import           Control.Applicative
 import           Control.Monad
@@ -45,9 +45,9 @@ import           Retcon.Document
 
 -- | A 'Diff' describes a collection of changes to a 'Document'.
 data Diff l = Diff
-  { diffLabel   :: l
-  , diffChanges :: [DiffOp l]
-  }
+    { diffLabel   :: l
+    , diffChanges :: [DiffOp l]
+    }
   deriving (Eq, Show, Functor)
 
 instance FromJSON l => FromJSON (Diff l) where
@@ -178,11 +178,11 @@ evalDiffOp (InsertOp _ []  v) (Document (Node _ kids)) =
 
 -- Navigate to a location (so you can set its value).
 evalDiffOp (InsertOp _ (k:ks) v) (Document (Node l kids))
-  = Document . Node l $ M.alter (updateChild (InsertOp () ks v)) k kids
+    = Document . Node l $ M.alter (updateChild (InsertOp () ks v)) k kids
 
 -- Delete the value at the current location.
 evalDiffOp (DeleteOp _ []) (Document (Node _ kids))
-  = Document . Node Nothing $ M.filter (not . emptyNode) kids
+    = Document . Node Nothing $ M.filter (not . emptyNode) kids
 
 -- Navigate to a location (so you can delete its value).
 evalDiffOp (DeleteOp _ (k:ks)) (Document (Node l kids)) =
