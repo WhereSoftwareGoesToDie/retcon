@@ -113,7 +113,7 @@ instance RetconStore MemStorage where
                      st' = st { memItoF = M.delete k i2f
                               , memFtoI = f2i
                               }
-                 in (st', ())
+                 in (st', 0)
 
     storeRecordForeignKey (MemStorage ref) ik fk =
         atomicModifyIORef' ref record
@@ -156,7 +156,7 @@ instance RetconStore MemStorage where
                      st' = st { memItoF = i2f'
                               , memFtoI = f2i'
                               }
-                 in (st', ())
+                 in (st', 0)
 
     storeDeleteForeignKeys (MemStorage ref) ik =
         atomicModifyIORef' ref del
@@ -170,7 +170,7 @@ instance RetconStore MemStorage where
                      st' = st { memItoF = i2f'
                               , memFtoI = f2i'
                               }
-                 in (st', ())
+                 in (st', 0)
 
     storeRecordInitialDocument (MemStorage ref) ik doc =
         atomicModifyIORef' ref update
@@ -196,7 +196,7 @@ instance RetconStore MemStorage where
                      ikv = internalKeyValue ik
                      ids' = M.delete ikv ids
                      st' = st { memInits = ids' }
-                 in (st', ())
+                 in (st', 0)
 
     storeRecordDiffs (MemStorage ref) ik new =
         atomicModifyIORef' ref ins
@@ -225,7 +225,7 @@ instance RetconStore MemStorage where
     storeDeleteDiff (MemStorage ref) did =
         atomicModifyIORef' ref del
       where
-        del st = (st, ())
+        del st = (st, 0)
 
     storeDeleteDiffs (MemStorage ref) ik =
         atomicModifyIORef' ref del

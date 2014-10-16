@@ -361,7 +361,7 @@ class RetconStore s where
     storeDeleteInternalKey :: (RetconEntity entity)
                            => s
                            -> InternalKey entity
-                           -> IO ()
+                           -> IO Int
 
     -- | Record a 'ForeignKey' and it's association with an 'InternalKey'.
     storeRecordForeignKey :: (RetconDataSource e d)
@@ -381,13 +381,13 @@ class RetconStore s where
     storeDeleteForeignKey :: (RetconDataSource e d)
                           => s
                           -> ForeignKey e d
-                          -> IO ()
+                          -> IO Int
 
     -- | Delete all 'ForeignKey's associated with an 'InternalKey'.
     storeDeleteForeignKeys :: (RetconEntity e)
                            => s
                            -> InternalKey e
-                           -> IO ()
+                           -> IO Int
 
     -- | Record the initial 'Document' associated with an 'InternalKey'.
     storeRecordInitialDocument :: (RetconEntity e)
@@ -406,7 +406,7 @@ class RetconStore s where
     storeDeleteInitialDocument :: (RetconEntity e)
                                => s
                                -> InternalKey e
-                               -> IO ()
+                               -> IO Int
 
     -- | Record the success 'Diff' and a list of failed 'Diff's associated with a
     -- processed 'InternalKey'.
@@ -435,7 +435,7 @@ class RetconStore s where
     storeDeleteDiff
         :: s
         -> Int -- ^ 'Diff' ID.
-        -> IO ()
+        -> IO Int
 
     -- | Delete the 'Diff's associated with an 'InternalKey'.
     --
@@ -521,7 +521,7 @@ class StoreToken s => WritableToken s where
     -- | Delete an 'InternalKey' and any associated resources.
     deleteInternalKey :: (RetconEntity entity)
                       => InternalKey entity
-                      -> RetconMonad e s l ()
+                      -> RetconMonad e s l Int
 
     -- | Record a 'ForeignKey' and it's association with an 'InternalKey'.
     recordForeignKey :: (RetconDataSource entity d)
@@ -532,12 +532,12 @@ class StoreToken s => WritableToken s where
     -- | Delete a 'ForeignKey'.
     deleteForeignKey :: (RetconDataSource entity d)
                      => ForeignKey entity d
-                     -> RetconMonad e s l ()
+                     -> RetconMonad e s l Int
 
     -- | Delete all 'ForeignKey's associated with an 'InternalKey'.
     deleteForeignKeys :: (RetconEntity entity)
                       => InternalKey entity
-                      -> RetconMonad e s l ()
+                      -> RetconMonad e s l Int
 
     -- | Record the initial 'Document' associated with an 'InternalKey'.
     recordInitialDocument :: (RetconEntity entity)
@@ -548,7 +548,7 @@ class StoreToken s => WritableToken s where
     -- | Delete the initial 'Document', if any, associated with an 'InternalKey'.
     deleteInitialDocument :: (RetconEntity entity)
                           => InternalKey entity
-                          -> RetconMonad e s l ()
+                          -> RetconMonad e s l Int
 
     -- | Record the success 'Diff' and a list of failed 'Diff's associated with a
     -- processed 'InternalKey'.
@@ -560,7 +560,7 @@ class StoreToken s => WritableToken s where
     -- | Delete the 'Diff' with an ID.
     deleteDiff
         :: Int
-        -> RetconMonad e s l ()
+        -> RetconMonad e s l Int
 
     -- | Delete the 'Diff's associated with an 'InternalKey'.
     deleteDiffs :: (RetconEntity entity)

@@ -68,11 +68,12 @@ instance RetconStore PGStorage where
             []         -> return Nothing
 
     storeDeleteInternalKey (PGStore conn) ik = do
-        let execute' sql = void $ execute conn sql (internalKeyValue ik)
-        execute' "DELETE FROM retcon_initial WHERE entity = ? AND id = ?"
-        execute' "DELETE FROM retcon_diff WHERE entity = ? AND id = ?"
-        execute' "DELETE FROM retcon_fk WHERE entity = ? AND id = ?"
-        execute' "DELETE FROM retcon WHERE entity = ? AND id = ?"
+        let execute' sql = execute conn sql (internalKeyValue ik)
+        d1 <- execute' "DELETE FROM retcon_initial WHERE entity = ? AND id = ?"
+        d2 <- execute' "DELETE FROM retcon_diff WHERE entity = ? AND id = ?"
+        d3 <- execute' "DELETE FROM retcon_fk WHERE entity = ? AND id = ?"
+        d4 <- execute' "DELETE FROM retcon WHERE entity = ? AND id = ?"
+        return . sum . map fromIntegral $ [d1, d2, d3, d4]
 
     storeRecordForeignKey (PGStore conn) ik fk = do
         let (entity, source, fid) = foreignKeyValue fk
@@ -83,11 +84,13 @@ instance RetconStore PGStorage where
 
     storeDeleteForeignKey (PGStore conn) fk = do
         let sql = "DELETE FROM retcon_fk WHERE entity = ? AND source = ? AND fk = ?"
-        void . execute conn sql $ foreignKeyValue fk
+        d <- execute conn sql $ foreignKeyValue fk
+        return $ fromIntegral  d
 
     storeDeleteForeignKeys (PGStore conn) ik = do
         let sql = "DELETE FROM retcon_fk WHERE entity = ? AND id = ?"
-        void . execute conn sql $ internalKeyValue ik
+        d <- execute conn sql $ internalKeyValue ik
+        return $ fromIntegral d
 
     storeLookupForeignKey :: forall entity source. (RetconDataSource entity source)
                      => PGStorage
@@ -123,8 +126,8 @@ instance RetconStore PGStorage where
 
     storeDeleteInitialDocument (PGStore conn) ik = do
         let sql = "DELETE FROM retcon_initial WHERE entity = ? AND id = ?"
-        _ <- execute conn sql $ internalKeyValue ik
-        return ()
+        d <- execute conn sql $ internalKeyValue ik
+        return $ fromIntegral d
 
     storeRecordDiffs (PGStore conn) ik (d, ds) = do
         -- Relabel the diffs with () instead of the arbitrary, possibly
@@ -158,15 +161,16 @@ instance RetconStore PGStorage where
         return . map fromOnly $ r
 
     storeDeleteDiff (PGStore conn) diff_id = do
-        void $ execute conn "DELETE FROM retcon_diff WHERE diff_id = ?" (Only diff_id)
+        d <- execute conn "DELETE FROM retcon_diff WHERE diff_id = ?" (Only diff_id)
+        return $ fromIntegral  d
 
     storeDeleteDiffs (PGStore conn) ik = do
-        let execute' sql = void $ execute conn sql (internalKeyValue ik)
-        execute' "DELETE FROM retcon_diff_conflicts WHERE entity = ? AND id = ?"
-        execute' "DELETE FROM retcon_notifications WHERE entity = ? AND id = ?"
-        execute' "DELETE FROM retcon_diff WHERE entity = ? AND id = ?"
+        let execute' sql = execute conn sql (internalKeyValue ik)
+        d1 <- execute' "DELETE FROM retcon_diff_conflicts WHERE entity = ? AND id = ?"
+        d2 <- execute' "DELETE FROM retcon_notifications WHERE entity = ? AND id = ?"
+        d3 <- execute' "DELETE FROM retcon_diff WHERE entity = ? AND id = ?"
         -- TODO: Count the number of items deleted and return that here.
-        return 0
+        return . sum . map fromIntegral $ [d1, d2, d3]
 
     storeRecordNotification (PGStore conn) ik did = do
         let (entity, eid) = internalKeyValue ik
