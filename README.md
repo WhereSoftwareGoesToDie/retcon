@@ -21,7 +21,7 @@ In future it will also contain a Snap-based daemon exposing a REST-ish API.
 Usage
 -----
 
-The `retcon-demo` command is compiled from the `tests/CLI.hs` file. It
+The `retcon-demo` command is compiled from the `src/CLI.hs` file. It
 supports two entities (customers and events) each with several data
 sources. You process an update by running the command with the event,
 source, and key as command line parameters:
