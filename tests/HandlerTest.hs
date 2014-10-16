@@ -623,7 +623,7 @@ initialDocumentSuite = do
                     maybeGet <- lookupInitialDocument ik
                     return (maybePut, maybeDel, maybeGet)
 
-                result `shouldBe` Right ((), (), Nothing)
+                result `shouldBe` Right ((), 0, Nothing)
 
 -- | Test suite for diff database handling.
 diffDatabaseSuite :: Spec

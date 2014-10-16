@@ -360,9 +360,9 @@ deleteState ik = do
         "DELETE: " <> show ik
 
     -- Delete the initial document.
-    deleteInitialDocument ik
+    n_id <- deleteInitialDocument ik
     whenVerbose . $logDebug . fromString $
-        "Deleted initial document for " <> show ik
+        "Deleted initial document for " <> show ik <> ": " <> show n_id
 
     -- TODO do we need to delete notifications here? I think we do!
 
