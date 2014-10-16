@@ -18,8 +18,8 @@
 
 module Main where
 
-import Control.Monad.IO.Class
 import Control.Lens.Operators
+import Control.Monad.IO.Class
 import Data.Monoid
 import Data.Proxy
 import Data.String
