@@ -154,8 +154,8 @@ instance RetconStore PGStorage where
         let conflicts' = map fromSuccess . filter isSuccess . map (fromJSON . fromOnly) $ conflicts
 
         return $ case diff' of
-            ((Success d):_) -> Just (d, conflicts')
-            _               -> Nothing
+            Success d:_ -> Just (d, conflicts')
+            _           -> Nothing
       where
         fromSuccess (Success a) = a
         fromSuccess _ = error "fromSuccess: Cannot unwrap not-a-success."

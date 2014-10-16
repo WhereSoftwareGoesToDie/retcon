@@ -17,7 +17,6 @@
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
-{-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE TypeFamilies          #-}
 
 {-# OPTIONS_GHC -fno-warn-orphans #-}
@@ -83,7 +82,7 @@ main = hspec suite
 suite :: Spec
 suite =
     describe "Run with upstream change" $
-        it "propogates locally" $ pending
+        it "propogates locally" pending
             {--
             let opts = defaultOptions
             tok <- token . PGStore <$> connectPostgreSQL (opts ^. optDB)
