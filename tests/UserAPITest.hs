@@ -93,7 +93,7 @@ suite :: Spec
 suite =
     describe "JSON directory marshalling" $ do
         it "can load 01-diff-source" $ do
-            state <- runInitialiser mempty $ initialiseState
+            state <- runInitialiser mempty initialiseState
             result <- run state $
                 getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "data")
             runInitialiser mempty $ finaliseState state
@@ -102,7 +102,7 @@ suite =
                 Right _ -> return ()
 
         it "can load 01-diff-target" $ do
-            state <- runInitialiser mempty $ initialiseState
+            state <- runInitialiser mempty initialiseState
             result <- run state $
                 getDocument (ForeignKey "01-diff-target" :: ForeignKey "customer" "data")
             runInitialiser mempty $ finaliseState state
@@ -111,25 +111,25 @@ suite =
                 Right _ -> return ()
 
         it "can write 01-diff-source to another source with that key" $ do
-            state1 <- runInitialiser mempty $ initialiseState
+            state1 <- runInitialiser mempty initialiseState
             Right doc3 <- run state1 $
                 getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "data")
             runInitialiser mempty $ finaliseState state1
 
             let fk = ForeignKey "01-diff-source" :: ForeignKey "customer" "test-results"
-            state2 <- runInitialiser mempty $ initialiseState
+            state2 <- runInitialiser mempty initialiseState
             result <- run state2 $
                 setDocument doc3 (Just fk)
             runInitialiser mempty $ finaliseState state2
             result `shouldBe` Right fk
 
         it "can write 01-diff-source to another source with new key" $ do
-            state <- runInitialiser mempty $ initialiseState
+            state <- runInitialiser mempty initialiseState
             Right doc4 <- run state $
                 getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "data")
             runInitialiser mempty $ finaliseState state
 
-            state2 <- runInitialiser mempty $ initialiseState
+            state2 <- runInitialiser mempty initialiseState
             _ <- run state2 $ do
                 k <- setDocument doc4 (Nothing :: Maybe (ForeignKey "customer" "test-results"))
                 deleteDocument k
@@ -137,7 +137,7 @@ suite =
             pass
 
         it "can delete 01-diff-source from the test source" $ do
-            state <- runInitialiser mempty $ initialiseState
+            state <- runInitialiser mempty initialiseState
             _ <- run state $ do
                 _ <- getDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "test-results")
                 deleteDocument (ForeignKey "01-diff-source" :: ForeignKey "customer" "test-results")

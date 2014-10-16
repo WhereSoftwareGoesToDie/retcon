@@ -106,16 +106,16 @@ configurationSuite = do
             initTest params initCfg `shouldThrow` valueError (show values)
 
         it "should pass data when finalising a data source" $ do
-            Just params <- (fmap convertConfig) <$> parseFromFile configParser testfile
+            Just params <- fmap convertConfig <$> parseFromFile configParser testfile
             -- Call finalise for testing entity; check that exceptions occur
             -- with known values.
             let values = ( Just "databass" :: Maybe String
                          , Nothing :: Maybe String
                          , Just "final object" :: Maybe String
                          )
-            initTest params finalCfg `shouldThrow` (valueError $ show values)
+            initTest params finalCfg `shouldThrow` valueError (show values)
   where
-    valueError msg = (== (ErrorCall msg))
+    valueError msg = (== ErrorCall msg)
 
 initTest :: ParamMap
          -> [SomeEntity]

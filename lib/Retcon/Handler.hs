@@ -232,7 +232,7 @@ update state ik = do
     did <- recordDiffs ik (diff, fragments)
 
     -- Record notifications, if required.
-    when (not . null $ fragments) $
+    unless (null fragments) $
         recordNotification ik did
 
     -- Save documents.

@@ -91,7 +91,7 @@ instance RetconStore MemStorage where
         st <- readIORef ref
         return $ st ^? memFtoI . ix (foreignKeyValue fk) . to InternalKey
 
-    storeDeleteInternalKey (MemStorage ref) ik = do
+    storeDeleteInternalKey (MemStorage ref) ik =
         atomicModifyIORef' ref $ \st ->
             (st & memItoF . at (internalKeyValue ik) .~ Nothing, 0)
 
