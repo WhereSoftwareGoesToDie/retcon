@@ -12,6 +12,8 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TemplateHaskell       #-}
+{-# LANGUAGE TupleSections         #-}
 {-# LANGUAGE TypeFamilies          #-}
 
 -- | Description: In-memory storage for operational data.
@@ -21,18 +23,16 @@
 -- is useful for test suites, demonstrations, etc.
 module Retcon.Store.Memory where
 
+import Control.Lens
 import Control.Monad
-import Data.Bifunctor
 import Data.Functor
 import Data.IORef
-import Data.List
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
-import Data.Maybe
+import Data.Monoid
 import Data.Proxy
 import qualified Data.Text as T
 import Data.Time
-import Data.Type.Equality
 import GHC.TypeLits
 
 import Retcon.DataSource
@@ -40,174 +40,124 @@ import Retcon.Diff
 import Retcon.Document
 import Retcon.Notifications
 
--- | Convert a triple of strings into a ForeignKey iff the entity and
--- source names match the expected type.
---
--- What is this witchery?!?
-convert :: forall (entity :: Symbol) (source :: Symbol).
-           (RetconDataSource entity source)
-        => Proxy entity
-        -> Proxy source
-        -> (String, String, String)
-        -> Maybe (ForeignKey entity source)
-convert e s (en, sn, k) =
-    case (someSymbolVal en, someSymbolVal sn) of
-        (SomeSymbol es, SomeSymbol ss) ->
-            case (sameSymbol e es, sameSymbol s ss) of
-                (Just Refl, Just Refl) -> Just . ForeignKey $ k
-                _ -> Nothing
+-- Aliases for clarity, all of these are value level fragments identifying
+-- Internal and Foreign Keys.
+type EntityName = String
+type SourceName = String
+type InternalID = Int
+type ForeignID  = String
+
+-- Unique, complete value level identifiers for looking up and storing Internal and
+-- Foreign Keys.
+type InternalKeyIdentifier = ( EntityName
+                             , InternalID
+                             )
+type ForeignKeyIdentifier  = ( EntityName
+                             , SourceName
+                             , ForeignID
+                             )
 
 -- | Collection of in-memory data-structures to store retcon internal state.
-data State = MemoryStore
-    { memNextKey :: Int
-    , memItoF    :: Map Int [(String, String, String)]
-    , memFtoI    :: Map (String, String, String) Int
-    , memInits   :: Map (String, Int) Document
-    , memDiffs   :: Map (String, Int) [(Diff (), [Diff ()])]
-    , memNotes   :: [Notification]
+data MemoryStore = MemoryStore
+    { _memNextKey :: Int
+    , _memItoF    :: Map InternalKeyIdentifier (Map SourceName ForeignID)
+    , _memFtoI    :: Map ForeignKeyIdentifier InternalID
+    , _memInits   :: Map InternalKeyIdentifier Document
+    , _memDiffs   :: Map InternalKeyIdentifier [(Diff (), [Diff ()])]
+    , _memNotes   :: [Notification]
     }
-  deriving (Eq, Show)
+  deriving (Show)
+makeLenses ''MemoryStore
 
--- | An empty 'State' value.
-emptyState :: State
-emptyState = MemoryStore nextKey i2fMap f2iMap docs diffs notes
-  where
-    nextKey = 0
-    i2fMap = M.empty
-    f2iMap = M.empty
-    docs   = M.empty
-    diffs  = M.empty
-    notes  = []
+-- | An empty 'MemoryStore' value.
+emptyMemoryStore :: MemoryStore
+emptyMemoryStore = MemoryStore 0 mempty mempty mempty mempty mempty
 
 -- | An ephemeral in-memory storage backend for Retcon.
-newtype MemStorage = MemStorage { unwrapMemStorage :: IORef State }
+newtype MemStorage = MemStorage { unwrapMemStorage :: IORef MemoryStore }
 
 -- | Ephemeral in-memory data storage.
 instance RetconStore MemStorage where
 
-    storeInitialise _ = MemStorage <$> newIORef emptyState
+    storeInitialise _ = MemStorage <$> newIORef emptyMemoryStore
 
-    storeFinalise (MemStorage ref) = writeIORef ref emptyState
+    storeFinalise (MemStorage ref) = writeIORef ref emptyMemoryStore
 
     storeCreateInternalKey (MemStorage ref) =
-        atomicModifyIORef' ref alloc
-      where
-        alloc st = let n = memNextKey st
-                       st' = st { memNextKey = n + 1 }
-                   in (st', InternalKey n)
+        atomicModifyIORef' ref $ \st ->
+            (memNextKey +~ 1 $ st, InternalKey $ st ^. memNextKey)
 
-    storeLookupInternalKey (MemStorage ref) fk =
-        atomicModifyIORef' ref get
-      where
-        get st = let f2i = memFtoI st
-                     k = foreignKeyValue fk
-                     ik = InternalKey <$> M.lookup k f2i
-                 in (st, ik)
+    storeLookupInternalKey (MemStorage ref) fk = do
+        st <- readIORef ref
+        return $ st ^? memFtoI . ix (foreignKeyValue fk) . to InternalKey
 
-    storeDeleteInternalKey (MemStorage ref) ik =
-        atomicModifyIORef' ref del
-      where
-        del st = let i2f = memItoF st
-                     f2i = memFtoI st
-                     k = unInternalKey ik
-                     st' = st { memItoF = M.delete k i2f
-                              , memFtoI = f2i
-                              }
-                 in (st', 0)
+    storeDeleteInternalKey (MemStorage ref) ik = do
+        atomicModifyIORef' ref $ \st ->
+            (st & memItoF . at (internalKeyValue ik) .~ Nothing, 0)
 
-    storeRecordForeignKey (MemStorage ref) ik fk =
-        atomicModifyIORef' ref record
-      where
-        alter v Nothing = Just [v]
-        alter v (Just l) = Just . nub . sort $ v:l
-        record st = let i2f = memItoF st
-                        f2i = memFtoI st
-                        ikv = unInternalKey ik
-                        fkv = foreignKeyValue fk
-                        st' = st { memItoF = M.alter (alter fkv) ikv i2f
-                                 , memFtoI = M.insert fkv ikv f2i
-                                 }
-                    in (st', ())
+    storeRecordForeignKey (MemStorage ref) ik fk = do
+        let iki@(_, internal_id) = internalKeyValue ik
+        let fki@(_,source_name, foreign_id) = foreignKeyValue fk
+        atomicModifyIORef' ref $ \st ->
+            ( st & memItoF . at iki . non mempty . at source_name ?~ foreign_id
+                 & memFtoI . at fki ?~ internal_id
+            , ())
 
-    storeLookupForeignKey :: forall (e :: Symbol) (d :: Symbol). RetconDataSource e d
-                     => MemStorage
-                     -> InternalKey e
-                     -> IO (Maybe (ForeignKey e d))
-    storeLookupForeignKey (MemStorage ref) ik =
-        atomicModifyIORef' ref get
-      where
-        get st = let i2f = memItoF st
-                     k = unInternalKey ik
-                     e = Proxy :: Proxy e
-                     s = Proxy :: Proxy d
-                     fks = M.lookup k i2f
-                     fk = join $ listToMaybe . mapMaybe (convert e s) <$> fks
-                 in (st, fk)
+    storeLookupForeignKey
+        :: forall entity source. RetconDataSource entity source
+        => MemStorage
+        -> InternalKey entity
+        -> IO (Maybe (ForeignKey entity source))
+    storeLookupForeignKey (MemStorage ref) ik = do
+        st <- readIORef ref
+        -- Acquire the SourceName from the inferred type
+        let source = symbolVal (Proxy :: Proxy source)
+        -- Acquire the InternalKeyIdentifier from the inferred type
+        let iki    = internalKeyValue ik
+        -- Construct a new ForeignKey if it exists in the memItoF map
+        return $ st ^? memItoF . ix iki . ix source . to ForeignKey
 
-    storeDeleteForeignKey (MemStorage ref) fk =
-        atomicModifyIORef' ref del
-      where
-        del st = let i2f = memItoF st
-                     f2i = memFtoI st
-                     fkv = foreignKeyValue fk
-                     ik = M.lookup fkv f2i
-                     i2f' = maybe i2f (\k -> M.update (Just . delete fkv) k i2f) ik
-                     f2i' = M.delete fkv f2i
-                     st' = st { memItoF = i2f'
-                              , memFtoI = f2i'
-                              }
-                 in (st', 0)
+    storeDeleteForeignKey store@(MemStorage ref) fk = do
+        let fki@(_,_, foreign_id) = foreignKeyValue fk
+        maybe_iki <- (fmap . fmap) internalKeyValue (storeLookupInternalKey store fk)
+        atomicModifyIORef' ref $ \st ->
+            -- Go through the internal to foreign map removing all foreign ids
+            -- that match this value under the associated internal key.
+            ( st & maybe id (\iki -> memItoF . ix iki %~ M.filter (/= foreign_id)) maybe_iki
+            -- Also, delete the foreign in the foreign to internal map.
+                 & memFtoI . at fki .~ Nothing
+            , 0)
 
-    storeDeleteForeignKeys (MemStorage ref) ik =
-        atomicModifyIORef' ref del
-      where
-        del st = let i2f = memItoF st
-                     f2i = memFtoI st
-                     ikv = unInternalKey ik
-                     fks = M.lookup ikv i2f
-                     i2f' = M.delete ikv i2f
-                     f2i' = maybe f2i (foldr M.delete f2i) fks
-                     st' = st { memItoF = i2f'
-                              , memFtoI = f2i'
-                              }
-                 in (st', 0)
+    storeDeleteForeignKeys store@(MemStorage ref) ik = do
+        let iki@(entity_name, _) = internalKeyValue ik
+        atomicModifyIORef' ref $ \st ->
+            -- List of the foreign key identifiers associated with the internal
+            -- key
+            let fkis = map (\(source, f_id) -> (entity_name, source, f_id)) $
+                        st ^.. memItoF . at iki . _Just . itraversed . withIndex in
+            -- Now delete the foreign keys from the foreign to internal map
+            ( st & memFtoI %~ (\ftoi -> foldr M.delete ftoi fkis)
+            , ())
+        -- Now remove the internal key.
+        storeDeleteInternalKey store ik
 
     storeRecordInitialDocument (MemStorage ref) ik doc =
-        atomicModifyIORef' ref update
-      where
-        update st = let ids = memInits st
-                        ikv = internalKeyValue ik
-                        ids' = M.insert ikv doc ids
-                        st' = st { memInits = ids' }
-                    in (st', ())
+        atomicModifyIORef' ref $ \st ->
+            (st & memInits . at (internalKeyValue ik) ?~ doc, ())
 
     storeLookupInitialDocument (MemStorage ref) ik =
-        atomicModifyIORef' ref get
-      where
-        get st = let ids = memInits st
-                     ikv = internalKeyValue ik
-                     v = M.lookup ikv ids
-                 in (st, v)
+        (^. memInits . at (internalKeyValue ik)) <$> readIORef ref
 
     storeDeleteInitialDocument (MemStorage ref) ik =
-        atomicModifyIORef' ref del
-      where
-        del st = let ids = memInits st
-                     ikv = internalKeyValue ik
-                     ids' = M.delete ikv ids
-                     st' = st { memInits = ids' }
-                 in (st', 0)
+        atomicModifyIORef' ref $ \st ->
+            (st & memInits . at (internalKeyValue ik) .~ Nothing, 0)
 
     storeRecordDiffs (MemStorage ref) ik new =
-        atomicModifyIORef' ref ins
-      where
-        ins st = let new' = bimap void (map void) new
-                     ds = memDiffs st
-                     ikv = internalKeyValue ik
-                     ds' = M.alter (Just . maybe [new'] (++[new'])) ikv ds
-                     did = length $ maybe [] id $ M.lookup ikv ds'
-                     st' = st { memDiffs = ds' }
-                 in (st', did)
+        let relabeled = bimap void (map void) new in
+        atomicModifyIORef' ref $ \st ->
+            -- Slow due to list traversal
+            (st & memDiffs . at (internalKeyValue ik) . non mempty <%~ (++[relabeled]))
+            ^. swapped & _2 %~ length
 
     -- TODO Implement
     storeLookupDiff (MemStorage ref) did =
@@ -228,29 +178,18 @@ instance RetconStore MemStorage where
         del st = (st, 0)
 
     storeDeleteDiffs (MemStorage ref) ik =
-        atomicModifyIORef' ref del
-      where
-        del st = let ds = memDiffs st
-                     ikv = internalKeyValue ik
-                     ds' = M.delete ikv ds
-                     st' = st { memDiffs = ds' }
-                 in (st', 0)
+        atomicModifyIORef' ref $ \st ->
+            (st & memDiffs . at (internalKeyValue ik) .~ Nothing, 0)
 
     storeRecordNotification (MemStorage ref) ik did = do
         t <- getCurrentTime
-        atomicModifyIORef' ref (ins t)
-      where
-        ins t st =
-            let (entity, key) = internalKeyValue ik
-                note = Notification t (T.pack entity) key did
-                st' = st { memNotes = (memNotes st) ++ [note] }
-            in (st', ())
+        let (entity, key) = internalKeyValue ik
+        let note = Notification t (T.pack entity) key did
+        atomicModifyIORef' ref $ \st ->
+            (st & memNotes %~ (++ [note]), ())
 
     storeFetchNotifications (MemStorage ref) limit =
-        atomicModifyIORef' ref get
-      where
-        get st =
-            let (del, keep) = splitAt limit $ memNotes st
+        atomicModifyIORef' ref $ \st ->
+            let (del, keep) = splitAt limit $ st ^. memNotes
                 remaining = length keep
-                st' = st { memNotes = keep }
-            in (st', (remaining, del))
+            in (st & memNotes .~ keep, (remaining, del))

@@ -298,8 +298,8 @@ operationSuite = do
                 mem <- case store of
                     Memory.MemStorage ref -> readIORef ref
 
-                let iks = Memory.memItoF mem
-                let fks = Memory.memFtoI mem
+                let iks = mem ^. Memory.memItoF
+                let fks = mem ^. Memory.memFtoI
 
                 (result, M.size iks, M.size fks) `shouldBe` (Right (), 1, 2)
 
@@ -351,8 +351,8 @@ operationSuite = do
                 d2 <- readIORef ref2
                 mem <- case store of
                     Memory.MemStorage ref -> readIORef ref
-                let iks = Memory.memItoF mem
-                let fks = Memory.memFtoI mem
+                let iks = mem ^. Memory.memItoF
+                let fks = mem ^. Memory.memFtoI
 
                 (M.size d1, M.size d2, M.size iks, M.size fks) `shouldBe` (1, 1, 1, 2)
 
@@ -433,7 +433,7 @@ dispatchSuite = do
                 (iks, fks) <- case store of
                     Memory.MemStorage ref -> do
                         state <- liftIO $ readIORef ref
-                        return (Memory.memItoF state, Memory.memFtoI state)
+                        return (state ^. Memory.memItoF, state ^. Memory.memFtoI)
 
                 (M.size d1, M.size d2, M.size iks, M.size fks) `shouldBe` (1, 1, 1, 2)
 
@@ -499,7 +499,7 @@ dispatchSuite = do
                 d2 <- atomicModifyIORef' ref2 (\m->(m,M.lookup fk2' m))
                 mem <- case store of
                     (Memory.MemStorage ref) -> readIORef ref
-                let fks = Memory.memFtoI mem
+                let fks = mem ^. Memory.memFtoI
 
                 (M.size fks, d1, d2) `shouldBe` (2, Just doc', Just doc')
 
@@ -542,7 +542,7 @@ dispatchSuite = do
                 (iks, fks) <- case store of
                     Memory.MemStorage ref -> do
                         mem <- readIORef ref
-                        return (Memory.memItoF mem, Memory.memFtoI mem)
+                        return (mem ^. Memory.memItoF, mem ^. Memory.memFtoI)
 
                 (d1, d2, iks, fks) `shouldBe` (mempty, mempty, mempty, mempty)
 
@@ -569,11 +569,11 @@ withConfiguration opt = bracket openConnection closeConnection
   where
     openConnection = do
         state <- initialiseEntities mempty (retconEntities dispatchConfig)
-        ref <- newIORef Memory.emptyState
+        ref <- newIORef Memory.emptyMemoryStore
         return (state, Memory.MemStorage ref, opt)
     closeConnection (state, Memory.MemStorage ref, _) = do
         finaliseEntities mempty state
-        writeIORef ref Memory.emptyState
+        writeIORef ref Memory.emptyMemoryStore
         return ()
 
 -- * Initial Document Tests
