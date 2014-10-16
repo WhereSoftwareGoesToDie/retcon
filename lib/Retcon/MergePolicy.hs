@@ -17,6 +17,7 @@
 
 module Retcon.MergePolicy where
 
+import Control.Lens
 import Data.List
 import GHC.TypeLits
 
@@ -62,18 +63,18 @@ rejectAll = MergePolicy (const ()) (Diff () [],)
 -- All changes will be applied in whatever arbitrary order they are encountered.
 acceptAll :: MergePolicy ()
 acceptAll = MergePolicy (const ())
-                        (\ds -> (Diff () (concatMap diffChanges ds), []))
+                        (\ds -> (Diff () (concatOf (traversed . diffChanges) ds), []))
 
 -- | Policy: reject all conflicting changes.
 ignoreConflicts :: MergePolicy ()
 ignoreConflicts = MergePolicy (const ()) merge
   where
     merge ds =
-        let ops = concatMap diffChanges ds
+        let ops = concatOf (traversed . diffChanges) ds
             keys = group . sort . map diffOpTarget $ ops
             keyconflicts = map head . filter (\l -> length l > 1) $ keys
             noclash = filter (not . (`diffOpAffects` keyconflicts)) ops
-            scraps = map (\(Diff l ops) -> Diff l $ filter (`diffOpAffects` keyconflicts) ops) ds
+            scraps = ds & traversed . diffChanges %~ filter (`diffOpAffects` keyconflicts)
         in (Diff () noclash, scraps)
 
 -- | TODO: sources should *not* be identified by their strings.

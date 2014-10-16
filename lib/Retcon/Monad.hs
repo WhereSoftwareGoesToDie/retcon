@@ -63,8 +63,8 @@ type RetconHandlerStack entity store local_state =
 -- | Product type wrapper for global and local state components. This is
 -- instantiated in Core.hs
 data RetconMonadState entity store local = RetconMonadState
-    { _retconConfig  :: RetconConfig entity store
-    , _localState    :: local
+    { _retconConfig :: RetconConfig entity store
+    , _localState   :: local
     }
 makeLenses ''RetconMonadState
 

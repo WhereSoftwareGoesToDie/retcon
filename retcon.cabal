@@ -128,6 +128,7 @@ test-suite             document-test
   build-depends:       base
                      , aeson
                      , bytestring
+                     , lens
                      , containers
                      , directory
                      , filepath
