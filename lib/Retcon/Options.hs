@@ -29,7 +29,7 @@ import qualified Options.Applicative as O
 import Options.Applicative.Types (readerAsk)
 import Prelude hiding (sequence)
 import System.Directory
-import Text.Trifecta
+import Text.Trifecta as P
 
 import Utility.Configuration
 
@@ -141,9 +141,11 @@ parseFile :: FilePath -> IO RetconOptions
 parseFile path = do
     exists <- doesFileExist path
     cfg <- if exists
-            then parseFromFile simpleConfigParser path
-            else return Nothing
-    return $ maybe defaultOptions (`mergeConfig` defaultOptions) cfg
+            then parseFromFileEx simpleConfigParser path
+            else error $ "specified config file doesn not exist: \"" ++ path ++ "\""
+    case cfg of
+        P.Success cfg' -> return $ mergeConfig cfg' defaultOptions
+        P.Failure failure -> error $ show failure
   where
     mergeConfig ls RetconOptions{..} = fromJust $
         RetconOptions <$> pure _optVerbose

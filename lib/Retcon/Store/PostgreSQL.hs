@@ -30,7 +30,9 @@ import Data.String
 import Data.Text (Text)
 import Database.PostgreSQL.Simple
 import GHC.TypeLits
+import System.Directory
 import Text.Trifecta hiding (Success, token)
+import qualified Text.Trifecta as P
 
 import Retcon.DataSource
 import Retcon.Diff
@@ -234,5 +236,10 @@ prepareConfig opt entities = do
   where
     readParams :: FilePath -> IO (Map (Text, Text) (Map Text Text))
     readParams path = do
-        results <- parseFromFile configParser path
-        return $ maybe mempty convertConfig results
+        exists <- doesFileExist path
+        results <- if exists
+            then parseFromFileEx configParser path
+            else error $ "specified config file doesn not exist: \"" ++ path ++ "\""
+        case results of
+            P.Success results' -> return $ convertConfig results'
+            P.Failure failure -> error $ show failure
