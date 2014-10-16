@@ -420,7 +420,7 @@ dispatchSuite = do
 
                 -- Dispatch the event.
                 let opts' = opts & optArgs .~ ["dispatchtest", "dispatch1", fk]
-                let input = show ("dispatchtest", "dispatch1", fk)
+                let input = ("dispatchtest", "dispatch1", T.unpack fk)
 
                 res <- run opts' state store $ dispatch input
 
@@ -451,7 +451,7 @@ dispatchSuite = do
 
                 -- Dispatch the event.
                 let opts' = opts & optArgs .~ ["dispatchtest", "dispatch1", "999"]
-                let input = show ("dispatchtest", "dispatch1", "999")
+                let input = ("dispatchtest", "dispatch1", "999")
                 res <- run opts' state store $ dispatch input
 
                 -- Check that there are still no InternalKey or ForeignKey
@@ -492,7 +492,7 @@ dispatchSuite = do
                     let fk2 = ForeignKey (T.unpack fk2') :: ForeignKey "dispatchtest" "dispatch2"
                     recordForeignKey ik fk1
                     recordForeignKey ik fk2
-                    dispatch . show $ ("dispatchtest", "dispatch1", fk1')
+                    dispatch ("dispatchtest", "dispatch1", T.unpack fk1')
 
                 -- Check that the documents are now the same.
                 d1 <- atomicModifyIORef' ref1 (\m->(m,M.lookup fk1' m))
@@ -530,7 +530,7 @@ dispatchSuite = do
                 result `shouldBe` Right ()
 
                 result <- testHandler state store $
-                    dispatch . show . foreignKeyValue $ fk1
+                    dispatch . foreignKeyValue $ fk1
 
                 result `shouldBe` Right ()
 
