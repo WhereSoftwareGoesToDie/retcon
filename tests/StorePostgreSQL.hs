@@ -166,7 +166,7 @@ postgresqlSuite = around prepareDatabase $
 
             result <- runAction store $
                 deleteInternalKey ik1
-            result `shouldBe` Right ()
+            result `shouldBe` Right 3
 
             try2 <- countStore store
             try2 `shouldBe` (2, 1, 0, 0)
@@ -215,7 +215,7 @@ postgresqlSuite = around prepareDatabase $
                 deleteForeignKey fk5
 
             -- Check there are as many things in the database as we expect.
-            result `shouldBe` Right ()
+            result `shouldBe` Right 1
             counts <- countStore store
             counts `shouldBe` (3, 5, 0, 0)
 
@@ -232,7 +232,7 @@ postgresqlSuite = around prepareDatabase $
                     Right k -> deleteInternalKey k
 
             -- Check there are as many things in the database as we expect.
-            result `shouldBe` Right ()
+            result `shouldBe` (Right 3)
             counts <- countStore store
             counts `shouldBe` (2, 3, 0, 0)
 
@@ -293,11 +293,11 @@ postgresqlSuite = around prepareDatabase $
                 ("tests", 3, toJSON doc4)],
                 [], [])
 
-            runAction store $
+            result <- runAction store $
                 deleteInitialDocument ik2
 
             -- Check it.
-            result `shouldBe` Right ()
+            result `shouldBe` (Right 1)
             count <- countStore store
             count `shouldBe` (4, 0, 2, 0)
 
@@ -350,7 +350,7 @@ postgresqlSuite = around prepareDatabase $
             result <- runAction store $
                 deleteDiffs ik2
 
-            result `shouldBe` Right 0
+            result `shouldBe` (Right 2) -- deletes a successful and unsuccessful diff
             count <- countStore store
             count `shouldBe` (4, 0, 0, 2)
 

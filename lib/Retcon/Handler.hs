@@ -25,14 +25,14 @@ import Control.Lens (view)
 import Control.Monad.Error.Class
 import Control.Monad.Logger
 import Control.Monad.Reader
-import Data.Aeson
 import Data.Bifunctor
 import Data.Either
 import Data.Maybe
+import Data.Monoid
 import Data.Proxy
+import Data.String
 import qualified Data.Text as T
 import Data.Type.Equality
-import Database.PostgreSQL.Simple
 import GHC.TypeLits
 
 import Retcon.Core
@@ -44,17 +44,18 @@ import Retcon.MergePolicy
 import Retcon.Monad
 import Retcon.Options
 
--- | Check that two symbols are the same.
-same :: (KnownSymbol a, KnownSymbol b) => Proxy a -> Proxy b -> Bool
-same a b = isJust (sameSymbol a b)
+-- * Retcon operations
+--
+-- $ The operations performed by retcon are described, at a high level, by
+-- 'RetconOperation's.
 
 -- | Operations to be performed in response to data source events.
-data RetconOperation entity source =
-      RetconCreate (ForeignKey entity source) -- ^ Create a new document.
+data RetconOperation entity source
+    = RetconCreate (ForeignKey entity source) -- ^ Create a new document.
     | RetconDelete (InternalKey entity)       -- ^ Delete an existing document.
     | RetconUpdate (InternalKey entity)       -- ^ Update an existing document.
     | RetconProblem (ForeignKey entity source) RetconError -- ^ Record an error.
-    deriving (Show)
+  deriving (Show)
 
 instance Eq (RetconOperation entity source) where
     (RetconCreate fk1) == (RetconCreate fk2) = fk1 == fk2
@@ -63,46 +64,50 @@ instance Eq (RetconOperation entity source) where
     (RetconProblem fk1 _) == (RetconProblem fk2 _) = fk1 == fk2
     _ == _ = False
 
--- | Interact with the data source which triggered in an event to identify
--- the operation to be performed.
+-- | Construct a 'RetconOperation' to be performed by this invocation of
+-- retcon.
 --
--- This function should be able to return a 'RetconProblem' value, but currently
--- doesn't.
+-- The 'RetconOperation' is determined based on the presence and absence of an
+-- 'InternalKey' and 'Document' corresponding to the 'ForeignKey' which triggered
+-- the invocation.
 determineOperation :: (ReadableToken s, RetconDataSource entity source)
                    => DataSourceState entity source
                    -> ForeignKey entity source
                    -> RetconHandler s (RetconOperation entity source)
 determineOperation state fk = do
-    whenVerbose $ $(logInfo) $ T.concat
-        [ "DETERMINE: "
-        , T.pack . show . foreignKeyValue $ fk
-        ]
+    whenVerbose . $logInfo . fromString $
+        "DETERMINE: " <> show fk
 
+    -- Lookup the corresponding InternalKey.
     ik' <- lookupInternalKey fk
 
-    whenVerbose $ $(logDebug) $ T.concat
-        [ "Looking for key: "
-        , T.pack . show $ ik'
-        ]
+    whenVerbose . $logDebug . fromString $
+        "Looking for key: " <> show ik'
 
+    -- Fetch the corresponding Document.
     doc' <- runRetconAction state $ getDocument fk
 
-    whenVerbose $ $(logDebug) $ T.concat
-        [ "Looking for document: "
-        , T.pack . show $ doc'
-        ]
+    whenVerbose . $logDebug . fromString $
+        "Looking for document: " <> show doc'
 
-    return $ case (ik', doc') of
-        (Nothing, Left  _) -> RetconProblem fk (RetconSourceError "Unknown key, no document")
-        (Nothing, Right _) -> RetconCreate fk
-        (Just ik, Left  _) -> RetconDelete ik
-        (Just ik, Right _) -> RetconUpdate ik
+    -- Determine the RetconOperation to be performed.
+    let operation = case (ik', doc') of
+            (Nothing, Left  _) -> RetconProblem fk (RetconSourceError "Unknown key, no document")
+            (Nothing, Right _) -> RetconCreate fk
+            (Just ik, Left  _) -> RetconDelete ik
+            (Just ik, Right _) -> RetconUpdate ik
 
--- | Perform the action/s described by a 'RetconOperation' value.
-runOperation :: (ReadableToken store, WritableToken store, RetconDataSource entity source)
-             => DataSourceState entity source
-             -> RetconOperation entity source
-             -> RetconHandler store ()
+    whenVerbose . $logDebug . fromString $
+        "Operation for " <> show fk <> " is " <> show operation
+
+    return operation
+
+-- | Execute the action described by a 'RetconOperation' value.
+runOperation
+    :: (ReadableToken store, WritableToken store, RetconDataSource entity source)
+    => DataSourceState entity source
+    -> RetconOperation entity source
+    -> RetconHandler store ()
 runOperation state event =
     case event of
         RetconCreate  fk -> create state fk
@@ -146,9 +151,8 @@ process :: forall store entity source. (ReadableToken store, WritableToken store
         -> ForeignKey entity source
         -> RetconHandler store ()
 process state fk = do
-    $logDebug . T.pack . concat $ [ "EVENT against ", show $ length sources
-                                  , " sources"
-                                  ]
+    whenVerbose . $logDebug . fromString $
+        "EVENT against " <> (show . length $ sources) <> " sources."
 
     determineOperation state fk >>= runOperation state
   where
@@ -160,7 +164,8 @@ create :: forall store entity source. (ReadableToken store, WritableToken store,
        -> ForeignKey entity source
        -> RetconHandler store ()
 create state fk = do
-    $logDebug "CREATE"
+    $logDebug . fromString $
+        "CREATE: " <> show fk
 
     -- Allocate a new InternalKey to represent this entity.
     ik <- createInternalKey
@@ -169,6 +174,7 @@ create state fk = do
     -- Use the new Document as the initial document.
     doc' <- runRetconAction state $ getDocument fk
 
+    -- TODO Log result
     case doc' of
         Left _ -> do
             deleteState ik
@@ -184,7 +190,8 @@ delete :: (ReadableToken store, WritableToken store, RetconEntity entity)
        -> InternalKey entity
        -> RetconHandler store ()
 delete state ik = do
-    $logDebug "DELETE"
+    $logDebug . fromString $
+        "DELETE: " <> show ik
 
     -- Delete from data sources.
     results <- deleteDocuments ik
@@ -200,7 +207,8 @@ update :: (ReadableToken store, WritableToken store, RetconEntity entity)
        -> InternalKey entity
        -> RetconHandler store ()
 update state ik = do
-    $logDebug "UPDATE"
+    $logDebug . fromString $
+        "UPDATE: " <> show ik
 
     -- Fetch documents.
     docs <- getDocuments ik
@@ -244,11 +252,12 @@ reportError :: (RetconDataSource entity source)
             -> RetconError
             -> RetconHandler store ()
 reportError state fk err = do
-    $logError . T.pack . concat $ [ "Could not process event for "
-                                  , show . foreignKeyValue $ fk
-                                  , ". "
-                                  , show err
-                                  ]
+    $logDebug . fromString $
+        "ERROR: " <> show fk
+
+    $logError . fromString $
+        "Could not process event for " <> show fk <> ". " <> show err
+
     return ()
 
 -- * Data source wrappers
@@ -272,18 +281,18 @@ getDocuments ik = do
                 -- Flatten any nested errors.
                 (do
                     -- Lookup the foreign key for this data source.
-                    $(logError) "Attempting to lookup!"
+                    $logError "Attempting to lookup!"
                     mkey :: Maybe (ForeignKey entity source) <- lookupForeignKey ik
-                    $(logError) "Done looking! About to inspect"
+                    $logError "Done looking! About to inspect"
                     -- If there was a key, use it to fetch the document.
                     case mkey of
                         Nothing -> do
-                            $(logError) "Could not find a document id! :-("
+                            $logError "Could not find a document id! :-("
                             return . Left $ RetconFailed
                         Just fk -> do
-                            $(logError) "Found an ID! Can we get it?"
+                            $logError "Found an ID! Can we get it?"
                             res <- runRetconAction state $ getDocument fk
-                            $(logError) $ T.concat ["Done! ", T.pack . show $ res]
+                            $logError . fromString $ "Done! " <> show res
                             return res
                     )
     return . concat $ results
@@ -321,17 +330,20 @@ deleteDocuments ik = do
     let entity = Proxy :: Proxy entity
     entities <- view retconState
 
+    -- Iterate over the list of entities.
     results <- forM entities $ \(InitialisedEntity current sources) ->
+        -- When you've found the one corresponding to the 'InternalKey'.
         case sameSymbol entity current of
             Nothing -> return []
-            Just Refl -> forM sources $
-                \(InitialisedSource (_:: Proxy source) state) ->
-
-                    do
-                        (fk' :: Maybe (ForeignKey entity source)) <- lookupForeignKey ik
-                        case fk' of
-                            Nothing -> return . Right $ ()
-                            Just fk -> runRetconAction state $ deleteDocument fk
+            Just Refl ->
+                -- Iterate of the associated sources.
+                forM sources $ \(InitialisedSource (_:: Proxy source) state) -> do
+                    -- Map the InternalKey to a ForeignKey for this source and...
+                    (fk' :: Maybe (ForeignKey entity source)) <- lookupForeignKey ik
+                    -- ...issue a delete.
+                    case fk' of
+                        Nothing -> return . Right $ ()
+                        Just fk -> runRetconAction state $ deleteDocument fk
     return . concat $ results
 
 -- * Storage backend wrappers
@@ -344,21 +356,31 @@ deleteState :: forall store entity. (WritableToken store, RetconEntity entity)
             => InternalKey entity
             -> RetconHandler store ()
 deleteState ik = do
-    let key = T.pack . show . internalKeyValue $ ik
+    $logInfo . fromString $
+        "DELETE: " <> show ik
 
-    $logInfo $ T.concat ["DELETE state for ", key]
+    -- Delete the initial document.
+    n_id <- deleteInitialDocument ik
+    whenVerbose . $logDebug . fromString $
+        "Deleted initial document for " <> show ik <> ": " <> show n_id
 
-    deleteInitialDocument ik
+    -- TODO do we need to delete notifications here? I think we do!
+
+    -- Delete the diffs.
+    n_diff <- deleteDiffs ik
+    whenVerbose . $logDebug . fromString $
+        "Deleted diffs for " <> show ik <> ": " <> show n_diff
+
+    -- Delete associated foreign keys.
     n_fk <- deleteForeignKeys ik
-    n_ik <- deleteInternalKey ik
+    whenVerbose . $logDebug . fromString $
+        "Deleted foreign key/s for " <> show ik <> ": " <> show n_fk
 
-    whenVerbose $ do
-        $logDebug $ T.concat [ "Deleted foreign key/s for ", key, ": "
-                             , T.pack . show $ n_fk
-                             ]
-        $logDebug $ T.concat [ "Deleted internal key/s for ", key, ": "
-                             , T.pack . show $ n_ik
-                             ]
+    -- Delete the internal key.
+    n_ik <- deleteInternalKey ik
+    whenVerbose . $logDebug . fromString $
+        "Deleted internal key/s for " <> show ik <> ": " <> show n_ik
+
     return ()
 
 -- | Attempt to translate a 'ForeignKey' from one source into a 'ForeignKey'
@@ -372,41 +394,8 @@ translateForeignKey
 translateForeignKey from =
     lookupInternalKey from >>= maybe (return Nothing) lookupForeignKey
 
--- | Get all diffs for a Document
--- Use for displaying diffs
-getInitialDocumentDiffs :: forall store entity. (ReadableToken store, WritableToken store, RetconEntity entity)
-       => InternalKey entity
-       -> RetconHandler store [Diff Int]
-getInitialDocumentDiffs ik = do
-    -- conn <- asks retconConnection
-    let conn = undefined
-    (results :: [Only Int]) <- liftIO $ query conn selectQ (internalKeyValue ik)
-    let ids = map fromOnly results
-    let rawDiffs = map (\d -> Diff d []) ids
-    mapM completeDiff rawDiffs
-    where
-        selectQ = "SELECT diff_id FROM retcon_diff WHERE entity = ? AND id = ?"
+-- * Utility functions
 
--- | Build a Diff object from a Diff ID
--- Use for displaying diffs
-completeDiff :: (ReadableToken store) => Diff Int -> RetconHandler store (Diff Int)
-completeDiff (Diff diff_id _) = do
-    diffOps <- getDbDiffOps diff_id
-    return $ Diff diff_id diffOps
-
--- | Get DiffOp objects belonging to a Diff ID
--- Use for displaying diffs
-getDbDiffOps :: (ReadableToken store, FromJSON l) => Int -> RetconHandler store [DiffOp l]
-getDbDiffOps diff_id = do
-    -- conn <- asks retconConnection
-    let conn = undefined
-    (results :: [Only Value]) <- liftIO $ query conn selectQ (Only diff_id)
-    return . mapMaybe (constructDiffOpFromDb . fromOnly) $ results
-    where
-        selectQ = "SELECT portion FROM retcon_diff_portion WHERE diff_id = ?"
-
-constructDiffOpFromDb :: (FromJSON l) => Value -> Maybe (DiffOp l)
-constructDiffOpFromDb v =
-    case (fromJSON v :: (FromJSON l) => Result (DiffOp l)) of
-        Error _   -> Nothing
-        Success d -> Just d
+-- | Check that two symbols are the same.
+same :: (KnownSymbol a, KnownSymbol b) => Proxy a -> Proxy b -> Bool
+same a b = isJust (sameSymbol a b)

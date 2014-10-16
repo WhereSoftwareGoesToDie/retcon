@@ -50,7 +50,7 @@ library
                      , monad-control
                      , monad-logger
                      , mtl
-                     , optparse-applicative >= 0.10
+                     , optparse-applicative >= 0.11
                      , postgresql-simple
                      , random
                      , text

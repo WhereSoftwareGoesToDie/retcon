@@ -93,7 +93,7 @@ instance RetconStore MemStorage where
 
     storeDeleteInternalKey (MemStorage ref) ik = do
         atomicModifyIORef' ref $ \st ->
-            (st & memItoF . at (internalKeyValue ik) .~ Nothing, ())
+            (st & memItoF . at (internalKeyValue ik) .~ Nothing, 0)
 
     storeRecordForeignKey (MemStorage ref) ik fk = do
         let iki@(_, internal_id) = internalKeyValue ik
@@ -126,7 +126,7 @@ instance RetconStore MemStorage where
             ( st & maybe id (\iki -> memItoF . ix iki %~ M.filter (/= foreign_id)) maybe_iki
             -- Also, delete the foreign in the foreign to internal map.
                  & memFtoI . at fki .~ Nothing
-            , ())
+            , 0)
 
     storeDeleteForeignKeys store@(MemStorage ref) ik = do
         let iki@(entity_name, _) = internalKeyValue ik
@@ -150,7 +150,7 @@ instance RetconStore MemStorage where
 
     storeDeleteInitialDocument (MemStorage ref) ik =
         atomicModifyIORef' ref $ \st ->
-            (st & memInits . at (internalKeyValue ik) .~ Nothing, ())
+            (st & memInits . at (internalKeyValue ik) .~ Nothing, 0)
 
     storeRecordDiffs (MemStorage ref) ik new =
         let relabeled = bimap void (map void) new in
@@ -175,7 +175,7 @@ instance RetconStore MemStorage where
     storeDeleteDiff (MemStorage ref) did =
         atomicModifyIORef' ref del
       where
-        del st = (st, ())
+        del st = (st, 0)
 
     storeDeleteDiffs (MemStorage ref) ik =
         atomicModifyIORef' ref $ \st ->
