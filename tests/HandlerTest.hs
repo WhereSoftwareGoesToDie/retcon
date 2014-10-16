@@ -111,8 +111,8 @@ getDocumentIORef ref (ForeignKey fk') = do
         Nothing  -> throwError RetconFailed
 
 -- | Configuration to use when testing retcon event dispatch.
-dispatchConfig :: RetconConfig
-dispatchConfig = RetconConfig [ SomeEntity (Proxy :: Proxy "dispatchtest") ]
+dispatchConfig :: [ SomeEntity ]
+dispatchConfig = [ SomeEntity (Proxy :: Proxy "dispatchtest") ]
 
 instance RetconEntity "dispatchtest" where
     entitySources _ = [ SomeDataSource (Proxy :: Proxy "dispatch1")
@@ -568,7 +568,7 @@ withConfiguration :: RetconOptions
 withConfiguration opt = bracket openConnection closeConnection
   where
     openConnection = do
-        state <- initialiseEntities mempty (retconEntities dispatchConfig)
+        state <- initialiseEntities mempty dispatchConfig
         ref <- newIORef Memory.emptyState
         return (state, Memory.MemStorage ref, opt)
     closeConnection (state, Memory.MemStorage ref, _) = do
@@ -651,23 +651,23 @@ exceptionSuite :: Spec
 exceptionSuite =
     describe "Exception handling" $ do
         it "should allow initialiser exceptions to propagate" $ do
-            let cfg = RetconConfig [SomeEntity (Proxy :: Proxy "exception")]
+            let cfg = [SomeEntity (Proxy :: Proxy "exception")]
             (initTest cfg) `shouldThrow` (== ErrorCall "initialise exception")
 
         it "should catch action exception and return them as RetconErrors" $ do
-            let cfg = RetconConfig []
+            let cfg = []
             result <- actionTest cfg
             (show result) `shouldBe` "Right (Left (RetconError Action exception))"
 
         it "should allow handler exceptions to propagate" $ do
-            let cfg = RetconConfig []
+            let cfg = []
             (handlerTest cfg) `shouldThrow` (== ErrorCall "Handler exception")
 
   where
     -- Raise an exception in "action" code.
     actionTest cfg = bracket
         (do
-            st <- initialiseEntities mempty (retconEntities cfg)
+            st <- initialiseEntities mempty cfg
             tok <- storeInitialise testOpts :: IO Memory.MemStorage
             return (st, tok))
         (\(s, t) -> do
@@ -681,7 +681,7 @@ exceptionSuite =
     -- Raise an exception in "action" code.
     handlerTest cfg = bracket
         (do
-            st <- initialiseEntities mempty (retconEntities cfg)
+            st <- initialiseEntities mempty cfg
             tok <- storeInitialise testOpts :: IO Memory.MemStorage
             return (st, tok))
         (\(s, t) -> do
@@ -693,7 +693,7 @@ exceptionSuite =
     -- Raise an exception in "action" code.
     initTest cfg = bracket
         (do
-            st <- initialiseEntities mempty (retconEntities cfg)
+            st <- initialiseEntities mempty cfg
             tok <- storeInitialise testOpts :: IO Memory.MemStorage
             return (st, tok))
         (\(s, t) -> do
@@ -710,7 +710,15 @@ testHandler :: [InitialisedEntity]
 testHandler state store a = runRetconHandler testOpts state store a
 
 runRetconHandler :: (RetconStore s) => RetconOptions -> [InitialisedEntity] -> s -> RetconHandler RWToken a -> IO (Either RetconError a)
-runRetconHandler opt state store a = runRetconMonad opt (RetconMonadState opt state (token store) ()) a
+runRetconHandler opt state store a =
+    let cfg = RetconConfig
+                (opt ^. optVerbose)
+                (opt ^. optLogging)
+                (token store)
+                mempty
+                (opt ^. optArgs)
+                state
+  in runRetconMonad (RetconMonadState cfg ()) a
 
 main :: IO ()
 main = hspec $ do

@@ -19,6 +19,7 @@
 module Main where
 
 import Control.Monad.IO.Class
+import Control.Lens.Operators
 import Data.Monoid
 import Data.Proxy
 import Data.String
@@ -160,7 +161,15 @@ pass = return ()
 run :: l -> RetconMonad InitialisedEntity ROToken l r -> IO (Either RetconError r)
 run l a = do
     store <- storeInitialise opt :: IO MemStorage
-    result <- runRetconMonad opt (RetconMonadState opt state (restrictToken . token $ store) l) a
+    let store' = restrictToken . token $ store
+    let cfg = RetconConfig
+                (opt ^. optVerbose)
+                (opt ^. optLogging)
+                store'
+                mempty
+                (opt ^. optArgs)
+                state
+    result <- runRetconMonad (RetconMonadState cfg l) a
     storeFinalise store
     return result
   where

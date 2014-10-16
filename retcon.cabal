@@ -200,6 +200,7 @@ test-suite             userapi-test
                      , directory
                      , filepath
                      , hspec
+                     , lens
                      , retcon
                      , text
                      , transformers
@@ -219,6 +220,7 @@ test-suite             postgresql-test
                      , directory
                      , filepath
                      , hspec
+                     , lens
                      , postgresql-simple
                      , process
                      , retcon
@@ -259,6 +261,7 @@ test-suite store-memory-test
   build-depends:       base
                      , containers
                      , hspec
+                     , lens
                      , retcon
 
 test-suite configuration-test

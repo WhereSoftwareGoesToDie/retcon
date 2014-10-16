@@ -16,6 +16,7 @@
 
 module Main where
 
+import Control.Lens.Operators
 import Data.IORef
 import qualified Data.Map.Strict as M
 import Data.Maybe
@@ -98,7 +99,15 @@ instance RetconDataSource "testers" "tester2" where
 runAction :: MemStorage
           -> RetconMonad InitialisedEntity RWToken () r
           -> IO (Either RetconError r)
-runAction store action = runRetconMonad options (RetconMonadState options [] (token store) ()) action
+runAction store action =
+    let cfg = RetconConfig
+                (options ^. optVerbose)
+                (options ^. optLogging)
+                (token store)
+                mempty
+                (options ^. optArgs)
+                []
+    in runRetconMonad (RetconMonadState cfg ()) action
 
 -- $ Memory Storage Tests
 
