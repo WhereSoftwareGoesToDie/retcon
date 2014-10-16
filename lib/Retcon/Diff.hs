@@ -17,20 +17,31 @@
 {-# LANGUAGE DeriveFunctor     #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Retcon.Diff where
+module Retcon.Diff (
+    Diff (..),
+    DiffOp (..),
+    FromJSON,
+    ToJSON,
+    Monoid,
+    diffOpIsInsert,
+    diffOpIsDelete,
+    diffOpTarget,
+    diffOpAffects,
+    diff,
+    applyDiff
+    ) where
 
-import Control.Applicative
-import Control.Monad
-import Data.Aeson
+import           Control.Applicative
+import           Control.Monad
+import           Data.Aeson
+import           Data.Tree.GenericTrie
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Map as M
-import Data.Maybe
-import Data.Monoid
-import Data.Text (Text)
-import GHC.Exts (IsList (..))
-
-import Data.Tree.GenericTrie
-import Retcon.Document
+import           Data.Maybe
+import           Data.Monoid
+import           Data.Text (Text)
+import           GHC.Exts (IsList (..))
+import           Retcon.Document
 
 -- | A 'Diff' describes a collection of changes to a 'Document'.
 data Diff l = Diff
@@ -77,38 +88,49 @@ instance ToJSON l => ToJSON (DiffOp l) where
                                            ]
 
 -- | Predicate: Operation is an insertion.
-diffOpIsInsert :: DiffOp l -> Bool
+diffOpIsInsert
+    :: DiffOp l
+    -> Bool
 diffOpIsInsert op = case op of
     DeleteOp {} -> False
     InsertOp {} -> True
 
 -- | Predicate: Operation is a deletion.
-diffOpIsDelete :: DiffOp l -> Bool
+diffOpIsDelete
+    :: DiffOp l
+    -> Bool
 diffOpIsDelete op = case op of
     DeleteOp {} -> True
     InsertOp {} -> False
 
 -- | Extract the key which will be modified by a 'DiffOp'.
-diffOpTarget :: DiffOp l -> [DocumentKey]
+diffOpTarget
+    :: DiffOp l
+    -> [DocumentKey]
 diffOpTarget (InsertOp _ k _) = k
 diffOpTarget (DeleteOp _ k) = k
 
 -- | Predicate: does the operation touch one of these keys.
-diffOpAffects :: DiffOp l -> [[DocumentKey]] -> Bool
+diffOpAffects
+    :: DiffOp l
+    -> [[DocumentKey]]
+    -> Bool
 diffOpAffects op keys = diffOpTarget op `elem` keys
 
 -- | Generate a 'Diff' from two documents, with a void label.
-diff :: Document -- ^ Source document.
-     -> Document -- ^ Target document.
-     -> Diff ()
+diff
+    :: Document -- ^ Source document.
+    -> Document -- ^ Target document.
+    -> Diff ()
 diff = diffWith (const ())
 
 -- | Generate a 'Diff' from two documents, using the supplied function
 -- to extract a label.
-diffWith :: (Document -> l) -- ^ Extract a label from target document
-         -> Document        -- ^ Source document.
-         -> Document        -- ^ Target document.
-         -> Diff l
+diffWith
+    :: (Document -> l) -- ^ Extract a label from target document
+    -> Document        -- ^ Source document.
+    -> Document        -- ^ Target document.
+    -> Diff l
 diffWith label from to =
     let l     = label from
         from' = toList . unDocument $ from
@@ -117,9 +139,10 @@ diffWith label from to =
     in Diff l $ fmap (fmap $ const l) ops
 
 -- | Build a list of diff operations from two tree association lists.
-diffLists :: [([DocumentKey],DocumentValue)]   -- ^ Source tree.
-          -> [([DocumentKey],DocumentValue)]   -- ^ Target tree.
-          -> [DiffOp ()]
+diffLists
+    :: [([DocumentKey],DocumentValue)]   -- ^ Source tree.
+    -> [([DocumentKey],DocumentValue)]   -- ^ Target tree.
+    -> [DiffOp ()]
 diffLists from [] = map (\(n,_) -> DeleteOp () n) from
 diffLists []   to = map (uncurry $ InsertOp ()) to
 diffLists ss@((ns,vs):sr) ds@((nd,vd):dr) =
@@ -131,36 +154,46 @@ diffLists ss@((ns,vs):sr) ds@((nd,vd):dr) =
             else InsertOp () nd vd:diffLists sr dr
 
 -- | Apply a 'Diff' to a 'Document'.
-applyDiff :: Diff l
-          -> Document
-          -> Document
+applyDiff
+    :: Diff l
+    -> Document
+    -> Document
 applyDiff (Diff _ []) doc  = doc
 applyDiff (Diff _ ops) doc = foldl (flip evalDiffOp) doc ops
 
 -- | Apply a single 'DiffOp' to a 'Document'.
-evalDiffOp :: DiffOp l
-           -> Document
-           -> Document
-
--- Delete the value at the current location.
-evalDiffOp (DeleteOp _ []) (Document (Node _ kids))
-  = Document . Node Nothing $ M.filter (not . emptyNode) kids
-
--- Navigate to a location (so you can delete it's value).
-evalDiffOp (DeleteOp _ (k:ks)) (Document (Node l kids)) =
-    Document
-    . Node l
-    . M.filter (not . emptyNode) $ M.alter (updateChild (DeleteOp () ks)) k kids
+-- Handles four different cases:
+-- * Insert at current node
+-- * Insert within one of the current node's children
+-- * Delete from current node
+-- * Delete within one of the current node's children
+evalDiffOp
+    :: DiffOp l
+    -> Document
+    -> Document
 
 -- Set the value at the current location.
 evalDiffOp (InsertOp _ []  v) (Document (Node _ kids)) =
     Document $ Node (Just v) kids
 
--- Navigate to a location (so you can set it's value).
+-- Navigate to a location (so you can set its value).
 evalDiffOp (InsertOp _ (k:ks) v) (Document (Node l kids))
   = Document . Node l $ M.alter (updateChild (InsertOp () ks v)) k kids
 
-updateChild :: DiffOp a -> Maybe (Tree DocumentKey DocumentValue) -> Maybe (Tree DocumentKey DocumentValue)
+-- Delete the value at the current location.
+evalDiffOp (DeleteOp _ []) (Document (Node _ kids))
+  = Document . Node Nothing $ M.filter (not . emptyNode) kids
+
+-- Navigate to a location (so you can delete its value).
+evalDiffOp (DeleteOp _ (k:ks)) (Document (Node l kids)) =
+    Document
+    . Node l
+    . M.filter (not . emptyNode) $ M.alter (updateChild (DeleteOp () ks)) k kids
+
+updateChild
+    :: DiffOp a
+    -> Maybe (Tree DocumentKey DocumentValue)
+    -> Maybe (Tree DocumentKey DocumentValue)
 updateChild op =
     Just . unDocument . evalDiffOp op . Document . fromMaybe mempty
 
