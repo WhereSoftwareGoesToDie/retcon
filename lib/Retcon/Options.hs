@@ -15,12 +15,10 @@
 
 module Retcon.Options where
 
-import Control.Lens.Operators
 import Control.Lens.TH
 import Control.Monad hiding (sequence)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BS
-import Data.Map.Strict (Map)
 import Data.Maybe
 import Data.Monoid
 import Data.Text (Text)
@@ -53,17 +51,11 @@ data RetconOptions =
           _optVerbose :: Bool
         , _optLogging :: Logging
         , _optDB      :: BS.ByteString
-        -- TODO: This is nuts
-        , _optParams  :: Maybe (Either FilePath ParamMap)
+        , _optParams  :: Maybe FilePath
         , _optArgs    :: [Text]
     }
   deriving (Show, Eq)
 makeLenses ''RetconOptions
-
-
--- | Extract data source 'ParamMap' from 'RetconOptions' with empty defaults.
-pickParams :: RetconOptions -> ParamMap
-pickParams opts = maybe mempty (either mempty id) (opts ^. optParams)
 
 -- | Default options which probably won't let you do much of anything.
 defaultOptions :: RetconOptions
@@ -73,18 +65,7 @@ defaultOptions = RetconOptions False LogNone "" Nothing []
 
 -- | Parse options from a config file and/or the command line.
 parseArgsWithConfig :: FilePath -> IO RetconOptions
-parseArgsWithConfig = parseFile >=> execParser . helpfulParser >=> includeParams
-
--- | Load the parameters from the path specified in the options.
-includeParams :: RetconOptions -> IO RetconOptions
-includeParams opt = do
-    params <- sequence $ either readParams return <$> _optParams opt
-    return $ opt { _optParams = Right <$> params }
-  where
-    readParams :: FilePath -> IO (Map (Text, Text) (Map Text Text))
-    readParams path = do
-        results <- parseFromFile configParser path
-        return $ maybe mempty convertConfig results
+parseArgsWithConfig = parseFile >=> execParser . helpfulParser
 
 -- * Options parsers
 
@@ -139,8 +120,8 @@ confOptionsParser RetconOptions{..} =
         <> help "Log messages to an output"
         <> O.value _optLogging
         <> showDefault
-    parseParams :: O.Parser (Maybe (Either FilePath (Map (Text, Text) (Map Text Text))))
-    parseParams = O.option (Just . Left <$> readerAsk) $
+    parseParams :: O.Parser (Maybe FilePath)
+    parseParams = O.option (Just <$> readerAsk) $
            long "parameters"
         <> metavar "FILE"
         <> help "Data source parameters"
@@ -168,7 +149,7 @@ parseFile path = do
         RetconOptions <$> pure _optVerbose
                       <*> (lookup "logging" ls >>= readLog) `mplus` pure _optLogging
                       <*> liftM BS.pack (lookup "database" ls) `mplus` pure _optDB
-                      <*> (Just . Left <$> lookup "parameters" ls) `mplus` pure _optParams
+                      <*> (Just <$> lookup "parameters" ls) `mplus` pure _optParams
                       <*> pure []
 
     simpleConfigParser :: Parser [(String, String)]
@@ -178,3 +159,16 @@ parseFile path = do
 
     possibleKeys :: Parser String
     possibleKeys = string "logging" <|> string "database" <|> string "parameters"
+
+
+-- | Configuration value for retcon.
+data RetconConfig entity store =
+    RetconConfig {
+          _cfgVerbose  :: Bool
+        , _cfgLogging  :: Logging
+        , _cfgDB       :: store
+        , _cfgParams   :: ParamMap
+        , _cfgArgs     :: [Text]
+        , _cfgEntities :: [entity]
+    }
+makeLenses ''RetconConfig

@@ -121,7 +121,7 @@ dispatch :: forall store. (ReadableToken store, WritableToken store)
          -> RetconHandler store ()
 dispatch work = do
     let (entity_str, source_str, key) = read work :: (String, String, String)
-    entities <- view retconState
+    entities <- getRetconState
 
     case (someSymbolVal entity_str, someSymbolVal source_str) of
         (SomeSymbol entity, SomeSymbol source) ->
@@ -133,13 +133,11 @@ dispatch work = do
 
 -- | Run the retcon process on an event.
 retcon :: (ReadableToken s, WritableToken s)
-       => RetconOptions
-       -> RetconConfig
-       -> s
+       => RetconConfig SomeEntity s
        -> String
        -> IO (Either RetconError ())
-retcon opts config store key =
-    runRetconMonadOnce opts config store () $ dispatch key
+retcon config key =
+    runRetconMonadOnce config () $ dispatch key
 
 -- | Process an event on a specified 'ForeignKey'.
 --
@@ -272,7 +270,7 @@ getDocuments :: forall store entity. (ReadableToken store, RetconEntity entity)
              -> RetconHandler store [Either RetconError Document]
 getDocuments ik = do
     let entity = Proxy :: Proxy entity
-    entities <- view retconState
+    entities <- getRetconState
 
     results <- forM entities $ \(InitialisedEntity current sources) ->
         case sameSymbol entity current of
@@ -305,7 +303,7 @@ setDocuments :: forall store entity. (ReadableToken store, WritableToken store, 
              -> RetconHandler store [Either RetconError ()]
 setDocuments ik docs = do
     let entity = Proxy :: Proxy entity
-    entities <- view retconState
+    entities <- getRetconState
 
     results <- forM entities $ \(InitialisedEntity current sources) ->
         case sameSymbol entity current of
@@ -328,7 +326,7 @@ deleteDocuments :: forall store entity. (ReadableToken store, WritableToken stor
                 -> RetconHandler store [Either RetconError ()]
 deleteDocuments ik = do
     let entity = Proxy :: Proxy entity
-    entities <- view retconState
+    entities <- getRetconState
 
     -- Iterate over the list of entities.
     results <- forM entities $ \(InitialisedEntity current sources) ->

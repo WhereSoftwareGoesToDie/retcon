@@ -128,11 +128,10 @@ instance RetconDataSource "event" "exchange" where
 
 -- * Retcon configuration
 
-cfg :: RetconConfig
-cfg = RetconConfig [ SomeEntity (Proxy :: Proxy "event")
-                   , SomeEntity (Proxy :: Proxy "customer")
-                   ]
-
+entities :: [SomeEntity]
+entities = [ SomeEntity (Proxy :: Proxy "event")
+           , SomeEntity (Proxy :: Proxy "customer")
+           ]
 
 -- | Create a test path based on the CWD.
 jsonFilePath :: MonadIO m => m FilePath
@@ -145,9 +144,9 @@ jsonFilePath = liftIO $
 main :: IO ()
 main = do
     opts <- parseArgsWithConfig "/etc/retcon.conf"
+    cfg <- prepareConfig opts entities
     when (opts ^. optVerbose) $ print opts
 
-    tok <- token . PGStore <$> connectPostgreSQL (opts ^. optDB)
     let (entity:source:key:_) = opts ^. optArgs
-    res <- retcon opts cfg tok $ show (entity, source, key)
+    res <- retcon cfg $ show (entity, source, key)
     print res

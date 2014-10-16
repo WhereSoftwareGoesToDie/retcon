@@ -74,8 +74,8 @@ instance RetconDataSource "entity" "downstream" where
     deleteDocument key =
         getActionState >>= \(Downstream fp) -> deleteJSONDir fp key
 
-cfg :: RetconConfig
-cfg = RetconConfig [ SomeEntity (Proxy :: Proxy "entity") ]
+entities :: [SomeEntity]
+entities = [ SomeEntity (Proxy :: Proxy "entity") ]
 
 main :: IO ()
 main = hspec suite

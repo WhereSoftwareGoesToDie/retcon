@@ -18,6 +18,7 @@ module Retcon.Core
 import Control.Applicative
 import Control.Exception
 import Control.Exception.Enclosed
+import Control.Lens.Operators
 import Control.Monad.Except
 import Control.Monad.Reader
 
@@ -51,19 +52,21 @@ localise
     => l -- ^ Local state value
     -> RetconMonadState e s () -- ^ Handler state
     -> RetconMonadState e ROToken l
-localise l (RetconMonadState opt state store _) = RetconMonadState opt state (restrictToken store) l
+localise local state =
+    state & retconConfig . cfgDB %~ restrictToken
+          & localState .~ local
 
 -- | Execute an action in the 'RetconMonad' monad with configuration
 -- initialized and finalized.
 runRetconMonadOnce
-    :: RetconOptions
-    -> RetconConfig
-    -> s
+    :: RetconConfig SomeEntity s
     -> l
     -> RetconMonad InitialisedEntity s l a
     -> IO (Either RetconError a)
-runRetconMonadOnce opt (RetconConfig entities) store l action =
-    let params = pickParams opt
+runRetconMonadOnce cfg l action =
+    let params = cfg ^. cfgParams
+        entities = cfg ^. cfgEntities
     in bracket (initialiseEntities params entities)
                (void . finaliseEntities params)
-               (\state -> runRetconMonad opt (RetconMonadState opt state store l) action)
+               (\state -> let cfg' = cfg & cfgEntities .~ state
+                          in runRetconMonad (RetconMonadState cfg' l) action)

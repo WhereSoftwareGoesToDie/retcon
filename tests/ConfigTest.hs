@@ -48,8 +48,8 @@ instance RetconDataSource "inittest" "initsource" where
     getDocument = error "Unimplemented"
     deleteDocument = error "Unimplemented"
 
-initCfg :: RetconConfig
-initCfg = RetconConfig [SomeEntity (Proxy :: Proxy "inittest")]
+initCfg :: [SomeEntity]
+initCfg = [SomeEntity (Proxy :: Proxy "inittest")]
 
 instance RetconEntity "finaltest" where
     entitySources _ = [SomeDataSource (Proxy :: Proxy "finalsource")]
@@ -62,8 +62,8 @@ instance RetconDataSource "finaltest" "finalsource" where
     getDocument = error "Unimplemented"
     deleteDocument = error "Unimplemented"
 
-finalCfg :: RetconConfig
-finalCfg = RetconConfig [SomeEntity (Proxy :: Proxy "finaltest")]
+finalCfg :: [SomeEntity]
+finalCfg = [SomeEntity (Proxy :: Proxy "finaltest")]
 
 configurationSuite :: Spec
 configurationSuite = do
@@ -118,10 +118,10 @@ configurationSuite = do
     valueError msg = (== (ErrorCall msg))
 
 initTest :: ParamMap
-         -> RetconConfig
+         -> [SomeEntity]
          -> IO ()
 initTest params cfg = do
-    state <- initialiseEntities params (retconEntities cfg)
+    state <- initialiseEntities params cfg
     void $ finaliseEntities params state
 
 main :: IO ()

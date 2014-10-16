@@ -16,6 +16,7 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TypeFamilies               #-}
 
 module Retcon.DataSource where
@@ -25,6 +26,7 @@ import Control.Monad.Base
 import Control.Monad.Except
 import Control.Monad.Reader
 import Data.Biapplicative
+import qualified Data.ByteString.Char8 as BS
 import Data.Map (Map)
 import qualified Data.Map as M
 import Data.Monoid
@@ -33,6 +35,8 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Type.Equality
 import GHC.TypeLits
+import Options.Applicative hiding (Parser, option)
+import Text.Trifecta
 
 import Retcon.Diff
 import Retcon.Document
@@ -42,10 +46,6 @@ import Retcon.Options
 import Utility.Configuration
 
 import Control.Lens
-
--- | Configuration value for retcon.
-newtype RetconConfig =
-    RetconConfig { retconEntities :: [SomeEntity] }
 
 -- | Restricted monad with read-only access to the retcon storage.
 type RetconAction l a = RetconMonad InitialisedEntity ROToken l a
@@ -591,23 +591,23 @@ instance StoreToken ROToken where
 
 instance ReadableToken ROToken where
     lookupInternalKey fk = do
-        ROToken store <- view retconStore
+        ROToken store <- getRetconStore
         liftIO $ storeLookupInternalKey store fk
 
     lookupForeignKey ik = do
-        ROToken store <- view retconStore
+        ROToken store <- getRetconStore
         liftIO $ storeLookupForeignKey store ik
 
     lookupInitialDocument ik = do
-        ROToken store <- view retconStore
+        ROToken store <- getRetconStore
         liftIO $ storeLookupInitialDocument store ik
 
     lookupDiff did = do
-        ROToken store <- view retconStore
+        ROToken store <- getRetconStore
         liftIO $ storeLookupDiff store did
 
     lookupDiffIds ik = do
-        ROToken store <- view retconStore
+        ROToken store <- getRetconStore
         liftIO $ storeLookupDiffIds store ik
 
 -- | A token exposing both the 'ReadableToken' and 'WritableToken' APIs.
@@ -618,70 +618,70 @@ instance StoreToken RWToken where
 
 instance ReadableToken RWToken where
     lookupInternalKey fk = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeLookupInternalKey store fk
 
     lookupForeignKey ik = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeLookupForeignKey store ik
 
     lookupInitialDocument ik = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeLookupInitialDocument store ik
 
     lookupDiff did = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeLookupDiff store did
 
     lookupDiffIds ik = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeLookupDiffIds store ik
 
 instance WritableToken RWToken where
     createInternalKey = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeCreateInternalKey store
 
     deleteInternalKey ik = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeDeleteInternalKey store ik
 
     recordForeignKey ik fk = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeRecordForeignKey store ik fk
 
     deleteForeignKey fk = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeDeleteForeignKey store fk
 
     deleteForeignKeys ik = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeDeleteForeignKeys store ik
 
     recordInitialDocument ik doc = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeRecordInitialDocument store ik doc
 
     deleteInitialDocument ik = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeDeleteInitialDocument store ik
 
     recordDiffs ik diffs = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeRecordDiffs store ik diffs
 
     deleteDiff did = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeDeleteDiff store did
 
     deleteDiffs ik = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeDeleteDiffs store ik
 
     recordNotification ik did = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeRecordNotification store ik did
 
     fetchNotifications limit = do
-        RWToken store <- view retconStore
+        RWToken store <- getRetconStore
         liftIO $ storeFetchNotifications store limit
