@@ -126,20 +126,20 @@ determineOperation
     -> ForeignKey entity source
     -> RetconHandler s (RetconOperation entity source)
 determineOperation state fk = do
-    whenVerbose . $logInfo . fromString $
+    whenVerbose . $logDebug . fromString $
         "DETERMINE: " <> show fk
 
     -- Lookup the corresponding InternalKey.
     ik' <- lookupInternalKey fk
 
     whenVerbose . $logDebug . fromString $
-        "Looking for key: " <> show ik'
+        "Looking for " <> show fk <> "; found " <> show ik'
 
     -- Fetch the corresponding Document.
     doc' <- runRetconAction state $ getDocument fk
 
     whenVerbose . $logDebug . fromString $
-        "Looking for document: " <> show doc'
+        "Looking for " <> show fk <> "; found document: " <> show doc'
 
     -- Determine the RetconOperation to be performed.
     let operation = case (ik', doc') of
@@ -148,8 +148,8 @@ determineOperation state fk = do
             (Just ik, Left  _) -> RetconDelete ik
             (Just ik, Right _) -> RetconUpdate ik
 
-    whenVerbose . $logDebug . fromString $
-        "Operation for " <> show fk <> " is " <> show operation
+    whenVerbose . logInfoN . fromString $
+        "DETERMING: " <> show fk <> " operation: " <> show operation
 
     return operation
 
@@ -178,7 +178,7 @@ create
     -> ForeignKey entity source
     -> RetconHandler store ()
 create state fk = do
-    $logDebug . fromString $
+    logInfoN . fromString $
         "CREATE: " <> show fk
 
     -- Allocate a new InternalKey to represent this entity.
@@ -212,7 +212,7 @@ delete
     => InternalKey entity
     -> RetconHandler store ()
 delete ik = do
-    $logInfo . fromString $
+    logInfoN . fromString $
         "DELETE: " <> show ik
 
     -- Delete from data sources.
@@ -233,7 +233,7 @@ update
     => InternalKey entity
     -> RetconHandler store ()
 update ik = do
-    $logDebug . fromString $
+    logInfoN . fromString $
         "UPDATE: " <> show ik
 
     -- Fetch documents, logging any errors.
@@ -286,10 +286,10 @@ reportError
     -> RetconError
     -> RetconHandler store ()
 reportError fk err = do
-    $logDebug . fromString $
+    logInfoN . fromString $
         "ERROR: " <> show fk
 
-    $logError . fromString $
+    logErrorN . fromString $
         "Could not process event for " <> show fk <> ". " <> show err
 
     return ()
@@ -316,18 +316,17 @@ getDocuments ik = do
                 -- Flatten any nested errors.
                 (do
                     -- Lookup the foreign key for this data source.
-                    $logError "Attempting to lookup!"
                     mkey :: Maybe (ForeignKey entity source) <- lookupForeignKey ik
-                    $logError "Done looking! About to inspect"
+                    whenVerbose . $logDebug . fromString $
+                        "Lookup of " <> show ik <> " resulted in " <> show mkey
                     -- If there was a key, use it to fetch the document.
                     case mkey of
                         Nothing -> do
-                            $logError "Could not find a document id! :-("
                             return . Left $ RetconFailed
                         Just fk -> do
-                            $logError "Found an ID! Can we get it?"
                             res <- runRetconAction state $ getDocument fk
-                            $logError . fromString $ "Done! " <> show res
+                            whenVerbose . $logError . fromString $
+                                "Retrieved document " <> show fk <> ": " <> show res
                             return res
                     )
     return . concat $ results
@@ -396,29 +395,29 @@ deleteState
     => InternalKey entity
     -> RetconHandler store ()
 deleteState ik = do
-    $logInfo . fromString $
+    logInfoN . fromString $
         "DELETE: " <> show ik
 
     -- Delete the initial document.
     n_id <- deleteInitialDocument ik
-    whenVerbose . $logDebug . fromString $
+    whenVerbose . logDebugN . fromString $
         "Deleted initial document for " <> show ik <> ". Deleted " <> show n_id
 
     -- TODO: Do we need to delete notifications here? I think we do!
 
     -- Delete the diffs.
     n_diff <- deleteDiffs ik
-    whenVerbose . $logDebug . fromString $
+    whenVerbose . logDebugN . fromString $
         "Deleted diffs for " <> show ik <> ": " <> show n_diff
 
     -- Delete associated foreign keys.
     n_fk <- deleteForeignKeys ik
-    whenVerbose . $logDebug . fromString $
+    whenVerbose . logDebugN . fromString $
         "Deleted foreign key/s for " <> show ik <> ": " <> show n_fk
 
     -- Delete the internal key.
     n_ik <- deleteInternalKey ik
-    whenVerbose . $logDebug . fromString $
+    whenVerbose . logDebugN . fromString $
         "Deleted internal key/s for " <> show ik <> ": " <> show n_ik
 
     return ()
