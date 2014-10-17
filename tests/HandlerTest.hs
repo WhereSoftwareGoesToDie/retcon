@@ -419,10 +419,9 @@ dispatchSuite = do
                 (fk, doc) <- newTestDocument "dispatch1-" Nothing ref1
 
                 -- Dispatch the event.
-                let opts' = opts & optArgs .~ ["dispatchtest", "dispatch1", fk]
                 let input = ("dispatchtest", "dispatch1", T.unpack fk)
 
-                res <- run opts' state store $ dispatch input
+                res <- run opts state store $ dispatch input
 
                 -- The document should be present in both stores, with an
                 -- InternalKey and two ForeignKeys.
@@ -450,9 +449,8 @@ dispatchSuite = do
                 -- still empty.
 
                 -- Dispatch the event.
-                let opts' = opts & optArgs .~ ["dispatchtest", "dispatch1", "999"]
                 let input = ("dispatchtest", "dispatch1", "999")
-                res <- run opts' state store $ dispatch input
+                res <- run opts state store $ dispatch input
 
                 -- Check that there are still no InternalKey or ForeignKey
                 -- details in the database.
@@ -716,7 +714,7 @@ runRetconHandler opt state store a =
                 (opt ^. optLogging)
                 (token store)
                 mempty
-                (opt ^. optArgs)
+                []
                 state
   in runRetconMonad (RetconMonadState cfg ()) a
 

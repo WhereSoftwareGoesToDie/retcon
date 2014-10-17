@@ -143,10 +143,10 @@ jsonFilePath = liftIO $
 -- | Parse event from command line and execute it.
 main :: IO ()
 main = do
-    opts <- parseArgsWithConfig "/etc/retcon.conf"
-    cfg <- prepareConfig opts entities
+    (opts, event) <- parseArgsWithConfig "/etc/retcon.conf"
+    cfg <- prepareConfig (opts, event) entities
     when (opts ^. optVerbose) $ print opts
 
-    let (entity:source:key:_) = opts ^. optArgs
+    let (entity:source:key:_) = event
     res <- retcon cfg $ show (entity, source, key)
     print res
