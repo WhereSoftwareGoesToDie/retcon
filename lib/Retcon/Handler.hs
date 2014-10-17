@@ -80,8 +80,7 @@ dispatch (entity_str, source_str, key) = do
                         else do $logDebug . fromString $ "no souch source: " ++ source_str
                                 return False
                    else return False
-            unless res $ $logDebug . fromString $ "no souch entity: " ++ entity_str
-            return ()
+            unless res $ $logDebug . fromString $ "no such entity: " ++ entity_str
   where
     anyM :: Monad m => [a] -> (a -> m Bool) -> m Bool
     anyM xs f = foldM (\b x -> if b then return True else f x >>= return . (&& b)) False xs
