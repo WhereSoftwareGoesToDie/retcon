@@ -24,16 +24,11 @@
 module Main where
 
 import Control.Applicative
-import Control.Lens
 import Data.Proxy
 
-import Database.PostgreSQL.Simple
-import Retcon.DataSource
+import Retcon.Core
 import Retcon.DataSource.JsonDirectory
-import Retcon.Handler
 import Retcon.Monad
-import Retcon.Options
-import Retcon.Store.PostgreSQL
 
 import Test.Hspec
 import TestHelpers

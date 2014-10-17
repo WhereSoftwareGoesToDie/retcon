@@ -29,11 +29,10 @@ import Control.Lens.Operators
 import Control.Monad
 import Control.Monad.IO.Class
 import Data.Proxy
-import Database.PostgreSQL.Simple
 import System.Directory
 import System.FilePath
 
-import Retcon.DataSource
+import Retcon.Core
 import Retcon.DataSource.JsonDirectory
 import Retcon.Handler
 import Retcon.Monad

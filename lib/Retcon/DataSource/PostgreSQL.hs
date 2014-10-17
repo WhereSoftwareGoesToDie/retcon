@@ -30,7 +30,7 @@ import qualified Database.PostgreSQL.Simple as PG
 import Database.PostgreSQL.Simple.FromRow
 import qualified Database.PostgreSQL.Simple.Types as PGT
 
-import Retcon.DataSource
+import Retcon.Core
 import Retcon.Document
 
 

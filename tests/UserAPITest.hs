@@ -1,4 +1,3 @@
-
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -18,7 +17,7 @@ import Data.Proxy
 import System.Directory
 import System.FilePath
 
-import Retcon.DataSource
+import Retcon.Core
 import Retcon.DataSource.JsonDirectory
 import Retcon.Error
 import Retcon.Monad

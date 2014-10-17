@@ -34,7 +34,6 @@ import Data.Type.Equality
 import GHC.TypeLits
 
 import Retcon.Core
-import Retcon.DataSource
 import Retcon.Diff
 import Retcon.Document
 import Retcon.Error

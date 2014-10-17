@@ -35,7 +35,7 @@ import qualified Data.Text as T
 import Data.Time
 import GHC.TypeLits
 
-import Retcon.DataSource
+import Retcon.Core
 import Retcon.Diff
 import Retcon.Document
 import Retcon.Notifications

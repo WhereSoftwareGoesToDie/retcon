@@ -47,7 +47,7 @@ import System.FilePath.Posix
 import System.Posix.Files
 import System.Random
 
-import Retcon.DataSource
+import Retcon.Core
 import Retcon.Document
 
 data JSONDirectoryError = JSONDirectoryError String deriving (Show, Typeable)
