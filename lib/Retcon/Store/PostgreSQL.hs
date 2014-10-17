@@ -34,9 +34,8 @@ import System.Directory
 import Text.Trifecta hiding (Success, token)
 import qualified Text.Trifecta as P
 
-import Retcon.DataSource
+import Retcon.Core
 import Retcon.Diff
-import Retcon.Notifications
 import Retcon.Options
 
 import Utility.Configuration

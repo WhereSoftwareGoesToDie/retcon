@@ -20,13 +20,10 @@ import Control.Monad
 import Control.Monad.Reader
 import qualified Data.Map.Strict as M
 import Data.Proxy
-import System.IO.Error
 import Test.Hspec
 import Text.Trifecta
 
-import Retcon.DataSource
-import Retcon.Error
-import Retcon.Options
+import Retcon.Core
 import Utility.Configuration
 
 testfile :: FilePath

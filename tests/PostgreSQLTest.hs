@@ -22,11 +22,10 @@ import Control.Lens.Operators
 import Control.Monad.IO.Class
 import Data.Monoid
 import Data.Proxy
-import Data.String
 import DBHelpers
 import Test.Hspec
 
-import Retcon.DataSource
+import Retcon.Core
 import Retcon.DataSource.PostgreSQL
 import Retcon.Error
 import Retcon.Monad

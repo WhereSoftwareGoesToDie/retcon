@@ -27,7 +27,7 @@ import Database.PostgreSQL.Simple
 import System.Process
 import Test.Hspec
 
-import Retcon.DataSource
+import Retcon.Core
 import Retcon.Document
 import Retcon.Error
 import Retcon.Monad

@@ -19,7 +19,6 @@ module Main where
 import Test.Hspec
 
 import Retcon.Core
-import Retcon.DataSource
 import Retcon.Diff
 import Retcon.Document
 import Retcon.Error
