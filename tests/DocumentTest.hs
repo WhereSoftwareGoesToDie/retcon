@@ -11,6 +11,7 @@
 
 module Main where
 
+import Control.Lens
 import Data.Functor (void)
 import Data.Monoid
 import Test.Hspec
@@ -43,9 +44,10 @@ suite = do
                             , testLoad "01-diff-target.json"
                             ]
       let initial = calculateInitialDocument documents
-      let diffs = concatMap (diffChanges . diff initial) documents
-      let deletions = filter diffOpIsDelete diffs
-      length deletions `shouldBe` 0
+      -- Ensure that diffing each document with the initial one results in no
+      -- delet ops
+      has ( traversed . to (diff initial)
+          . diffChanges . traversed . _DeleteOp) documents `shouldBe` False
 
 main :: IO ()
 main = hspec suite

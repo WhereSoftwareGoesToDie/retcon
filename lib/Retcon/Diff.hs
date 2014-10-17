@@ -16,15 +16,18 @@
 
 {-# LANGUAGE DeriveFunctor     #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell   #-}
 
 module Retcon.Diff (
     Diff (..),
+    diffLabel,
+    diffChanges,
     DiffOp (..),
+    _InsertOp,
+    _DeleteOp,
     FromJSON,
     ToJSON,
     Monoid,
-    diffOpIsInsert,
-    diffOpIsDelete,
     diffOpTarget,
     diffOpAffects,
     diff,
@@ -32,6 +35,7 @@ module Retcon.Diff (
 ) where
 
 import Control.Applicative
+import Control.Lens.TH
 import Control.Monad
 import Data.Aeson
 import qualified Data.HashMap.Strict as HM
@@ -43,12 +47,20 @@ import Data.Tree.GenericTrie
 import GHC.Exts (IsList (..))
 import Retcon.Document
 
+-- | A 'DiffOp' describes a single change to be applied to a 'Document'.
+data DiffOp l
+  = InsertOp l [DocumentKey] Text -- ^ Set a field to a value.
+  | DeleteOp l [DocumentKey]      -- ^ Unset a field.
+  deriving (Eq, Show, Functor)
+makePrisms ''DiffOp
+
 -- | A 'Diff' describes a collection of changes to a 'Document'.
 data Diff l = Diff
-    { diffLabel   :: l
-    , diffChanges :: [DiffOp l]
+    { _diffLabel   :: l
+    , _diffChanges :: [DiffOp l]
     }
   deriving (Eq, Show, Functor)
+makeLenses ''Diff
 
 instance FromJSON l => FromJSON (Diff l) where
     parseJSON (Object v) = Diff <$> v .: "diff_label" <*> v .: "changes"
@@ -59,15 +71,9 @@ instance ToJSON l => ToJSON (Diff l) where
                                      , "changes"    .= changes
                                      ]
 
--- | A 'DiffOp' describes a single change to be applied to a 'Document'.
-data DiffOp l
-  = InsertOp l [DocumentKey] Text -- ^ Set a field to a value.
-  | DeleteOp l [DocumentKey]      -- ^ Unset a field.
-  deriving (Eq, Show, Functor)
-
 instance Monoid l => Monoid (Diff l) where
     mempty = Diff mempty mempty
-    (Diff l1 o1) `mappend` (Diff l2 o2) = Diff (l1 `mappend` l2) (o1 ++ o2)
+    (Diff l1 o1) `mappend` (Diff l2 o2) = Diff (l1 <> l2) (o1 <> o2)
 
 instance FromJSON l => FromJSON (DiffOp l) where
     parseJSON (Object v) = case HM.lookup "op" v of
@@ -86,22 +92,6 @@ instance ToJSON l => ToJSON (DiffOp l) where
                                            , "op_label" .= toJSON l
                                            , "keys"     .= keys
                                            ]
-
--- | Predicate: Operation is an insertion.
-diffOpIsInsert
-    :: DiffOp l
-    -> Bool
-diffOpIsInsert op = case op of
-    DeleteOp {} -> False
-    InsertOp {} -> True
-
--- | Predicate: Operation is a deletion.
-diffOpIsDelete
-    :: DiffOp l
-    -> Bool
-diffOpIsDelete op = case op of
-    DeleteOp {} -> True
-    InsertOp {} -> False
 
 -- | Extract the key which will be modified by a 'DiffOp'.
 diffOpTarget
@@ -136,7 +126,7 @@ diffWith label from to =
         from' = toList . unDocument $ from
         to'   = toList . unDocument $ to
         ops   = diffLists from' to'
-    in Diff l $ fmap (fmap $ const l) ops
+    in Diff l $ (fmap . fmap) (const l) ops
 
 -- | Build a list of diff operations from two tree association lists.
 diffLists
