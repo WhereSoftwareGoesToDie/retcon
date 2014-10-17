@@ -46,54 +46,41 @@ instance Show Logging where
     show LogNone   = "none"
 
 -- | Options to control the operation of retcon.
-data RetconOptions =
-    RetconOptions {
-          _optVerbose :: Bool
-        , _optLogging :: Logging
-        , _optDB      :: BS.ByteString
-        , _optParams  :: Maybe FilePath
-        , _optArgs    :: [Text]
+data RetconOptions = RetconOptions
+    { _optVerbose :: Bool
+    , _optLogging :: Logging
+    , _optDB      :: BS.ByteString
+    , _optParams  :: Maybe FilePath
     }
   deriving (Show, Eq)
 makeLenses ''RetconOptions
 
 -- | Default options which probably won't let you do much of anything.
 defaultOptions :: RetconOptions
-defaultOptions = RetconOptions False LogNone "" Nothing []
+defaultOptions = RetconOptions False LogNone "" Nothing
 
 -- * Configuration
 
 -- | Parse options from a config file and/or the command line.
-parseArgsWithConfig :: FilePath -> IO RetconOptions
+parseArgsWithConfig :: FilePath -> IO (RetconOptions, [Text])
 parseArgsWithConfig = parseFile >=> execParser . helpfulParser
 
 -- * Options parsers
 
 -- | Parse options from the command line.
-helpfulParser :: RetconOptions -> ParserInfo RetconOptions
-helpfulParser os = info (helper <*> optionsParser os) fullDesc
-
--- | Applicative parser for 'RetconOptions', including entity details.
-optionsParser :: RetconOptions -> O.Parser RetconOptions
-optionsParser def = confOptionsParser def <*> parseID
+helpfulParser
+    :: RetconOptions
+    -> ParserInfo (RetconOptions, [Text])
+helpfulParser defaults = info (helper <*> opts) fullDesc
   where
-    parseID :: O.Parser [Text]
-    parseID = sequenceA
-        [ argument txt (metavar "ENTITY")
-        , argument txt (metavar "SOURCE")
-        , argument txt (metavar "ID")
-        ]
-
-    txt :: ReadM Text
-    txt = fmap T.pack readerAsk
+    opts = (,) <$> optionsParser defaults
+               <*> eventParser
 
 -- | Applicative parser for 'RetconOptions', including entity details.
-optionsParser' :: RetconOptions -> O.Parser RetconOptions
-optionsParser' def = confOptionsParser def <*> pure []
-
--- | Applicative parser for the configuration components of 'RetconOptions'.
-confOptionsParser :: RetconOptions -> O.Parser ([Text] -> RetconOptions)
-confOptionsParser RetconOptions{..} =
+optionsParser
+    :: RetconOptions
+    -> O.Parser RetconOptions
+optionsParser RetconOptions{..} =
     RetconOptions <$> parseVerbose
                   <*> parseLogging
                   <*> parseDB
@@ -127,6 +114,17 @@ confOptionsParser RetconOptions{..} =
         <> help "Data source parameters"
         <> showDefault
 
+-- | Parse a description of a retcon event.
+eventParser :: O.Parser [Text]
+eventParser = sequenceA
+    [ argument txt (metavar "ENTITY")
+    , argument txt (metavar "SOURCE")
+    , argument txt (metavar "ID")
+    ]
+  where
+    txt :: ReadM Text
+    txt = fmap T.pack readerAsk
+
 -- | Reader for logging options.
 readLog :: (Monad m, MonadPlus m) => String -> m Logging
 readLog "stderr" = return LogStderr
@@ -152,7 +150,6 @@ parseFile path = do
                       <*> (lookup "logging" ls >>= readLog) `mplus` pure _optLogging
                       <*> liftM BS.pack (lookup "database" ls) `mplus` pure _optDB
                       <*> (Just <$> lookup "parameters" ls) `mplus` pure _optParams
-                      <*> pure []
 
     simpleConfigParser :: Parser [(String, String)]
     simpleConfigParser = some $ liftA2 (,)
@@ -162,6 +159,10 @@ parseFile path = do
     possibleKeys :: Parser String
     possibleKeys = string "logging" <|> string "database" <|> string "parameters"
 
+-- * Run-time configuration
+--
+-- $ Retcon's run-time behaviour is controlled by a 'RetconConfig' value
+-- created from the 'RetconOptions' and other details above.
 
 -- | Configuration value for retcon.
 data RetconConfig entity store =

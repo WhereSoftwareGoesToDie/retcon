@@ -77,7 +77,7 @@ run l a = do
                 (opt ^. optLogging)
                 store'
                 mempty
-                (opt ^. optArgs)
+                mempty
                 state
     result <- runRetconMonad (RetconMonadState cfg l) a
     storeFinalise store

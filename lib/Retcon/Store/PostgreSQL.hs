@@ -219,10 +219,10 @@ storeOneDiff conn isConflict ik d = do
 
 -- | Load the parameters from the path specified in the options.
 prepareConfig
-    :: RetconOptions
+    :: (RetconOptions, [Text])
     -> [entity]
     -> IO (RetconConfig entity RWToken)
-prepareConfig opt entities = do
+prepareConfig (opt, event) entities = do
     params <- maybe (return mempty) readParams $ opt ^. optParams
     store :: PGStorage <- storeInitialise opt
     return $ RetconConfig
@@ -230,7 +230,7 @@ prepareConfig opt entities = do
         (opt ^. optLogging)
         (token store)
         params
-        (opt ^. optArgs)
+        event
         entities
   where
     readParams :: FilePath -> IO (Map (Text, Text) (Map Text Text))

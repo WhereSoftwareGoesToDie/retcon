@@ -49,7 +49,7 @@ runAction store =
                 (options ^. optLogging)
                 (token store)
                 mempty
-                (options ^. optArgs)
+                []
                 []
     in runRetconMonad (RetconMonadState cfg ())
 
