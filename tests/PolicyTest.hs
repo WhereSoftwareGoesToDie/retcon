@@ -48,34 +48,5 @@ suite = do
                                   , InsertOp () ["value"] "two"
                                   ]
 
-brokenSuite :: Spec
-brokenSuite =
-    describe "acceptAll <+> onField value rejectAll" $ do
-        let policy = acceptAll `combine` onField ["value"] rejectAll
-
-        let label = extractLabel policy mempty
-        let d1 = Diff label [ InsertOp label ["value"] "one"
-                            , InsertOp label ["cats"] "ceiling"]
-        let d2 = Diff label [ InsertOp label ["value"] "two"
-                            , InsertOp label ["cats"] "long"]
-        let d3 = Diff label [ InsertOp label ["favourite"] "giraffe"
-                            , InsertOp label ["dogs"] "no"]
-
-        it "should ignore single change to value" $ do
-            let d' = mergeWithPolicy policy [d1,d3]
-            d' `shouldBe` Diff label [ InsertOp label ["cats"] "ceiling"
-                                     , InsertOp label ["favourite"] "giraffe"
-                                     , InsertOp label ["dogs"] "no"
-                                     ]
-
-        it "should ignore multiple changes to value" $ do
-            let d' = mergeWithPolicy policy [d1,d2]
-            d' `shouldBe` Diff label [ InsertOp label ["cats"] "ceiling"
-                                     , InsertOp label ["cats"] "long"
-                                     ]
-
-        it "should leave other changes alone" $
-            pendingWith "Not implemented"
-
 main :: IO ()
 main = hspec suite

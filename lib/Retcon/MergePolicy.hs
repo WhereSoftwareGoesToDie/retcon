@@ -19,29 +19,22 @@ module Retcon.MergePolicy where
 
 import Control.Lens
 import Data.List
-import GHC.TypeLits
 
 import Retcon.Diff
-import Retcon.Document
 
 -- * Merge policies
 
 -- $ A merge policy allows the system to combine diffs according to some
--- requirements (hopefully some sort of business rules). Many policies will
--- require some metadata about changes to make their decisions, so a merge
--- policy is comprised of several elements:
---
--- - A function to extract the particular metadata required the policy; and
+-- requirements (hopefully some sort of business rules). Each 'MergePolicy'
+-- contains the following elements:
 --
 -- - A function to use, using that information, combine two 'Diff's.
 
 -- | A policy to merge 'Diff's using some arbitrary information @l@.
-data MergePolicy l =
-    MergePolicy { extractLabel :: Document -> l
-                -- ^ Extract the label information needed to apply this policy.
-                , mergeDiffs   :: [Diff l] -> (Diff l, [Diff l])
-                -- ^ Combine a collection of diffs; returning a merged diff and left-over fragments.
-                }
+data MergePolicy l = MergePolicy
+    { mergeDiffs   :: [Diff l] -> (Diff l, [Diff l])
+    -- ^ Combine diffs, returning a merged diff and left-over fragments.
+    }
 
 -- * Using policies
 
@@ -55,19 +48,24 @@ mergeWithPolicy policy ds = fst $ mergeDiffs policy ds
 -- many more complex policies.
 
 -- | Policy: reject all changes.
+--
+-- All input 'Diff's are rejected and the merged 'Diff' is empty.
 rejectAll :: MergePolicy ()
-rejectAll = MergePolicy (const ()) (Diff () [],)
+rejectAll = MergePolicy (Diff () [],)
 
 -- | Policy: accept all changes.
 --
 -- All changes will be applied in whatever arbitrary order they are encountered.
 acceptAll :: MergePolicy ()
-acceptAll = MergePolicy (const ())
-                        (\ds -> (Diff () (concatOf (traversed . diffChanges) ds), []))
+acceptAll = MergePolicy
+    (\ds -> (Diff () (concatOf (traversed . diffChanges) ds), []))
 
 -- | Policy: reject all conflicting changes.
+--
+-- Changes will be applied iff they are the sole change affecting that key; all
+-- other changes will be rejected.
 ignoreConflicts :: MergePolicy ()
-ignoreConflicts = MergePolicy (const ()) merge
+ignoreConflicts = MergePolicy merge
   where
     merge ds =
         let ops = concatOf (traversed . diffChanges) ds
@@ -76,37 +74,3 @@ ignoreConflicts = MergePolicy (const ()) merge
             noclash = filter (not . (`diffOpAffects` keyconflicts)) ops
             scraps = ds & traversed . diffChanges %~ filter (`diffOpAffects` keyconflicts)
         in (Diff () noclash, scraps)
-
--- | TODO: sources should *not* be identified by their strings.
-type Source = SomeSymbol
-
--- | Policy: accept *only* changes from a specific source.
-trustSource :: Source -> MergePolicy Source
-trustSource source = MergePolicy (const source) (error "trustSource: not implemented")
-
--- | TODO: we should probably call this "highwater"?
-type Timestamp = String
-
--- | Policy: resolve conflicts in favour of the most recent update.
-mostRecent :: MergePolicy Timestamp
-mostRecent = MergePolicy (const "") (error "mostRecent: not implemented")
-
--- * Policy combinators
-
--- $ Policy combinators can be used to compose existing policies to express
--- more complex requirements.
-
--- | TODO: a field is the sequence of keys which identify a node.
-type Field = [DocumentKey]
-
--- | Restrict a policy so that it is applied on a specific field.
-onField :: Field -> MergePolicy l -> MergePolicy l
-onField _field policy = policy
-
--- | Combine two policies.
-combine :: MergePolicy l -> MergePolicy r -> MergePolicy (l,r)
-combine (MergePolicy el _) (MergePolicy er _) = MergePolicy extract merge
-  where
-    extract doc = (el doc, er doc)
-    merge _ = error "combine: not implemented"
-
