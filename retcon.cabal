@@ -18,7 +18,9 @@ source-repository head
 
 library
   exposed-modules:     Retcon.Core
-                     , Retcon.Client
+                     , Retcon.Network.Client
+                     , Retcon.Network.Server
+                     , Retcon.Network.WireFormat
                      , Retcon.DataSource.JsonDirectory
                      , Retcon.DataSource.PostgreSQL
                      , Retcon.Diff
@@ -61,6 +63,7 @@ library
                      , trifecta
                      , unix
                      , unordered-containers
+                     , zeromq4-haskell
   hs-source-dirs:      lib
   default-language:    Haskell2010
 
