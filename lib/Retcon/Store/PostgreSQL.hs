@@ -12,6 +12,7 @@
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE Rank2Types            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TupleSections #-}
 
 -- | Description: PostgreSQL storage for operational data.
 --
@@ -139,8 +140,9 @@ instance RetconStore PGStorage where
     storeRecordDiffs (PGStore conn) ik (d, ds) = do
         -- Relabel the diffs with () instead of the arbitrary, possibly
         -- unserialisable, labels.
-        did <- storeOneDiff conn False ik (void d)
-        mapM_ (storeOneDiff conn True ik . void) ds
+        did <- storeOneDiff conn ik (void d)
+        let ops = map ((did,) . toJSON) . concatMap (_diffChanges . void) $ ds
+        void $ executeMany conn "INSERT INTO retcon_diff_conflicts (diff_id, content) VALUES (?, ?)" ops
         return did
 
     storeLookupDiff (PGStore conn) diff_id = do
@@ -173,7 +175,7 @@ instance RetconStore PGStorage where
 
     storeDeleteDiffs (PGStore conn) ik = do
         let execute' sql = execute conn sql (internalKeyValue ik)
-        d1 <- execute' "DELETE FROM retcon_diff_conflicts WHERE entity = ? AND id = ?"
+        d1 <- execute' "DELETE FROM retcon_diff_conflicts WHERE diff_id IN (SELECT diff_id FROM retcon_diff WHERE entity = ? AND id = ?)"
         d2 <- execute' "DELETE FROM retcon_notifications WHERE entity = ? AND id = ?"
         d3 <- execute' "DELETE FROM retcon_diff WHERE entity = ? AND id = ?"
         -- TODO: Count the number of items deleted and return that here.
@@ -203,18 +205,15 @@ instance RetconStore PGStorage where
 storeOneDiff
     :: (RetconEntity entity)
     => Connection
-    -> Bool
     -> InternalKey entity
     -> Diff ()
     -> IO Int
-storeOneDiff conn isConflict ik d = do
+storeOneDiff conn ik d = do
     let (ikentity, ikid) = internalKeyValue ik
     [Only did] <- query conn q (ikentity, ikid, encode d)
     return did
   where
-    q = if isConflict
-        then "INSERT INTO retcon_diff_conflicts (entity, id, content) VALUES (?, ?, ?) RETURNING diff_id"
-        else "INSERT INTO retcon_diff (entity, id, content) VALUES (?, ?, ?) RETURNING diff_id"
+    q = "INSERT INTO retcon_diff (entity, id, content) VALUES (?, ?, ?) RETURNING diff_id"
 
 
 -- | Load the parameters from the path specified in the options.

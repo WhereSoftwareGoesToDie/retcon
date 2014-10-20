@@ -19,6 +19,7 @@ module Main where
 import Control.Applicative
 import Control.Exception
 import Control.Lens.Operators
+import Control.Monad
 import Data.Aeson
 import qualified Data.ByteString.Char8 as BS
 import Data.Maybe
@@ -75,15 +76,18 @@ type RetconTable = [(String, Int)]
 type RetconFkTable = [(String, Int, String, String)]
 type RetconInitialTable = [(String, Int, Value)]
 type RetconDiffs = [(String, Int, Int, Value)]
+type RetconConflicts = [(Int, Int, Value)]
 
 -- | Dump all tables from PostgreSQL
-dumpStore :: PGStorage -> IO (RetconTable, RetconFkTable, RetconInitialTable, RetconDiffs, RetconDiffs)
+dumpStore
+    :: PGStorage
+    -> IO (RetconTable, RetconFkTable, RetconInitialTable, RetconDiffs, RetconConflicts)
 dumpStore (PGStore conn) = do
     retconTable             <- query_ conn "SELECT entity, id FROM retcon ORDER BY entity, id;"
     retconFkTable           <- query_ conn "SELECT entity, id, source, fk FROM retcon_fk ORDER BY entity, id, source, fk;"
     retconInitialTable      <- query_ conn "SELECT entity, id, document FROM retcon_initial ORDER BY entity, id;"
     retconDiffTable         <- query_ conn "SELECT entity, id, diff_id, content FROM retcon_diff ORDER BY entity, id, diff_id;"
-    retconDiffConflictTable <- query_ conn "SELECT entity, id, diff_id, content FROM retcon_diff_conflicts ORDER BY entity, id, diff_id;"
+    retconDiffConflictTable <- query_ conn "SELECT operation_id, diff_id, content FROM retcon_diff_conflicts ORDER BY diff_id, operation_id;"
     return (retconTable, retconFkTable, retconInitialTable, retconDiffTable, retconDiffConflictTable)
 
 main :: IO ()
@@ -320,6 +324,7 @@ postgresqlSuite = around prepareDatabase $
         it "should record diffs" $ do
             store@(PGStore conn) <- storeInitialise options
 
+            -- TODO Put some actual diffs in here.
             let a1 = mempty
             let l1 = []
             let ds1 = (a1, l1)
@@ -347,17 +352,24 @@ postgresqlSuite = around prepareDatabase $
             count <- countStore store
             count `shouldBe` (4, 0, 0, 3)
 
+            -- Extract operations from "conflict" diffs.
+            let expectedL1 = []
+            let expectedL2 = []
+            let expectedL3 = []
+            let conflicts = concat [expectedL1, expectedL2, expectedL3]
+
             contents <- dumpStore store
             contents `shouldBe` (
                 [("testers", 2), ("tests", 1), ("tests", 3), ("tests", 4)],
                 [], [],
                 [("testers", 2, 2, toJSON a1), ("tests", 1, 1, toJSON a2), ("tests", 3, 3, toJSON a3)],
-                [("testers", 2, 1, toJSON $ head l2), ("tests", 3, 2, toJSON $ head l3)])
+                conflicts
+                )
 
             result <- runAction store $
                 deleteDiffs ik2
 
-            result `shouldBe` (Right 2) -- deletes a successful and unsuccessful diff
+            result `shouldBe` (Right 1) -- deletes a successful and unsuccessful diff
             count <- countStore store
             count `shouldBe` (4, 0, 0, 2)
 
@@ -366,7 +378,8 @@ postgresqlSuite = around prepareDatabase $
                 [("testers", 2), ("tests", 1), ("tests", 3), ("tests", 4)],
                 [], [],
                 [("tests", 1, 1, toJSON a2), ("tests", 3, 3, toJSON a3)],
-                [("tests", 3, 2, toJSON $ head l3)])
+                concat [expectedL1, expectedL3]
+                )
 
             storeFinalise store
 
