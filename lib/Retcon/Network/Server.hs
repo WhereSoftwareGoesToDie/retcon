@@ -14,15 +14,4 @@
 -- | Server-side API implementation.
 module Retcon.Network.Server where
 
-import Retcon.Network.Types
-
-handleHeader
-    :: forall request response.
-        (Read request, Show response, Handler request response)
-    => Header request response
-    -> IO ()
-handleHeader _ = do
-    let req = read "RequestA"
-    x <- handle (req :: request)
-    print (x :: response)
-
+import Retcon.Network.WireFormat

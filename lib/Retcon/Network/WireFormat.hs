@@ -13,7 +13,7 @@
 {-# LANGUAGE GADTs #-}
 
 -- | Types and operations shared between the client and server components of retcon.
-module Retcon.Network.Types (
+module Retcon.Network.WireFormat (
     -- * Errors
     RetconClientError(..),
 
@@ -38,7 +38,7 @@ module Retcon.Network.Types (
     Handler (..),
 ) where
 
-import Control.Exception hiding (Handler)
+import Control.Exception hiding (Handler, handle)
 import Control.Lens.TH
 
 import Retcon.Core
@@ -96,6 +96,7 @@ instance Enum SomeHeader where
 class (Read request, Show response) => Handler request response where
     handle :: request -> IO response
 
+
 instance Handler RequestA ResponseA where
     handle _ = return ResponseA
 
@@ -104,3 +105,24 @@ instance Handler RequestB ResponseB where
 
 instance Handler InvalidRequest InvalidResponse where
     handle _ = return InvalidResponse
+
+-- | Send a request and receive the response over the channel.
+makeRequest
+    :: (Handler request response)
+    => Header request response
+    -> request
+    -> IO response
+makeRequest op request = do
+    let n = fromEnum (SomeHeader op)
+    -- print n
+    return undefined
+
+handleHeader
+    :: forall request response.
+        (Read request, Show response, Handler request response)
+    => Header request response
+    -> IO ()
+handleHeader _ = do
+    let req = read "RequestA"
+    x <- handle (req :: request)
+    print (x :: response)

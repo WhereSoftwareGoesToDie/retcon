@@ -32,7 +32,6 @@ module Retcon.Network.Client
     enqueueChangeNotification,
 
     runRetconZMQ,
-    makeRequest,
 ) where
 
 import Control.Monad.Except
@@ -42,7 +41,7 @@ import Data.List.NonEmpty
 
 import Retcon.Diff
 import Retcon.Document
-import Retcon.Network.Types
+import Retcon.Network.WireFormat
 
 -- | Retrieve all documents that are currently marked as being conflicted
 getConflicted
@@ -90,17 +89,6 @@ runRetconZMQ
     -> ZMQ z a
     -> IO a
 runRetconZMQ = error "runRetconZMQ unimplemented"
-
--- | Send a request and receive the response over the channel.
-makeRequest
-    :: (Handler request response, RetconClientConnection m)
-    => Header request response
-    -> request
-    -> m response
-makeRequest op request = do
-    let n = fromEnum (SomeHeader op)
-    -- print n
-    return undefined
 
 test :: IO (Either RetconClientError [(Document, Diff a, DiffID, [(ConflictedDiffOpID, DiffOp a)])])
 test =
