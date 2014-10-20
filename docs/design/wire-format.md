@@ -28,7 +28,7 @@ format.
 
 ## Message transmission (ZMQ)
 
-Messages will be sent as multipart ZMQ messages. Two parts for requests, three
+Messages will be sent as multipart ZMQ messages. Two parts for requests, two
 for responses.
 
 Clients will use a REQ socket to connect to a server with a REP socket.
