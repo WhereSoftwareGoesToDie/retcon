@@ -10,6 +10,8 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- | A typeclass and IO implementation of a client API for Retcon
 --
@@ -35,13 +37,17 @@ module Retcon.Network.Client
 ) where
 
 import Control.Monad.Except
-import Control.Monad.Identity
-import Data.ByteString
+import Control.Monad.Reader
+import Data.Binary
+import Data.ByteString.Lazy (toStrict, fromStrict)
 import Data.List.NonEmpty
+
 
 import Retcon.Diff
 import Retcon.Document
 import Retcon.Network.WireFormat
+
+import System.ZMQ4.Monadic
 
 -- | Retrieve all documents that are currently marked as being conflicted
 getConflicted
@@ -72,24 +78,40 @@ enqueueChangeNotification _ = error "ZMQ enqueueChangeNotification unimplemented
 -- | This typeclass provides an abstraction for sending messages to and
 -- recieving messages from a Retcon server.
 class MonadError RetconClientError m => RetconClientConnection m where
-    send :: NonEmpty ByteString -> m ()
-    recv :: m (NonEmpty ByteString)
+    performRequest :: (Handler request response, Binary request, Binary response)
+                   => Header request response -> request -> m response
 
-type ZMQ z = Identity
 
 -- | Concrete implementation of RetconClientConnection for an established ZMQ
 -- monad connection.
-instance RetconClientConnection (ExceptT RetconClientError (ZMQ z)) where
-    send = error "ZMQ send unimplemented"
-    recv = error "ZMQ send unimplemented"
+instance RetconClientConnection (ExceptT RetconClientError (ReaderT (Socket z Req) (ZMQ z))) where
+    performRequest header request = do
+        let n = toStrict . encode $ fromEnum (SomeHeader header)
+            req = toStrict . encode $ request
+
+        soc <- ask
+        lift . lift . sendMulti soc . fromList $ [n, req]
+        response <- lift . lift . receiveMulti $ soc
+        case response of
+            [isErr,body]
+              | decode . fromStrict $ isErr -> return . decode . fromStrict $ body
+              | otherwise -> throwError $ undefined
+            _ -> throwError $ undefined
 
 -- | Set up a connection to the target and then run some ZMQ action
 runRetconZMQ
     :: String -- ^ ZMQ connection target, e.g. \"tcp://127.0.0.1:1234\"
-    -> ZMQ z a
+    -> (forall z. ReaderT (Socket z Req) (ZMQ z) a)
     -> IO a
-runRetconZMQ = error "runRetconZMQ unimplemented"
+runRetconZMQ target action = runZMQ $ do
+    soc <- socket Req
+    connect soc target
+    x <- runReaderT action soc
+    disconnect soc target
+    close soc
+    return x
 
-test :: IO (Either RetconClientError [(Document, Diff a, DiffID, [(ConflictedDiffOpID, DiffOp a)])])
-test =
-    runRetconZMQ "tcp://host:1234" . runExceptT $ getConflicted
+test :: forall a .IO (Either RetconClientError [(Document, Diff a, DiffID, [(ConflictedDiffOpID, DiffOp a)])])
+test = 
+  let x = runExceptT $ getConflicted :: forall z. ReaderT (Socket z Req) (ZMQ z) (Either RetconClientError [(Document, Diff a, DiffID, [(ConflictedDiffOpID, DiffOp a)])])
+  in  runRetconZMQ "tcp://host:1234" x

@@ -35,7 +35,7 @@ module Retcon.Network.WireFormat (
 
     Header (..),
     SomeHeader (..),
-    Handler (..),
+    Handler (..)
 ) where
 
 import Control.Exception hiding (Handler, handle)

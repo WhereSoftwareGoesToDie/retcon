@@ -52,6 +52,7 @@ library
                      , mime-mail
                      , monad-control
                      , monad-logger
+                     , binary
                      , mtl
                      , optparse-applicative >= 0.11
                      , postgresql-simple
