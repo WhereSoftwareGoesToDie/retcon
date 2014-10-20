@@ -46,6 +46,7 @@ CREATE TABLE retcon_diff (
     id        INTEGER NOT NULL,
     diff_id   SERIAL NOT NULL,
     submitted TIMESTAMP NOT NULL DEFAULT NOW(),
+    is_conflict BOOLEAN NOT NULL DEFAULT FALSE,
     content   JSON NOT NULL,
 
     PRIMARY KEY (diff_id),
