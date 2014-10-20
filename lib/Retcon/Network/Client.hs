@@ -10,7 +10,6 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE TemplateHaskell       #-}
 
 -- | A typeclass and IO implementation of a client API for Retcon
 --
@@ -25,58 +24,22 @@
 -- @
 --         TODO: Put example usage here
 -- @
-module Retcon.Client
+module Retcon.Network.Client
 (
-    -- * Errors
-    RetconClientError(..),
-
-    -- * Client types
-    DiffID,
-    ChangeNotification(..),
-    notificationEntity,
-    notificationSource,
-    notificationForeignID,
-    ConflictedDiffOpID,
-
     -- * Operations
     getConflicted,
     enqueueResolveDiff,
     enqueueChangeNotification,
 ) where
 
-import Control.Exception
-import Control.Lens.TH
 import Control.Monad.Except
 import Control.Monad.Identity
 import Data.ByteString
 import Data.List.NonEmpty
 
-import Retcon.Core
 import Retcon.Diff
 import Retcon.Document
-
-data RetconClientError
-    = UnknownError SomeException
-    | TimeoutError
-
--- | An opaque reference to a Diff, used to uniquely reference the conflicted
--- diff for resolveDiff.
-newtype DiffID = DiffID
-    { unDiffID :: Int }
-
--- | A notification for Retcon that the document with 'ForeignID' which is an
--- 'EntityName' at the data source 'SourceName' has changed in some way.
-data ChangeNotification = ChangeNotification
-    { _notificationEntity    :: EntityName
-    , _notificationSource    :: SourceName
-    , _notificationForeignID :: ForeignID
-    }
-makeLenses ''ChangeNotification
-
--- | An opaque reference to a DiffOp, used when sending the list of selected
--- DiffOps to resolveDiff
-newtype ConflictedDiffOpID = ConflictedDiffOpID
-    { unConflictedDiffOpID :: Int }
+import Retcon.Network.Types
 
 -- | Retrieve all documents that are currently marked as being conflicted
 getConflicted

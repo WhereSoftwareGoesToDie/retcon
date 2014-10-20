@@ -18,7 +18,8 @@ source-repository head
 
 library
   exposed-modules:     Retcon.Core
-                     , Retcon.Client
+                     , Retcon.Network.Client
+                     , Retcon.Network.Types
                      , Retcon.DataSource.JsonDirectory
                      , Retcon.DataSource.PostgreSQL
                      , Retcon.Diff
