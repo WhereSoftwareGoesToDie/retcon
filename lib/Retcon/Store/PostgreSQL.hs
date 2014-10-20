@@ -20,7 +20,7 @@
 -- operational data storage interface using a PostgreSQL database.
 module Retcon.Store.PostgreSQL (PGStorage(..), prepareConfig) where
 
-import Control.Lens.Operators
+import Control.Lens
 import Control.Monad
 import Data.Aeson
 import Data.List
@@ -141,7 +141,8 @@ instance RetconStore PGStorage where
         -- Relabel the diffs with () instead of the arbitrary, possibly
         -- unserialisable, labels.
         did <- storeOneDiff conn ik (void d)
-        let ops = map ((did,) . toJSON) . concatMap (_diffChanges . void) $ ds
+        -- Extract the operations from the conflicting diffs and put them in the DB.
+        let ops = map ((did,) . toJSON) . concatOf (traversed . to void . diffChanges) $ ds
         void $ executeMany conn "INSERT INTO retcon_diff_conflicts (diff_id, content) VALUES (?, ?)" ops
         return did
 

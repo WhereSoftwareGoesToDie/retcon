@@ -353,6 +353,7 @@ postgresqlSuite = around prepareDatabase $
             count `shouldBe` (4, 0, 0, 3)
 
             -- Extract operations from "conflict" diffs.
+            -- TODO extract the operations from the diffs defined above.
             let expectedL1 = []
             let expectedL2 = []
             let expectedL3 = []
