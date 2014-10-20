@@ -12,6 +12,7 @@
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE Rank2Types            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TupleSections #-}
 
 -- | Description: PostgreSQL storage for operational data.
 --
@@ -19,7 +20,7 @@
 -- operational data storage interface using a PostgreSQL database.
 module Retcon.Store.PostgreSQL (PGStorage(..), prepareConfig) where
 
-import Control.Lens.Operators
+import Control.Lens
 import Control.Monad
 import Data.Aeson
 import Data.List
@@ -137,21 +138,32 @@ instance RetconStore PGStorage where
         return $ fromIntegral d
 
     storeRecordDiffs (PGStore conn) ik (d, ds) = do
-        -- Relabel the diffs with () instead of the arbitrary, possibly
-        -- unserialisable, labels.
-        did <- storeOneDiff conn False ik (void d)
-        mapM_ (storeOneDiff conn True ik . void) ds
+        let (entity, key) = internalKeyValue ik
+        -- Use `void` to relabel the diffs and operations with () instead of
+        -- the arbitrary, possibly unserialisable, labels.
+
+        -- Extract the operations from the conflicting diffs.
+        let ops = map (toJSON) . concatOf (traversed . to void . diffChanges) $ ds
+
+        -- Record the merged diff in the database.
+        [Only did] <- query conn diffQ (entity, key, null ops, encode . void $ d)
+
+        -- Record conflicts in the database.
+        void . executeMany conn opsQ . map (did,) $ ops
         return did
+      where
+        diffQ = "INSERT INTO retcon_diff (entity, id, is_conflict, content) VALUES (?, ?, ?, ?) RETURNING diff_id"
+        opsQ = "INSERT INTO retcon_diff_conflicts (diff_id, content) VALUES (?, ?)"
 
     storeLookupDiff (PGStore conn) diff_id = do
-        let oid = Only diff_id
+        let query' sql = query conn sql (Only diff_id)
 
         -- Load the merged diff.
-        diff <- query conn "SELECT content FROM retcon_diff WHERE diff_gd = ?" oid
+        diff <- query' "SELECT content FROM retcon_diff WHERE diff_id = ?"
         let diff' = map (fromJSON . fromOnly) diff
 
         -- Load the conflicting fragments.
-        (conflicts) <- query conn "SELECT content FROM retcon_diff WHERE diff_id = ?" oid
+        conflicts <- query' "SELECT content FROM retcon_diff_conflicts WHERE diff_id = ?"
         let conflicts' = map fromSuccess . filter isSuccess . map (fromJSON . fromOnly) $ conflicts
 
         return $ case diff' of
@@ -168,15 +180,16 @@ instance RetconStore PGStorage where
         return . map fromOnly $ r
 
     storeDeleteDiff (PGStore conn) diff_id = do
-        d <- execute conn "DELETE FROM retcon_diff WHERE diff_id = ?" (Only diff_id)
-        return $ fromIntegral  d
+        let execute' sql = execute conn sql (Only diff_id)
+        ops <- execute' "DELETE FROM retcon_diff_conflicts WHERE diff_id = ?"
+        d <- execute' "DELETE FROM retcon_diff WHERE diff_id = ?"
+        return . sum . map fromIntegral $ [ops, d]
 
     storeDeleteDiffs (PGStore conn) ik = do
         let execute' sql = execute conn sql (internalKeyValue ik)
-        d1 <- execute' "DELETE FROM retcon_diff_conflicts WHERE entity = ? AND id = ?"
+        d1 <- execute' "DELETE FROM retcon_diff_conflicts WHERE diff_id IN (SELECT diff_id FROM retcon_diff WHERE entity = ? AND id = ?)"
         d2 <- execute' "DELETE FROM retcon_notifications WHERE entity = ? AND id = ?"
         d3 <- execute' "DELETE FROM retcon_diff WHERE entity = ? AND id = ?"
-        -- TODO: Count the number of items deleted and return that here.
         return . sum . map fromIntegral $ [d1, d2, d3]
 
     storeRecordNotification (PGStore conn) ik did = do
@@ -197,25 +210,6 @@ instance RetconStore PGStorage where
         sqlI = "SELECT id FROM retcon_notifications ORDER BY created ASC LIMIT ?"
         sqlN = "SELECT created, entity, key, diff_id FROM retcon_notifications WHERE id >= ? AND id <= ?"
         sqlD = "DELETE FROM retcon_notifications WHERE id >= ? AND id <= ?; SELECT count(*) FROM retcon_notifications"
-
--- | Record a single 'Diff' object into the database, returning the ID of that
--- new diff.
-storeOneDiff
-    :: (RetconEntity entity)
-    => Connection
-    -> Bool
-    -> InternalKey entity
-    -> Diff ()
-    -> IO Int
-storeOneDiff conn isConflict ik d = do
-    let (ikentity, ikid) = internalKeyValue ik
-    [Only did] <- query conn q (ikentity, ikid, encode d)
-    return did
-  where
-    q = if isConflict
-        then "INSERT INTO retcon_diff_conflicts (entity, id, content) VALUES (?, ?, ?) RETURNING diff_id"
-        else "INSERT INTO retcon_diff (entity, id, content) VALUES (?, ?, ?) RETURNING diff_id"
-
 
 -- | Load the parameters from the path specified in the options.
 prepareConfig

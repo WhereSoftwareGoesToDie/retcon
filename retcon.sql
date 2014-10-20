@@ -46,23 +46,22 @@ CREATE TABLE retcon_diff (
     id        INTEGER NOT NULL,
     diff_id   SERIAL NOT NULL,
     submitted TIMESTAMP NOT NULL DEFAULT NOW(),
+    is_conflict BOOLEAN NOT NULL DEFAULT FALSE,
     content   JSON NOT NULL,
 
     PRIMARY KEY (diff_id),
     FOREIGN KEY (entity, id) REFERENCES retcon (entity, id)
 );
 
--- | The `retcon_diff_conflicts` table records diffs that can not be merged into 
--- an initial document due to conflicts.
+-- | The `retcon_diff_conflicts` table records diff operations which could not
+-- be merged into a diff due to conflicts.
 CREATE TABLE retcon_diff_conflicts (
-    entity    VARCHAR(64) NOT NULL,
-    id        INTEGER NOT NULL,
-    diff_id   SERIAL NOT NULL,
-    submitted TIMESTAMP NOT NULL DEFAULT NOW(),
+    operation_id SERIAL NOT NULL,
+    diff_id   INTEGER NOT NULL,
     content   JSON NOT NULL,
 
-    PRIMARY KEY (diff_id),
-    FOREIGN KEY (entity, id) REFERENCES retcon (entity, id)
+    PRIMARY KEY (operation_id),
+    FOREIGN KEY (diff_id) REFERENCES retcon_diff (diff_id)
 );
 
 -- | The `retcon_notifications` table records pending messages to notify humans of
