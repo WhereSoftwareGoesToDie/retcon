@@ -12,8 +12,6 @@ module TestHelpers where
 
 import Control.Applicative
 import Control.Monad.IO.Class
-import Data.Aeson
-import qualified Data.HashMap.Lazy as H
 import System.FilePath.Posix
 
 import Retcon.DataSource.JsonDirectory
@@ -24,19 +22,6 @@ import System.Directory
 -- | Explicitly pass a test
 pass :: Monad m => m ()
 pass = return ()
-
--- | The aeson AST encoding of a test document.
-testJSON :: Value
-testJSON = Object $ H.fromList
-    [ ("name", String "Thomas Sutton")
-    , ("age", String "30")
-    , ("address", Object $ H.fromList
-        [ ("company", String "Anchor")
-        , ("street", String "Level 11 / 201 Elizabeth Street")
-        , ("locality", String "Sydney")
-        ]
-      )
-    ]
 
 -- | A sample 'Diff' for use in testing diff operations.
 testDiff :: Diff (Int, String)
