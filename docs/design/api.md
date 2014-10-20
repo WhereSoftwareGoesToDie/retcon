@@ -21,14 +21,6 @@ access to the data store and calls into the retcon library.
 
 No selected due to tighter coupling and lower resilience to failures.
 
-## GADT encoding request/response protocol
-
-A GADT associating a request with a response, with a handler typeclass.
-
-No way to specify default "unknown request" handler.
-
-Already too much typeclass magic; needs to be less complex, not more.
-
 # Design impacts
 
 The API should supply a diff and the individual operations which could not be
