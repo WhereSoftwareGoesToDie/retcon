@@ -65,12 +65,25 @@ dispatch (entity_str, source_str, key) = do
     entities <- getRetconState
 
     case (someSymbolVal entity_str, someSymbolVal source_str) of
-        (SomeSymbol entity, SomeSymbol source) ->
-            forM_ entities $ \(InitialisedEntity e dss) -> when (same e entity) $
-                forM_ dss $ \(InitialisedSource (sp :: Proxy st) dst :: InitialisedSource et) -> do
-                    let fk = ForeignKey key :: ForeignKey et st
+        (SomeSymbol entity, SomeSymbol source) -> do
+            res <- anyM entities $ \(InitialisedEntity e dss) ->
+                if same e entity
+                  then do
+                      res <- anyM dss $ \(InitialisedSource (sp :: Proxy st) dst :: InitialisedSource et) -> do
+                          let fk = ForeignKey key :: ForeignKey et st
 
-                    when (same source sp) $ process dst fk
+                          if same source sp
+                            then process dst fk >> return True
+                            else return False
+                      if res
+                        then return True
+                        else do $logDebug . fromString $ "no souch source: " ++ source_str
+                                return False
+                   else return False
+            unless res $ $logDebug . fromString $ "no such entity: " ++ entity_str
+  where
+    anyM :: Monad m => [a] -> (a -> m Bool) -> m Bool
+    anyM xs f = foldM (\b x -> if b then return True else f x >>= return . (&& b)) False xs
 
 -- * Operations
 
