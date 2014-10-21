@@ -20,7 +20,6 @@ library
   exposed-modules:     Retcon.Core
                      , Retcon.Network.Client
                      , Retcon.Network.Server
-                     , Retcon.Network.WireFormat
                      , Retcon.DataSource.JsonDirectory
                      , Retcon.DataSource.PostgreSQL
                      , Retcon.Diff

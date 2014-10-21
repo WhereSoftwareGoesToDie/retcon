@@ -47,7 +47,7 @@ import Data.List.NonEmpty
 
 import Retcon.Diff
 import Retcon.Document
-import Retcon.Network.WireFormat
+import Retcon.Network.Server
 
 import System.ZMQ4.Monadic
 
