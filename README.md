@@ -13,6 +13,12 @@ This package contains:
 - A command-line application `retcon-demo` which provides a simple example for
 implementing `retcon` (in `src/`).
 
+- A command-line application `server-demo` which provides a simple example of
+the API server (in `src/server-demo.hs`).
+
+- A command-line application `client-demo` which provides a simple example of
+the API client (in `src/client-demo.hs`).
+
 - A command-line application `send-notifications` which send email messages
 warning of conflicts (in `src/`).
 
