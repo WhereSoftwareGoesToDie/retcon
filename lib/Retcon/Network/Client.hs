@@ -53,7 +53,7 @@ import System.ZMQ4.Monadic
 
 -- | Retrieve all documents that are currently marked as being conflicted
 getConflicted
-    :: (RetconClientConnection m, MonadError RetconClientError m)
+    :: (RetconClientConnection m, MonadError RetconAPIError m)
     =>  m [( Document
            , Diff ()
            , DiffID
@@ -65,7 +65,7 @@ getConflicted = do
 
 -- | Tell Retcon to apply the given operations upstream at some point
 enqueueResolveDiff
-    :: (RetconClientConnection m, MonadError RetconClientError m)
+    :: (RetconClientConnection m, MonadError RetconAPIError m)
     => DiffID
     -> [ConflictedDiffOpID]
     -> m ()
@@ -74,7 +74,7 @@ enqueueResolveDiff did ops =
 
 -- | Notify Retcon of an external change
 enqueueChangeNotification
-    :: (RetconClientConnection m, MonadError RetconClientError m)
+    :: (RetconClientConnection m, MonadError RetconAPIError m)
     => ChangeNotification
     -> m ()
 enqueueChangeNotification notification =
@@ -82,14 +82,14 @@ enqueueChangeNotification notification =
 
 newtype RetconClientZMQ z a =
     RetconClientZMQ {
-        unRetconClientZMQ :: ExceptT RetconClientError (ReaderT (Socket z Req) (ZMQ z)) a
-      } deriving ( Functor, Applicative, Monad, MonadError RetconClientError
+        unRetconClientZMQ :: ExceptT RetconAPIError (ReaderT (Socket z Req) (ZMQ z)) a
+      } deriving ( Functor, Applicative, Monad, MonadError RetconAPIError
                  , MonadReader (Socket z Req), MonadIO)
 
 
 -- | This typeclass provides an abstraction for sending messages to and
 -- recieving messages from a Retcon server.
-class (MonadError RetconClientError m, Functor m)
+class (MonadError RetconAPIError m, Functor m)
         => RetconClientConnection m where
     performRequest :: (Handler request response, Binary request, Binary response)
                    => Header request response -> request -> m response
@@ -109,9 +109,10 @@ instance RetconClientConnection (RetconClientZMQ z) where
         liftZMQ . sendMulti soc . fromList $ [n, req]
         response <- liftZMQ . receiveMulti $ soc
         case response of
-            [isErr,body]
-              | decode . fromStrict $ isErr -> return . decode . fromStrict $ body
-              | otherwise -> throwError $ error "TODO: implement ENUM error"
+            [success,body]
+                | decode . fromStrict $ success ->
+                    return . decode . fromStrict $ body
+                | otherwise -> throwError (toEnum . decode . fromStrict $ body)
             _ -> throwError InvalidNumberOfMessageParts
 
 -- | Set up a connection to the target and then run some ZMQ action
@@ -119,7 +120,7 @@ runRetconZMQ
     :: forall a.
        String -- ^ ZMQ connection target, e.g. \"tcp://127.0.0.1:1234\"
     -> (forall z. RetconClientZMQ z a)
-    -> IO (Either RetconClientError a)
+    -> IO (Either RetconAPIError a)
 runRetconZMQ target action = runZMQ $ do
         soc <- socket Req
         connect soc target
@@ -128,7 +129,3 @@ runRetconZMQ target action = runZMQ $ do
         disconnect soc target
         close soc
         return x
-
-test :: IO (Either RetconClientError [(Document, Diff (), DiffID, [(ConflictedDiffOpID, DiffOp ())])])
-test =
-    runRetconZMQ "tcp://host:1234" getConflicted

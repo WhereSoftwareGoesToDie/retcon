@@ -17,6 +17,7 @@
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TemplateHaskell            #-}
+{-# LANGUAGE TupleSections #-}
 
 -- | Server component for the retcon network API.
 module Retcon.Network.Server where
@@ -45,10 +46,21 @@ import Retcon.Diff
 import Retcon.Document
 import Retcon.Options
 
-data RetconClientError
-    = UnknownError SomeException
-    | InvalidNumberOfMessageParts
+-- | Values describing error states of the retcon API.
+data RetconAPIError
+    = UnknownServerError
     | TimeoutError
+    | InvalidNumberOfMessageParts
+  deriving (Show, Eq)
+
+instance Enum RetconAPIError where
+    fromEnum TimeoutError = 0
+    fromEnum InvalidNumberOfMessageParts = 1
+    fromEnum UnknownServerError = maxBound
+
+    toEnum 0 = TimeoutError
+    toEnum 1 = InvalidNumberOfMessageParts
+    toEnum _ = UnknownServerError
 
 -- | An opaque reference to a Diff, used to uniquely reference the conflicted
 -- diff for resolveDiff.
@@ -195,10 +207,10 @@ serverParser = ServerConfig <$> connString
 
 -- | Monad for the API server actions to run in.
 newtype RetconServer z a = RetconServer
-    { unRetconServer :: ExceptT RetconClientError (ReaderT (Socket z Rep) (ZMQ z)) a
+    { unRetconServer :: ExceptT RetconAPIError (ReaderT (Socket z Rep) (ZMQ z)) a
     }
   deriving (Applicative, Functor, Monad, MonadIO, MonadReader (Socket z Rep),
-  MonadError RetconClientError)
+  MonadError RetconAPIError)
 
 -- | Run a handler in the 'RetconServer' monad using the ZMQ connection details.
 runRetconServer
@@ -209,7 +221,6 @@ runRetconServer cfg act = runZMQ $ do
     sock <- socket Rep
     bind sock $ cfg ^. cfgConnectionString
     void $ flip runReaderT sock . runExceptT . unRetconServer $ act
-    return ()
 
 -- * Monads with ZMQ
 
@@ -228,18 +239,22 @@ protocol queue = loop
         sock <- ask
         cmd <- liftZMQ . receiveMulti $ sock
         -- Decode and process the message.
-        resp <- case cmd of
+        (status, resp) <- case cmd of
             [hdr, req] -> dispatch (toEnum . decode . fromStrict $ hdr) (fromStrict req)
             _        -> throwError InvalidNumberOfMessageParts
         -- Encode and send the response.
-        liftZMQ . sendMulti sock . fromList $ [toStrict . encode $ True, resp]
+        liftZMQ . sendMulti sock . fromList $ [toStrict . encode $ status, resp]
         loop
+
+    -- Decode a request and call the appropriate handler.
     dispatch (SomeHeader hdr) body = do
-        case hdr of
-            HeaderConflicted -> (toStrict . encode) <$> listConflicts (decode body)
-            HeaderResolve -> (toStrict . encode) <$> resolveConflict (decode body)
-            HeaderChange -> (toStrict . encode) <$> notify queue (decode body)
-            InvalidHeader -> return . toStrict . encode $ InvalidResponse
+        flip catchError
+            (\e -> return (False, toStrict . encode . fromEnum $ e))
+            ((True,) <$> case hdr of
+                HeaderConflicted -> (toStrict . encode) <$> listConflicts (decode body)
+                HeaderResolve -> (toStrict . encode) <$> resolveConflict (decode body)
+                HeaderChange -> (toStrict . encode) <$> notify queue (decode body)
+                InvalidHeader -> return . toStrict . encode $ InvalidResponse)
 
 -- | Process a _notify_ message from the client, checking the
 notify
@@ -249,6 +264,7 @@ notify
 notify queue (RequestChange nid) = do
     liftIO . print $ "Notified"
     liftIO . writeChan queue $ Process nid
+    throwError InvalidNumberOfMessageParts
     return ResponseChange
 
 -- | Process a _resolve conflict_ message from the client.

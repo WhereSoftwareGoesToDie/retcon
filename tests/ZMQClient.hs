@@ -19,19 +19,24 @@ main = do
     hSetBuffering stdin NoBuffering
     hSetBuffering stdout NoBuffering
 
+    -- Try to retrieve a list of conflicts.
     val <- runRetconZMQ conn getConflicted
     case val of
-        Left  _ -> putStrLn ":-("
+        Left e -> do
+            putStr ":-( "
+            print e
         Right l -> do
             let ids = map (\(_, _, did, _) -> unDiffID did) l
             putStrLn ":-)"
             print ids
 
-
+    -- Try to send a "something changed" notification.
     let change = ChangeNotification "LOL" "no u" "123"
     val <- runRetconZMQ conn $ enqueueChangeNotification change
     case val of
-        Left  _ -> putStrLn ":-("
+        Left  e -> do
+            putStr ":-( "
+            print e
         Right _ -> do
             putStrLn ":-)"
 

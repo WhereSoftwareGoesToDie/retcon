@@ -59,26 +59,26 @@ Note:
 Responses look like this:
 
 ```
-	[ is_error | payload ]
+	[ is_success | payload ]
 ```
 
-Where is_error is an encoded Bool that indicates if the payload represents an
-error enumeration. If is_error is set to true, payload is an encoded Int that
-enumerates the error. Otherwise, the payload is a response uniquely determined
-by request.
+Where is_success is an encoded Bool that indicates if the payload represents an
+error enumeration. If is_success is set to True, the payload is a response
+uniquely determined by request. Otherwise, payload is an encoded Int that
+enumerates the error.
 
 Here are the possible error payloads:
 
-Error                    Payload
------                    -------
-TimeoutError             0
-UnknownServerError       1
+Error                       Payload
+-----                       -------
+TimeoutError                0
+InvalidNumberOfMessageParts 1
+UnknownServerError          ?
 
 Here are the possible response payloads:
 
-
-Response          Payload
---------          -------
-ConflictListing   (JSON, Int, JSON, [(Int, JSON)])
-ResolveOK         0
-NotifyOK          1
+Response            Payload
+--------            -------
+ResponseConflicted  [(JSON, Int, JSON, [(Int, JSON)])]
+ResponseChange      ()
+ResponseNotify      ()

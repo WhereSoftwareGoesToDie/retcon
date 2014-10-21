@@ -30,7 +30,6 @@ main = do
     let params   = cfg ^. cfgParams
         entities = cfg ^. cfgEntities
 
-    putStrLn "yolo"
     bracket (initialiseEntities params entities)
             (void . finaliseEntities params)
             (\state -> let cfg' = cfg & cfgEntities .~ state
