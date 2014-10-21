@@ -7,12 +7,12 @@
 -- the 3-clause BSD licence.
 --
 
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 
 -- | A typeclass and IO implementation of a client API for Retcon
 --
@@ -41,7 +41,7 @@ import Control.Applicative
 import Control.Monad.Except
 import Control.Monad.Reader
 import Data.Binary
-import Data.ByteString.Lazy (toStrict, fromStrict)
+import Data.ByteString.Lazy (fromStrict, toStrict)
 import Data.List.NonEmpty
 
 
