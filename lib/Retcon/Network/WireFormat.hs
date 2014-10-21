@@ -11,6 +11,8 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 -- | Types and operations shared between the client and server components of retcon.
 module Retcon.Network.WireFormat (
@@ -26,10 +28,12 @@ module Retcon.Network.WireFormat (
     ConflictedDiffOpID(..),
 
     -- * Protocol
-    RequestA (..),
-    RequestB (..),
-    ResponseA (..),
-    ResponseB (..),
+    RequestChange (..),
+    RequestConflicted (..),
+    RequestResolve (..),
+    ResponseChange (..),
+    ResponseConflicted (..),
+    ResponseResolve (..),
     InvalidRequest (..),
     InvalidResponse (..),
 
@@ -38,10 +42,16 @@ module Retcon.Network.WireFormat (
     Handler (..)
 ) where
 
+import qualified Data.Aeson as Aeson
+import Control.Applicative
 import Control.Exception hiding (Handler, handle)
 import Control.Lens.TH
+import Control.Monad
+import Data.Binary
 
 import Retcon.Core
+import Retcon.Diff
+import Retcon.Document
 
 data RetconClientError
     = UnknownError SomeException
@@ -51,7 +61,7 @@ data RetconClientError
 -- diff for resolveDiff.
 newtype DiffID = DiffID
     { unDiffID :: Int }
-
+    deriving (Binary)
 -- | A notification for Retcon that the document with 'ForeignID' which is an
 -- 'EntityName' at the data source 'SourceName' has changed in some way.
 data ChangeNotification = ChangeNotification
@@ -65,17 +75,74 @@ makeLenses ''ChangeNotification
 -- DiffOps to resolveDiff
 newtype ConflictedDiffOpID = ConflictedDiffOpID
     { unConflictedDiffOpID :: Int }
+    deriving (Binary)
 
-data RequestA = RequestA deriving Read
-data ResponseA = ResponseA deriving Show
-data RequestB = RequestB deriving Read
-data ResponseB = ResponseB deriving Show
-data InvalidRequest = InvalidRequest deriving Read
-data InvalidResponse = InvalidResponse deriving Show
+instance Binary (Diff ()) where
+    put = put . Aeson.encode
+    get = decode <$> get
+
+instance Binary (DiffOp ()) where
+    put = put . Aeson.encode
+    get = decode <$> get
+
+instance Binary Document where
+    put = put . Aeson.encode
+    get = decode <$> get
+
+data RequestConflicted = RequestConflicted
+data ResponseConflicted = ResponseConflicted
+    [ ( Document
+      , Diff ()
+      , DiffID
+      , [(ConflictedDiffOpID, DiffOp ())]
+      )]
+
+instance Binary RequestConflicted where
+    put _ = return ()
+    get = return RequestConflicted
+instance Binary ResponseConflicted where
+    put (ResponseConflicted ds) = put ds
+    get = ResponseConflicted <$> get
+
+data RequestChange = RequestChange ChangeNotification
+data ResponseChange = ResponseChange
+
+instance Binary RequestChange where
+    put (RequestChange (ChangeNotification entity source fk)) =
+        put (entity, source, fk)
+    get = do
+        (entity, source, fk) <- get
+        return . RequestChange $ ChangeNotification entity source fk
+instance Binary ResponseChange where
+    put _ = return ()
+    get = return ResponseChange
+
+data RequestResolve = RequestResolve DiffID [ConflictedDiffOpID]
+data ResponseResolve = ResponseResolve
+
+instance Binary RequestResolve where
+    put (RequestResolve did conflicts) = put (did, conflicts)
+    get = do
+        (did, conflicts) <- get
+        return $ RequestResolve did conflicts
+instance Binary ResponseResolve where
+    put _ = return ()
+    get = return ResponseResolve
+
+data InvalidRequest = InvalidRequest
+data InvalidResponse = InvalidResponse
+
+instance Binary InvalidRequest where
+    put _ = return ()
+    get = return InvalidRequest
+instance Binary InvalidResponse where
+    put _ = return ()
+    get = return InvalidResponse
 
 data Header request response where
-    HeaderA :: Header RequestA ResponseA
-    HeaderB :: Header RequestB ResponseB
+    HeaderConflicted :: Header RequestConflicted ResponseConflicted
+    HeaderChange :: Header RequestChange ResponseChange
+    HeaderResolve :: Header RequestResolve ResponseResolve
     InvalidHeader :: Header InvalidRequest InvalidResponse
 
 data SomeHeader where
@@ -85,23 +152,28 @@ data SomeHeader where
         -> SomeHeader
 
 instance Enum SomeHeader where
-    fromEnum (SomeHeader HeaderA) = 0
-    fromEnum (SomeHeader HeaderB) = 1
+    fromEnum (SomeHeader HeaderConflicted) = 0
+    fromEnum (SomeHeader HeaderChange) = 1
+    fromEnum (SomeHeader HeaderResolve) = 2
     fromEnum (SomeHeader InvalidHeader) = maxBound
 
-    toEnum 0 = SomeHeader HeaderA
-    toEnum 1 = SomeHeader HeaderB
+    toEnum 0 = SomeHeader HeaderConflicted
+    toEnum 1 = SomeHeader HeaderChange
+    toEnum 2 = SomeHeader HeaderResolve
     toEnum _ = SomeHeader InvalidHeader
 
-class (Read request, Show response) => Handler request response where
+class (Binary request, Binary response) => Handler request response where
     handle :: request -> IO response
 
 
-instance Handler RequestA ResponseA where
-    handle _ = return ResponseA
+instance Handler RequestConflicted ResponseConflicted where
+    handle _ = return undefined --ResponseConflicted
 
-instance Handler RequestB ResponseB where
-    handle _ = return ResponseB
+instance Handler RequestChange ResponseChange where
+    handle _ = return ResponseChange
+
+instance Handler RequestResolve ResponseResolve where
+    handle _ = return ResponseResolve
 
 instance Handler InvalidRequest InvalidResponse where
     handle _ = return InvalidResponse

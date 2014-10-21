@@ -55,9 +55,9 @@ import System.ZMQ4.Monadic
 getConflicted
     :: (RetconClientConnection m, MonadError RetconClientError m)
     =>  m [( Document
-           , Diff a
+           , Diff ()
            , DiffID
-           , [(ConflictedDiffOpID, DiffOp a)]
+           , [(ConflictedDiffOpID, DiffOp ())]
           )]
 getConflicted = error "ZMQ getConflicted unimplemented"
 
@@ -78,8 +78,9 @@ enqueueChangeNotification _ = error "ZMQ enqueueChangeNotification unimplemented
 
 newtype RetconClientZMQ z a =
     RetconClientZMQ {
-        unRetconClientZMQ :: (ExceptT RetconClientError (ReaderT (Socket z Req) (ZMQ z)) a)
-      } deriving (Functor, Applicative, Monad, MonadError RetconClientError, MonadReader (Socket z Req))
+        unRetconClientZMQ :: ExceptT RetconClientError (ReaderT (Socket z Req) (ZMQ z)) a
+      } deriving ( Functor, Applicative, Monad, MonadError RetconClientError
+                 , MonadReader (Socket z Req), MonadIO)
 
 
 -- | This typeclass provides an abstraction for sending messages to and
