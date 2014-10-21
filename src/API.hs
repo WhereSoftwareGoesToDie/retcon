@@ -34,5 +34,5 @@ main = do
     bracket (initialiseEntities params entities)
             (void . finaliseEntities params)
             (\state -> let cfg' = cfg & cfgEntities .~ state
-                       in runAPIServer cfg' network)
+                       in apiServer cfg' network)
 
