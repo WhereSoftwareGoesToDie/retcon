@@ -47,7 +47,7 @@ import Data.List.NonEmpty
 
 import Retcon.Diff
 import Retcon.Document
-import Retcon.Network.Server
+import Retcon.Network.Server hiding (liftZMQ)
 
 import System.ZMQ4.Monadic
 

@@ -22,6 +22,8 @@
 module Retcon.Network.Server where
 
 import Control.Applicative
+import Control.Concurrent
+import Control.Concurrent.Chan
 import Control.Exception hiding (Handler, handle)
 import Control.Lens.Operators
 import Control.Lens.TH
@@ -31,6 +33,8 @@ import Control.Monad.Reader
 import qualified Data.Aeson as Aeson
 import Data.Binary
 import qualified Data.ByteString as BS
+import Data.ByteString.Lazy (fromStrict, toStrict)
+import Data.List.NonEmpty
 import Data.Monoid
 import Data.String
 import Options.Applicative
@@ -190,57 +194,81 @@ serverParser = ServerConfig <$> connString
 -- * Server monad
 
 -- | Monad for the API server actions to run in.
-newtype ServerMonad z a = ServerMonad
-    { unServerMonad :: ExceptT RetconClientError (ReaderT (Socket z Rep) (ZMQ z)) a
+newtype RetconServer z a = RetconServer
+    { unRetconServer :: ExceptT RetconClientError (ReaderT (Socket z Rep) (ZMQ z)) a
     }
-  deriving (Applicative, Functor, Monad, MonadIO, MonadReader (Socket z Rep))
+  deriving (Applicative, Functor, Monad, MonadIO, MonadReader (Socket z Rep),
+  MonadError RetconClientError)
 
--- | Run a handler in the 'ServerMonad' using the ZMQ connection details.
+-- | Run a handler in the 'RetconServer' monad using the ZMQ connection details.
 runRetconServer
     :: forall a. ServerConfig
-    -> (forall z. ServerMonad z a)
+    -> (forall z. RetconServer z a)
     -> IO ()
 runRetconServer cfg act = runZMQ $ do
     sock <- socket Rep
     bind sock $ cfg ^. cfgConnectionString
-    void $ flip runReaderT sock . runExceptT . unServerMonad $ act
+    void $ flip runReaderT sock . runExceptT . unRetconServer $ act
     return ()
+
+-- * Monads with ZMQ
+
+liftZMQ :: ZMQ z a -> RetconServer z a
+liftZMQ = RetconServer . lift . lift
 
 -- * Server actions
 
+-- | Implement the API protocol.
 protocol
-    :: ServerMonad z ()
-protocol = do
-    sock <- ask
-    command <- ServerMonad . lift . lift $ receive sock
-    liftIO . BS.putStrLn $ command
-    ServerMonad . lift . lift . send sock [] $ "sed " <> command
-    protocol
+    :: Chan QueuedWork
+    -> RetconServer z ()
+protocol queue = loop
+  where
+    loop = do
+        sock <- ask
+        cmd <- liftZMQ . receiveMulti $ sock
+        -- Decode and process the message.
+        resp <- case cmd of
+            [hdr, req] -> dispatch (toEnum . decode . fromStrict $ hdr) (fromStrict req)
+            _        -> throwError InvalidNumberOfMessageParts
+        -- Encode and send the response.
+        liftZMQ . sendMulti sock . fromList $ [toStrict . encode $ True, resp]
+        loop
+    dispatch (SomeHeader hdr) body = do
+        case hdr of
+            HeaderConflicted -> (toStrict . encode) <$> listConflicts (decode body)
+            HeaderResolve -> (toStrict . encode) <$> resolveConflict (decode body)
+            HeaderChange -> (toStrict . encode) <$> notify queue (decode body)
+            InvalidHeader -> return . toStrict . encode $ InvalidResponse
 
 -- | Process a _notify_ message from the client, checking the
 notify
-    :: ChangeNotification
-    -> ServerMonad z ()
-notify _ = return ()
+    :: Chan QueuedWork
+    -> RequestChange
+    -> RetconServer z ResponseChange
+notify queue (RequestChange nid) = do
+    liftIO . print $ "Notified"
+    liftIO . writeChan queue $ Process nid
+    return ResponseChange
 
 -- | Process a _resolve conflict_ message from the client.
 --
 -- The selected diff is marked as resolved; and a new diff is composed from the
 -- selected operations and added to the work queue.
 resolveConflict
-    :: DiffID
-    -> [ConflictedDiffOpID]
-    -> ServerMonad z ()
-resolveConflict diff_id op_ids = do
-    liftIO . print . unDiffID $ diff_id
-    liftIO . print . map unConflictedDiffOpID $ op_ids
-    return ()
+    :: RequestResolve
+    -> RetconServer z ResponseResolve
+resolveConflict (RequestResolve diff_id op_ids) = do
+    liftIO . print $ "Resolving diff " <> show (unDiffID diff_id)
+    return ResponseResolve
 
 -- | Fetch the details of outstanding conflicts and return them to the client.
 listConflicts
-    :: ServerMonad z [(Document, Diff a, DiffID, [(ConflictedDiffOpID, DiffOp a)])]
-listConflicts = do
-    return []
+    :: RequestConflicted
+    -> RetconServer z ResponseConflicted
+listConflicts _ = do
+    liftIO . print $ "Listing conflicts!"
+    return $ ResponseConflicted []
 
 -- * API server
 
@@ -254,6 +282,30 @@ apiServer
     -> ServerConfig
     -> IO ()
 apiServer retconCfg serverCfg = do
+    -- TODO: We should probably do logging here just as in retcon proper.
     putStrLn . fromString $
         "Running server on " <> serverCfg ^. cfgConnectionString
-    runRetconServer serverCfg protocol
+
+    -- Setup the work queue.
+    queue <- newChan
+    qid <- forkIO $ queueWorker queue
+
+    runRetconServer serverCfg (protocol queue)
+
+data QueuedWork
+    = Process ChangeNotification
+    | Apply DiffID (Diff ())
+
+instance Show QueuedWork where
+    show (Process _) = "Process"
+    show (Apply _ _) = "Apply"
+
+queueWorker
+    :: Chan QueuedWork
+    -> IO ()
+queueWorker chan = loop
+  where
+    loop = do
+        cmd <- readChan chan
+        print cmd
+        loop
