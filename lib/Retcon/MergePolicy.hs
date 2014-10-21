@@ -32,7 +32,7 @@ import Retcon.Diff
 
 -- | A policy to merge 'Diff's using some arbitrary information @l@.
 data MergePolicy l = MergePolicy
-    { mergeDiffs   :: [Diff l] -> (Diff l, [Diff l])
+    { mergeDiffs :: [Diff l] -> (Diff l, [Diff l])
     -- ^ Combine diffs, returning a merged diff and left-over fragments.
     }
 

@@ -103,6 +103,16 @@ executable             retcon-demo
                      , postgresql-simple
                      , monad-logger
 
+executable             server-demo
+  default-language:    Haskell2010
+  hs-source-dirs:      src
+  main-is:             API.hs
+  build-depends:       base
+                     , lens
+                     , optparse-applicative
+                     , zeromq4-haskell
+                     , retcon
+
 test-suite             acceptance-test
   type:                exitcode-stdio-1.0
   default-language:    Haskell2010

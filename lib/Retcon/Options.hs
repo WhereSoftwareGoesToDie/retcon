@@ -63,18 +63,21 @@ defaultOptions = RetconOptions False LogNone "" Nothing
 
 -- | Parse options from a config file and/or the command line.
 parseArgsWithConfig :: FilePath -> IO (RetconOptions, [Text])
-parseArgsWithConfig = parseFile >=> execParser . helpfulParser
+parseArgsWithConfig = parseOptionsWithDefault opts
+  where
+    opts defaults = (,) <$> optionsParser defaults
+                        <*> eventParser
+
+-- | Run an options parser which takes its default arguments from a file.
+parseOptionsWithDefault
+    :: (RetconOptions -> O.Parser p)
+    -> FilePath
+    -> IO p
+parseOptionsWithDefault p = parseFile >=> execParser . helpful p
+  where
+    helpful parser opt = info (helper <*> parser opt) fullDesc
 
 -- * Options parsers
-
--- | Parse options from the command line.
-helpfulParser
-    :: RetconOptions
-    -> ParserInfo (RetconOptions, [Text])
-helpfulParser defaults = info (helper <*> opts) fullDesc
-  where
-    opts = (,) <$> optionsParser defaults
-               <*> eventParser
 
 -- | Applicative parser for 'RetconOptions', including entity details.
 optionsParser
