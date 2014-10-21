@@ -43,6 +43,7 @@ import Retcon.Options
 
 data RetconClientError
     = UnknownError SomeException
+    | InvalidNumberOfMessageParts
     | TimeoutError
 
 -- | An opaque reference to a Diff, used to uniquely reference the conflicted

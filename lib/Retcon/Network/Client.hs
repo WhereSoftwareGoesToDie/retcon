@@ -59,7 +59,9 @@ getConflicted
            , DiffID
            , [(ConflictedDiffOpID, DiffOp ())]
           )]
-getConflicted = error "ZMQ getConflicted unimplemented"
+getConflicted = do
+    ResponseConflicted response <- performRequest HeaderConflicted RequestConflicted
+    return response
 
 -- | Tell Retcon to apply the given operations upstream at some point
 enqueueResolveDiff
@@ -67,14 +69,16 @@ enqueueResolveDiff
     => DiffID
     -> [ConflictedDiffOpID]
     -> m ()
-enqueueResolveDiff _ _ = error "ZMQ resolveDiff unimplemented"
+enqueueResolveDiff did ops =
+    void $ performRequest HeaderResolve (RequestResolve did ops)
 
 -- | Notify Retcon of an external change
 enqueueChangeNotification
     :: (RetconClientConnection m, MonadError RetconClientError m)
     => ChangeNotification
     -> m ()
-enqueueChangeNotification _ = error "ZMQ enqueueChangeNotification unimplemented"
+enqueueChangeNotification notification =
+    void $ performRequest HeaderChange (RequestChange notification)
 
 newtype RetconClientZMQ z a =
     RetconClientZMQ {
@@ -85,7 +89,8 @@ newtype RetconClientZMQ z a =
 
 -- | This typeclass provides an abstraction for sending messages to and
 -- recieving messages from a Retcon server.
-class MonadError RetconClientError m => RetconClientConnection m where
+class (MonadError RetconClientError m, Functor m)
+        => RetconClientConnection m where
     performRequest :: (Handler request response, Binary request, Binary response)
                    => Header request response -> request -> m response
 
@@ -106,8 +111,8 @@ instance RetconClientConnection (RetconClientZMQ z) where
         case response of
             [isErr,body]
               | decode . fromStrict $ isErr -> return . decode . fromStrict $ body
-              | otherwise -> throwError $ undefined
-            _ -> throwError $ undefined
+              | otherwise -> throwError $ error "TODO: implement ENUM error"
+            _ -> throwError InvalidNumberOfMessageParts
 
 -- | Set up a connection to the target and then run some ZMQ action
 runRetconZMQ
