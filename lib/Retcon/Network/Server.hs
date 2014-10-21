@@ -61,7 +61,7 @@ serverParser = ServerConfig <$> connString
 
 -- | Monad for the API server actions to run in.
 newtype ServerMonad z a = ServerMonad
-    { unServerMonad :: ReaderT (Socket z Rep) (ZMQ z) a
+    { unServerMonad :: ExceptT RetconClientError (ReaderT (Socket z Rep) (ZMQ z)) a
     }
   deriving (Applicative, Functor, Monad, MonadIO, MonadReader (Socket z Rep))
 
@@ -73,8 +73,7 @@ runRetconServer
 runRetconServer cfg act = runZMQ $ do
     sock <- socket Rep
     bind sock $ cfg ^. cfgConnectionString
-    void $ flip runReaderT sock . unServerMonad $ act
-    liftIO $ print "Done it!"
+    void $ flip runReaderT sock . runExceptT . unServerMonad $ act
     return ()
 
 -- * Server actions
@@ -83,9 +82,9 @@ protocol
     :: ServerMonad z ()
 protocol = do
     sock <- ask
-    command <- ServerMonad . lift $ receive sock
+    command <- ServerMonad . lift . lift $ receive sock
     liftIO . BS.putStrLn $ command
-    ServerMonad . lift . send sock [] $ "sed " <> command
+    ServerMonad . lift . lift . send sock [] $ "sed " <> command
     protocol
 
 -- | Process a _notify_ message from the client, checking the
