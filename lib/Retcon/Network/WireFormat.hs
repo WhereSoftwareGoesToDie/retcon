@@ -62,6 +62,7 @@ data RetconClientError
 newtype DiffID = DiffID
     { unDiffID :: Int }
     deriving (Binary)
+
 -- | A notification for Retcon that the document with 'ForeignID' which is an
 -- 'EntityName' at the data source 'SourceName' has changed in some way.
 data ChangeNotification = ChangeNotification

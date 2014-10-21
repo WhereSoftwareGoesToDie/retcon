@@ -90,6 +90,9 @@ class MonadError RetconClientError m => RetconClientConnection m where
                    => Header request response -> request -> m response
 
 
+liftZMQ :: ZMQ z a -> RetconClientZMQ z a
+liftZMQ = RetconClientZMQ . lift . lift
+
 -- | Concrete implementation of RetconClientConnection for an established ZMQ
 -- monad connection.
 instance RetconClientConnection (RetconClientZMQ z) where
@@ -98,8 +101,8 @@ instance RetconClientConnection (RetconClientZMQ z) where
             req = toStrict . encode $ request
 
         soc <- ask
-        RetconClientZMQ . lift . lift . sendMulti soc . fromList $ [n, req]
-        response <- RetconClientZMQ . lift . lift . receiveMulti $ soc
+        liftZMQ . sendMulti soc . fromList $ [n, req]
+        response <- liftZMQ . receiveMulti $ soc
         case response of
             [isErr,body]
               | decode . fromStrict $ isErr -> return . decode . fromStrict $ body
@@ -121,6 +124,6 @@ runRetconZMQ target action = runZMQ $ do
         close soc
         return x
 
-test :: IO (Either RetconClientError [(Document, Diff a, DiffID, [(ConflictedDiffOpID, DiffOp a)])])
+test :: IO (Either RetconClientError [(Document, Diff (), DiffID, [(ConflictedDiffOpID, DiffOp ())])])
 test =
     runRetconZMQ "tcp://host:1234" getConflicted
