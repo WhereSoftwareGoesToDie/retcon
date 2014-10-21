@@ -102,8 +102,8 @@ liftZMQ = RetconClientZMQ . lift . lift
 -- monad connection.
 instance RetconClientConnection (RetconClientZMQ z) where
     performRequest header request = do
-        let n = toStrict . encode $ fromEnum (SomeHeader header)
-            req = toStrict . encode $ request
+        let n = encodeStrict $ fromEnum (SomeHeader header)
+            req = encodeStrict request
 
         soc <- ask
         liftZMQ . sendMulti soc . fromList $ [n, req]
@@ -111,8 +111,8 @@ instance RetconClientConnection (RetconClientZMQ z) where
         case response of
             [success,body]
                 | decode . fromStrict $ success ->
-                    return . decode . fromStrict $ body
-                | otherwise -> throwError (toEnum . decode . fromStrict $ body)
+                    decodeStrict $ body
+                | otherwise -> throwError =<< (toEnum <$> decodeStrict body)
             _ -> throwError InvalidNumberOfMessageParts
 
 -- | Set up a connection to the target and then run some ZMQ action

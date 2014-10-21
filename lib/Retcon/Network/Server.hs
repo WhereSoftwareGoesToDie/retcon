@@ -9,6 +9,7 @@
 
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
@@ -50,16 +51,19 @@ import Retcon.Options
 data RetconAPIError
     = UnknownServerError
     | TimeoutError
+    | DecodeError
     | InvalidNumberOfMessageParts
   deriving (Show, Eq)
 
 instance Enum RetconAPIError where
     fromEnum TimeoutError = 0
     fromEnum InvalidNumberOfMessageParts = 1
+    fromEnum DecodeError = 2
     fromEnum UnknownServerError = maxBound
 
     toEnum 0 = TimeoutError
     toEnum 1 = InvalidNumberOfMessageParts
+    toEnum 2 = DecodeError
     toEnum _ = UnknownServerError
 
 -- | An opaque reference to a Diff, used to uniquely reference the conflicted
@@ -229,6 +233,21 @@ liftZMQ = RetconServer . lift . lift
 
 -- * Server actions
 
+decodeStrict
+    :: (MonadError RetconAPIError m, Binary a)
+    => BS.ByteString
+    -> m a
+decodeStrict bs =
+    case decodeOrFail . fromStrict $ bs of
+        Left{} -> throwError DecodeError
+        Right (_, _, x) -> return x
+
+encodeStrict
+    :: (Binary a)
+    => a
+    -> BS.ByteString
+encodeStrict = toStrict . encode
+
 -- | Implement the API protocol.
 protocol
     :: Chan QueuedWork
@@ -243,7 +262,7 @@ protocol queue = loop
             [hdr, req] -> dispatch (toEnum . decode . fromStrict $ hdr) (fromStrict req)
             _        -> throwError InvalidNumberOfMessageParts
         -- Encode and send the response.
-        liftZMQ . sendMulti sock . fromList $ [toStrict . encode $ status, resp]
+        liftZMQ . sendMulti sock . fromList $ [encodeStrict status, resp]
         loop
 
     -- Decode a request and call the appropriate handler.
@@ -251,10 +270,10 @@ protocol queue = loop
         flip catchError
             (\e -> return (False, toStrict . encode . fromEnum $ e))
             ((True,) <$> case hdr of
-                HeaderConflicted -> (toStrict . encode) <$> listConflicts (decode body)
-                HeaderResolve -> (toStrict . encode) <$> resolveConflict (decode body)
-                HeaderChange -> (toStrict . encode) <$> notify queue (decode body)
-                InvalidHeader -> return . toStrict . encode $ InvalidResponse)
+                HeaderConflicted -> encodeStrict <$> listConflicts (decode body)
+                HeaderResolve -> encodeStrict <$> resolveConflict (decode body)
+                HeaderChange -> encodeStrict <$> notify queue (decode body)
+                InvalidHeader -> return . encodeStrict $ InvalidResponse)
 
 -- | Process a _notify_ message from the client, checking the
 notify

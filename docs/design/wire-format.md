@@ -73,6 +73,7 @@ Error                       Payload
 -----                       -------
 TimeoutError                0
 InvalidNumberOfMessageParts 1
+DecodeError                 2
 UnknownServerError          ?
 
 Here are the possible response payloads:
