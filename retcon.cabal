@@ -299,3 +299,27 @@ test-suite store-postgresql-test
                      , transformers
                      , lens
                      , retcon
+
+test-suite           wire-formats-test
+  hs-source-dirs:    tests
+  main-is:           WireFormatsTest.hs
+  type:              exitcode-stdio-1.0
+  default-language:  Haskell2010
+
+  build-depends:     base
+                   , hspec
+                   , text
+                   , QuickCheck
+                   , mtl
+                   , bytestring
+                   , containers
+                   , binary
+                   , retcon
+
+  ghc-options:       -O2
+                     -threaded
+                     -Wall
+                     -Wwarn
+                     -fwarn-tabs
+
+-- vim: set tabstop=21 expandtab:
