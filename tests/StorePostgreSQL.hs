@@ -384,6 +384,9 @@ postgresqlSuite = around prepareDatabase $
 
             storeFinalise store
 
+        it "should maintain a work queue" $ do
+            pendingWith "Unimplemented"
+
 -- $ Entities and Data Sources
 --
 -- This test suite uses two data entities, each with two data sources, in all
