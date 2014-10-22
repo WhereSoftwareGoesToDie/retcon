@@ -8,8 +8,8 @@
 --
 
 {-# LANGUAGE DeriveFunctor              #-}
-{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
@@ -18,14 +18,14 @@
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TemplateHaskell            #-}
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TupleSections              #-}
 
 -- | Server component for the retcon network API.
 module Retcon.Network.Server where
 
 import Control.Applicative
 import Control.Concurrent
-import Control.Concurrent.Chan
+import Control.Concurrent.Async
 import Control.Exception hiding (Handler, handle)
 import Control.Lens.Operators
 import Control.Lens.TH
@@ -36,15 +36,17 @@ import qualified Data.Aeson as Aeson
 import Data.Binary
 import qualified Data.ByteString as BS
 import Data.ByteString.Lazy (fromStrict, toStrict)
+import qualified Data.ByteString.Lazy as LBS
 import Data.List.NonEmpty
 import Data.Monoid
 import Data.String
 import Options.Applicative
-import System.ZMQ4.Monadic
+import System.ZMQ4.Monadic hiding (async)
 
 import Retcon.Core
 import Retcon.Diff
 import Retcon.Document
+import Retcon.Monad
 import Retcon.Options
 
 -- | Values describing error states of the retcon API.
@@ -157,8 +159,7 @@ data Header request response where
 
 data SomeHeader where
     SomeHeader
-        :: Handler request response
-        => Header request response
+        :: Header request response
         -> SomeHeader
 
 instance Enum SomeHeader where
@@ -171,22 +172,6 @@ instance Enum SomeHeader where
     toEnum 1 = SomeHeader HeaderChange
     toEnum 2 = SomeHeader HeaderResolve
     toEnum _ = SomeHeader InvalidHeader
-
-class (Binary request, Binary response) => Handler request response where
-    handle :: request -> IO response
-
-
-instance Handler RequestConflicted ResponseConflicted where
-    handle _ = return undefined --ResponseConflicted
-
-instance Handler RequestChange ResponseChange where
-    handle _ = return ResponseChange
-
-instance Handler RequestResolve ResponseResolve where
-    handle _ = return ResponseResolve
-
-instance Handler InvalidRequest InvalidResponse where
-    handle _ = return InvalidResponse
 
 -- * Server configuration
 
@@ -250,39 +235,42 @@ encodeStrict = toStrict . encode
 
 -- | Implement the API protocol.
 protocol
-    :: Chan QueuedWork
-    -> RetconServer z ()
-protocol queue = loop
+    :: RetconServer z ()
+protocol = loop
   where
     loop = do
         sock <- ask
         cmd <- liftZMQ . receiveMulti $ sock
         -- Decode and process the message.
         (status, resp) <- case cmd of
-            [hdr, req] -> dispatch (toEnum . decode . fromStrict $ hdr) (fromStrict req)
+            [hdr, req] -> join $ dispatch <$> (toEnum <$> decodeStrict hdr)
+                                          <*> pure (fromStrict req)
             _        -> throwError InvalidNumberOfMessageParts
         -- Encode and send the response.
         liftZMQ . sendMulti sock . fromList $ [encodeStrict status, resp]
+        -- LOOOOOP
         loop
 
     -- Decode a request and call the appropriate handler.
+    dispatch
+        :: SomeHeader
+        -> LBS.ByteString
+        -> RetconServer z (Bool, BS.ByteString)
     dispatch (SomeHeader hdr) body = do
         flip catchError
             (\e -> return (False, toStrict . encode . fromEnum $ e))
             ((True,) <$> case hdr of
                 HeaderConflicted -> encodeStrict <$> listConflicts (decode body)
                 HeaderResolve -> encodeStrict <$> resolveConflict (decode body)
-                HeaderChange -> encodeStrict <$> notify queue (decode body)
+                HeaderChange -> encodeStrict <$> notify (decode body)
                 InvalidHeader -> return . encodeStrict $ InvalidResponse)
 
 -- | Process a _notify_ message from the client, checking the
 notify
-    :: Chan QueuedWork
-    -> RequestChange
+    :: RequestChange
     -> RetconServer z ResponseChange
-notify queue (RequestChange nid) = do
-    liftIO . print $ "Notified"
-    liftIO . writeChan queue $ Process nid
+notify (RequestChange nid) = do
+    liftIO . putStrLn $ "Notified"
     throwError InvalidNumberOfMessageParts
     return ResponseChange
 
@@ -294,7 +282,7 @@ resolveConflict
     :: RequestResolve
     -> RetconServer z ResponseResolve
 resolveConflict (RequestResolve diff_id op_ids) = do
-    liftIO . print $ "Resolving diff " <> show (unDiffID diff_id)
+    liftIO . putStrLn $ "Resolving diff " <> show (unDiffID diff_id)
     return ResponseResolve
 
 -- | Fetch the details of outstanding conflicts and return them to the client.
@@ -302,7 +290,7 @@ listConflicts
     :: RequestConflicted
     -> RetconServer z ResponseConflicted
 listConflicts _ = do
-    liftIO . print $ "Listing conflicts!"
+    liftIO . putStrLn $ "Listing conflicts!"
     return $ ResponseConflicted []
 
 -- * API server
@@ -313,7 +301,7 @@ listConflicts _ = do
 -- and fed back through the socket to the client.
 apiServer
     :: WritableToken store
-    => RetconConfig InitialisedEntity store
+    => RetconConfig SomeEntity store
     -> ServerConfig
     -> IO ()
 apiServer retconCfg serverCfg = do
@@ -321,11 +309,50 @@ apiServer retconCfg serverCfg = do
     putStrLn . fromString $
         "Running server on " <> serverCfg ^. cfgConnectionString
 
-    -- Setup the work queue.
-    queue <- newChan
-    qid <- forkIO $ queueWorker queue
+    -- Start the API server thread.
+    server <- async $ serverThread
 
-    runRetconServer serverCfg (protocol queue)
+    -- Start the processing thread.
+    retcon <- async $ retconThread
+
+    -- Wait for completion.
+    let procs = [server, retcon]
+    (done, _) <- waitAnyCancel procs
+
+    if (done == server)
+        then putStrLn "Server shutdown!"
+        else putStrLn "Retcon go boom!"
+  where
+    serverThread = runRetconServer serverCfg protocol
+    retconThread = void $ runRetconMonadOnce retconCfg () loop
+    loop
+        :: WritableToken s
+        => RetconHandler s ()
+    loop = getWorkItem >>= processWorkItem >> loop
+
+-- | Get a work item from the store.
+getWorkItem
+    :: MonadIO m
+    => m QueuedWork
+getWorkItem = return . Process $ ChangeNotification "" "" ""
+
+-- | Mark a work item as "completed".
+markWorkItemComplete
+    :: Monad m
+    => QueuedWork
+    -> m ()
+markWorkItemComplete _ = return ()
+
+-- | Inspect a work item and perform whatever task is required.
+processWorkItem
+    :: WritableToken s
+    => QueuedWork
+    -> RetconHandler s ()
+processWorkItem work = do
+    case work of
+        (Process note) -> liftIO . putStrLn $ "Processing notification"
+        (Apply did diff) -> liftIO . putStrLn $ "Applying diff"
+    markWorkItemComplete work
 
 data QueuedWork
     = Process ChangeNotification
@@ -335,12 +362,3 @@ instance Show QueuedWork where
     show (Process _) = "Process"
     show (Apply _ _) = "Apply"
 
-queueWorker
-    :: Chan QueuedWork
-    -> IO ()
-queueWorker chan = loop
-  where
-    loop = do
-        cmd <- readChan chan
-        print cmd
-        loop
