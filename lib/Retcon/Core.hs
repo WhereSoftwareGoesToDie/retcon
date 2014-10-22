@@ -460,9 +460,13 @@ class RetconStore s where
     storeFinalise :: s
                   -> IO ()
 
-    -- | Duplicate a handle to the storage backend.
+    -- | Clone a store handle for concurrent operations. The new handle must be
+    -- safe to use concurrently with the original handle.
     --
-    -- (E.g. open another connection to the database server, etc.)
+    -- (E.g. open a second connection to the same PostgreSQL database.)
+    --
+    -- This may be a no-op for backends which are already thread-safe (e.g.
+    -- in-memory IORefs).
     storeClone
         :: s
         -> IO s
@@ -604,7 +608,10 @@ class StoreToken s where
     -- | Restrict a token to be read-only.
     restrictToken :: s -> ROToken
 
-    -- | Create a token with a cloned handle to the same storage backend.
+    -- | Clone a token.
+    --
+    -- The new token is safe to use concurrently with the existing token. See
+    -- the document 'storeClone' for more details.
     cloneToken :: s -> IO s
 
 -- | Storage tokens which support reading operations.
