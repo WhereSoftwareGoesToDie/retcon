@@ -588,6 +588,35 @@ class RetconStore s where
         -> Int -- ^ Maximum number to return.
         -> IO (Int, [Notification])
 
+    -- | Add a work item to the work queue.
+    storeAddWork
+        :: s
+        -> WorkItem
+        -> IO ()
+
+    -- | Get a work item from the work queue.
+    --
+    -- The item will be locked for a period of time, after which it will become
+    -- available for other workers to claim.
+    --
+    -- TODO: The period of time is currently hardcoded in the implementations.
+    storeGetWork
+        :: s
+        -> IO (Maybe WorkItem)
+
+    -- | Remove a completed work item from the queue.
+    storeCompleteWork
+        :: s
+        -> WorkItem
+        -> IO ()
+
+-- | An item of work to be stored in the work queue.
+data WorkItem
+    -- | A document was changed; process the update.
+    = WorkNotify ForeignKeyIdentifier
+    -- | A patch was submitted by a human; apply it.
+    | WorkApplyPatch Int (Diff ())
+
 -- * Tokens
 
 -- $ Tokens wrap storage backend values and expose particular subsets of the
