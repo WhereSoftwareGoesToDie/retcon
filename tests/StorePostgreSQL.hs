@@ -64,7 +64,7 @@ isDisconnected e = sqlErrorMsg e == "connection disconnected"
 
 -- | Count the objects in the store.
 countStore :: PGStorage -> IO (Int, Int, Int, Int)
-countStore (PGStore conn) = do
+countStore (PGStore conn _) = do
     [Only iks] <- query_ conn "SELECT count(*) FROM retcon;"
     [Only fks] <- query_ conn "SELECT count(*) FROM retcon_fk;"
     [Only docs] <- query_ conn "SELECT count(*) FROM retcon_initial;"
@@ -82,7 +82,7 @@ type RetconConflicts = [(Int, Int, Value)]
 dumpStore
     :: PGStorage
     -> IO (RetconTable, RetconFkTable, RetconInitialTable, RetconDiffs, RetconConflicts)
-dumpStore (PGStore conn) = do
+dumpStore (PGStore conn _) = do
     retconTable             <- query_ conn "SELECT entity, id FROM retcon ORDER BY entity, id;"
     retconFkTable           <- query_ conn "SELECT entity, id, source, fk FROM retcon_fk ORDER BY entity, id, source, fk;"
     retconInitialTable      <- query_ conn "SELECT entity, id, document FROM retcon_initial ORDER BY entity, id;"
@@ -117,7 +117,7 @@ postgresqlSuite = around prepareDatabase $
         it "should be connected when initialised" $ do
             -- postgresql-simple doesn't seem to provide a function similar to
             -- PQstatus from libpq; so let's just try *using* the connection!
-            store@(PGStore conn) <- storeInitialise options
+            store@(PGStore conn _) <- storeInitialise options
 
             [Only one] <- onepluszero conn
             one `shouldBe` 1
@@ -125,7 +125,7 @@ postgresqlSuite = around prepareDatabase $
             storeFinalise store
 
         it "should be disconnected when finalised" $ do
-            store@(PGStore conn) <- storeInitialise options
+            store@(PGStore conn _) <- storeInitialise options
 
             -- Check that the connection is now open.
             [Only one] <- onepluszero conn
@@ -136,7 +136,7 @@ postgresqlSuite = around prepareDatabase $
             --(void $ onepluszero conn) `shouldThrow` isDisconnected
 
         it "should allocate and delete internal keys" $ do
-            store@(PGStore conn) <- storeInitialise options
+            store@(PGStore conn _) <- storeInitialise options
 
             -- Check it's empty, so our counts will be correct.
             initial@(iks, fks, docs, diffs) <- countStore store
@@ -188,7 +188,7 @@ postgresqlSuite = around prepareDatabase $
             storeFinalise store
 
         it "should associate foreign and internal keys" $ do
-            store@(PGStore conn) <- storeInitialise options
+            store@(PGStore conn _) <- storeInitialise options
 
             let (fk1 :: ForeignKey "tests" "test") = ForeignKey "test1"
             let (fk2 :: ForeignKey "tests" "test") = ForeignKey "test2"
@@ -256,7 +256,7 @@ postgresqlSuite = around prepareDatabase $
             storeFinalise store
 
         it "should record initial documents" $ do
-            store@(PGStore conn) <- storeInitialise options
+            store@(PGStore conn _) <- storeInitialise options
 
             let doc1 = fromJust $ mkNode (Just "Document One")
             let doc2 = fromJust $ mkNode (Just "Document Two")
@@ -322,7 +322,7 @@ postgresqlSuite = around prepareDatabase $
             storeFinalise store
 
         it "should record diffs" $ do
-            store@(PGStore conn) <- storeInitialise options
+            store@(PGStore conn _) <- storeInitialise options
 
             -- TODO Put some actual diffs in here.
             let a1 = mempty

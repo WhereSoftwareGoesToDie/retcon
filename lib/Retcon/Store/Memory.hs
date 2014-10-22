@@ -66,6 +66,8 @@ instance RetconStore MemStorage where
 
     storeFinalise (MemStorage ref) = writeIORef ref emptyMemoryStore
 
+    storeClone (MemStorage ref) = return . MemStorage $ ref
+
     storeCreateInternalKey (MemStorage ref) =
         atomicModifyIORef' ref $ \st ->
             (memNextKey +~ 1 $ st, InternalKey $ st ^. memNextKey)
