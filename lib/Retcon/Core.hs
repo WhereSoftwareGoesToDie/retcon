@@ -743,6 +743,21 @@ class StoreToken s => WritableToken s where
         :: Int -- ^ Maximum number to fetch.
         -> RetconMonad e s l (Int, [Notification])
 
+    -- | Add a work item to the work queue in the data store.
+    addWork
+        :: WorkItem
+        -> RetconMonad e s l ()
+
+    -- | Claim and return an available work item from the work queue in the
+    -- data store.
+    getWork
+        :: RetconMonad e s l (Maybe WorkItem)
+
+    -- | Mark a work item as completed in the work queue in the data store.
+    completeWork
+        :: WorkItem
+        -> RetconMonad e s l ()
+
 -- | A token exposing only the 'ReadableToken' API.
 data ROToken = forall s. RetconStore s => ROToken s
 
@@ -849,3 +864,15 @@ instance WritableToken RWToken where
     fetchNotifications limit = do
         RWToken store <- getRetconStore
         liftIO $ storeFetchNotifications store limit
+
+    addWork work = do
+        RWToken store <- getRetconStore
+        liftIO $ storeAddWork store work
+
+    getWork = do
+        RWToken store <- getRetconStore
+        liftIO $ storeGetWork store
+
+    completeWork work = do
+        RWToken store <- getRetconStore
+        liftIO $ storeCompleteWork store work
