@@ -8,6 +8,7 @@
 --
 
 {-# LANGUAGE DeriveFunctor              #-}
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -17,12 +18,15 @@
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TemplateHaskell            #-}
+{-# LANGUAGE TupleSections              #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 -- | Server component for the retcon network API.
 module Retcon.Network.Server where
 
 import Control.Applicative
+import Control.Concurrent
+import Control.Concurrent.Async
 import Control.Exception hiding (Handler, handle)
 import Control.Lens.Operators
 import Control.Lens.TH
@@ -32,20 +36,38 @@ import Control.Monad.Reader
 import qualified Data.Aeson as Aeson
 import Data.Binary
 import qualified Data.ByteString as BS
+import Data.ByteString.Lazy (fromStrict, toStrict)
+import qualified Data.ByteString.Lazy as LBS
+import Data.List.NonEmpty
 import Data.Monoid
 import Data.String
 import Options.Applicative
-import System.ZMQ4.Monadic
+import System.ZMQ4.Monadic hiding (async)
 
 import Retcon.Core
 import Retcon.Diff
 import Retcon.Document
+import Retcon.Monad
 import Retcon.Options
 
-data RetconClientError
-    = UnknownError SomeException
-    | InvalidNumberOfMessageParts
+-- | Values describing error states of the retcon API.
+data RetconAPIError
+    = UnknownServerError
     | TimeoutError
+    | DecodeError
+    | InvalidNumberOfMessageParts
+  deriving (Show, Eq)
+
+instance Enum RetconAPIError where
+    fromEnum TimeoutError = 0
+    fromEnum InvalidNumberOfMessageParts = 1
+    fromEnum DecodeError = 2
+    fromEnum UnknownServerError = maxBound
+
+    toEnum 0 = TimeoutError
+    toEnum 1 = InvalidNumberOfMessageParts
+    toEnum 2 = DecodeError
+    toEnum _ = UnknownServerError
 
 -- | An opaque reference to a Diff, used to uniquely reference the conflicted
 -- diff for resolveDiff.
@@ -156,8 +178,7 @@ data Header request response where
 
 data SomeHeader where
     SomeHeader
-        :: Handler request response
-        => Header request response
+        :: Header request response
         -> SomeHeader
 
 instance Enum SomeHeader where
@@ -170,22 +191,6 @@ instance Enum SomeHeader where
     toEnum 1 = SomeHeader HeaderChange
     toEnum 2 = SomeHeader HeaderResolve
     toEnum _ = SomeHeader InvalidHeader
-
-class (Binary request, Binary response) => Handler request response where
-    handle :: request -> IO response
-
-
-instance Handler RequestConflicted ResponseConflicted where
-    handle _ = return undefined --ResponseConflicted
-
-instance Handler RequestChange ResponseChange where
-    handle _ = return ResponseChange
-
-instance Handler RequestResolve ResponseResolve where
-    handle _ = return ResponseResolve
-
-instance Handler InvalidRequest InvalidResponse where
-    handle _ = return InvalidResponse
 
 -- * Server configuration
 
@@ -209,57 +214,103 @@ serverParser = ServerConfig <$> connString
 -- * Server monad
 
 -- | Monad for the API server actions to run in.
-newtype ServerMonad z a = ServerMonad
-    { unServerMonad :: ExceptT RetconClientError (ReaderT (Socket z Rep) (ZMQ z)) a
+newtype RetconServer z a = RetconServer
+    { unRetconServer :: ExceptT RetconAPIError (ReaderT (Socket z Rep) (ZMQ z)) a
     }
-  deriving (Applicative, Functor, Monad, MonadIO, MonadReader (Socket z Rep))
+  deriving (Applicative, Functor, Monad, MonadIO, MonadReader (Socket z Rep),
+  MonadError RetconAPIError)
 
--- | Run a handler in the 'ServerMonad' using the ZMQ connection details.
+-- | Run a handler in the 'RetconServer' monad using the ZMQ connection details.
 runRetconServer
     :: forall a. ServerConfig
-    -> (forall z. ServerMonad z a)
+    -> (forall z. RetconServer z a)
     -> IO ()
 runRetconServer cfg act = runZMQ $ do
     sock <- socket Rep
     bind sock $ cfg ^. cfgConnectionString
-    void $ flip runReaderT sock . runExceptT . unServerMonad $ act
-    return ()
+    void $ flip runReaderT sock . runExceptT . unRetconServer $ act
+
+-- * Monads with ZMQ
+
+liftZMQ :: ZMQ z a -> RetconServer z a
+liftZMQ = RetconServer . lift . lift
 
 -- * Server actions
 
+decodeStrict
+    :: (MonadError RetconAPIError m, Binary a)
+    => BS.ByteString
+    -> m a
+decodeStrict bs =
+    case decodeOrFail . fromStrict $ bs of
+        Left{} -> throwError DecodeError
+        Right (_, _, x) -> return x
+
+encodeStrict
+    :: (Binary a)
+    => a
+    -> BS.ByteString
+encodeStrict = toStrict . encode
+
+-- | Implement the API protocol.
 protocol
-    :: ServerMonad z ()
-protocol = do
-    sock <- ask
-    command <- ServerMonad . lift . lift $ receive sock
-    liftIO . BS.putStrLn $ command
-    ServerMonad . lift . lift . send sock [] $ "sed " <> command
-    protocol
+    :: RetconServer z ()
+protocol = loop
+  where
+    loop = do
+        sock <- ask
+        cmd <- liftZMQ . receiveMulti $ sock
+        -- Decode and process the message.
+        (status, resp) <- case cmd of
+            [hdr, req] -> join $ dispatch <$> (toEnum <$> decodeStrict hdr)
+                                          <*> pure (fromStrict req)
+            _        -> throwError InvalidNumberOfMessageParts
+        -- Encode and send the response.
+        liftZMQ . sendMulti sock . fromList $ [encodeStrict status, resp]
+        -- LOOOOOP
+        loop
+
+    -- Decode a request and call the appropriate handler.
+    dispatch
+        :: SomeHeader
+        -> LBS.ByteString
+        -> RetconServer z (Bool, BS.ByteString)
+    dispatch (SomeHeader hdr) body = do
+        flip catchError
+            (\e -> return (False, toStrict . encode . fromEnum $ e))
+            ((True,) <$> case hdr of
+                HeaderConflicted -> encodeStrict <$> listConflicts (decode body)
+                HeaderResolve -> encodeStrict <$> resolveConflict (decode body)
+                HeaderChange -> encodeStrict <$> notify (decode body)
+                InvalidHeader -> return . encodeStrict $ InvalidResponse)
 
 -- | Process a _notify_ message from the client, checking the
 notify
-    :: ChangeNotification
-    -> ServerMonad z ()
-notify _ = return ()
+    :: RequestChange
+    -> RetconServer z ResponseChange
+notify (RequestChange nid) = do
+    liftIO . putStrLn $ "Notified"
+    throwError InvalidNumberOfMessageParts
+    return ResponseChange
 
 -- | Process a _resolve conflict_ message from the client.
 --
 -- The selected diff is marked as resolved; and a new diff is composed from the
 -- selected operations and added to the work queue.
 resolveConflict
-    :: DiffID
-    -> [ConflictedDiffOpID]
-    -> ServerMonad z ()
-resolveConflict diff_id op_ids = do
-    liftIO . print . unDiffID $ diff_id
-    liftIO . print . map unConflictedDiffOpID $ op_ids
-    return ()
+    :: RequestResolve
+    -> RetconServer z ResponseResolve
+resolveConflict (RequestResolve diff_id op_ids) = do
+    liftIO . putStrLn $ "Resolving diff " <> show (unDiffID diff_id)
+    return ResponseResolve
 
 -- | Fetch the details of outstanding conflicts and return them to the client.
 listConflicts
-    :: ServerMonad z [(Document, Diff a, DiffID, [(ConflictedDiffOpID, DiffOp a)])]
-listConflicts = do
-    return []
+    :: RequestConflicted
+    -> RetconServer z ResponseConflicted
+listConflicts _ = do
+    liftIO . putStrLn $ "Listing conflicts!"
+    return $ ResponseConflicted []
 
 -- * API server
 
@@ -269,10 +320,64 @@ listConflicts = do
 -- and fed back through the socket to the client.
 apiServer
     :: WritableToken store
-    => RetconConfig InitialisedEntity store
+    => RetconConfig SomeEntity store
     -> ServerConfig
     -> IO ()
 apiServer retconCfg serverCfg = do
+    -- TODO: We should probably do logging here just as in retcon proper.
     putStrLn . fromString $
         "Running server on " <> serverCfg ^. cfgConnectionString
-    runRetconServer serverCfg protocol
+
+    -- Start the API server thread.
+    server <- async $ serverThread
+
+    -- Start the processing thread.
+    retcon <- async $ retconThread
+
+    -- Wait for completion.
+    let procs = [server, retcon]
+    (done, _) <- waitAnyCancel procs
+
+    if (done == server)
+        then putStrLn "Server shutdown!"
+        else putStrLn "Retcon go boom!"
+  where
+    serverThread = runRetconServer serverCfg protocol
+    retconThread = void $ runRetconMonadOnce retconCfg () loop
+    loop
+        :: WritableToken s
+        => RetconHandler s ()
+    loop = getWorkItem >>= processWorkItem >> loop
+
+-- | Get a work item from the store.
+getWorkItem
+    :: MonadIO m
+    => m QueuedWork
+getWorkItem = return . Process $ ChangeNotification "" "" ""
+
+-- | Mark a work item as "completed".
+markWorkItemComplete
+    :: Monad m
+    => QueuedWork
+    -> m ()
+markWorkItemComplete _ = return ()
+
+-- | Inspect a work item and perform whatever task is required.
+processWorkItem
+    :: WritableToken s
+    => QueuedWork
+    -> RetconHandler s ()
+processWorkItem work = do
+    case work of
+        (Process note) -> liftIO . putStrLn $ "Processing notification"
+        (Apply did diff) -> liftIO . putStrLn $ "Applying diff"
+    markWorkItemComplete work
+
+data QueuedWork
+    = Process ChangeNotification
+    | Apply DiffID (Diff ())
+
+instance Show QueuedWork where
+    show (Process _) = "Process"
+    show (Apply _ _) = "Apply"
+

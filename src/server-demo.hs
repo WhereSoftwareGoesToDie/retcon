@@ -1,9 +1,6 @@
 module Main where
 
 import Control.Applicative
-import Control.Exception
-import Control.Lens.Operators
-import Control.Monad
 import Options.Applicative
 
 import Retcon.Core
@@ -27,12 +24,4 @@ main = do
     (opts, network) <- parseOptionsWithDefault apiParser "/etc/retcon.conf"
     cfg <- prepareConfig (opts, []) entities
 
-    let params   = cfg ^. cfgParams
-        entities = cfg ^. cfgEntities
-
-    putStrLn "yolo"
-    bracket (initialiseEntities params entities)
-            (void . finaliseEntities params)
-            (\state -> let cfg' = cfg & cfgEntities .~ state
-                       in apiServer cfg' network)
-
+    apiServer cfg network

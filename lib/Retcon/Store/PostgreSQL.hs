@@ -23,6 +23,7 @@ module Retcon.Store.PostgreSQL (PGStorage(..), prepareConfig) where
 import Control.Lens
 import Control.Monad
 import Data.Aeson
+import Data.ByteString (ByteString)
 import Data.List
 import Data.Map.Strict (Map)
 import Data.Monoid
@@ -42,7 +43,10 @@ import Retcon.Options
 import Utility.Configuration
 
 -- | A persistent, PostgreSQL storage backend for Retcon.
-newtype PGStorage = PGStore { unWrapConnection :: Connection }
+data PGStorage = PGStore
+    { unWrapConnection :: !Connection
+    , unWrapConnString :: !ByteString
+    }
 
 joinSQL :: IsString x => [String] -> x
 joinSQL = fromString . intercalate ";"
@@ -51,31 +55,36 @@ joinSQL = fromString . intercalate ";"
 instance RetconStore PGStorage where
 
     storeInitialise opts = do
-        conn <- connectPostgreSQL (opts ^. optDB)
-        return . PGStore $ conn
+        let connstr = opts ^. optDB
+        conn <- connectPostgreSQL connstr
+        return $ PGStore conn connstr
 
-    storeFinalise (PGStore conn) =
+    storeFinalise (PGStore conn _) =
         close conn
+
+    storeClone (PGStore _ connstr) = do
+        conn <- connectPostgreSQL connstr
+        return $ PGStore conn connstr
 
     -- | Create a new 'InternalKey' by inserting a row in the database and
     -- using the allocated ID as the new key.
     storeCreateInternalKey :: forall entity. (RetconEntity entity)
                       => PGStorage
                       -> IO (InternalKey entity)
-    storeCreateInternalKey (PGStore conn) = do
+    storeCreateInternalKey (PGStore conn _) = do
         let entity = symbolVal (Proxy :: Proxy entity)
         res <- query conn "INSERT INTO retcon (entity) VALUES (?) RETURNING id" (Only entity)
         case res of
             [] -> error "Could not create new internal key"
             (Only key:_) -> return $ InternalKey key
 
-    storeLookupInternalKey (PGStore conn) fk = do
+    storeLookupInternalKey (PGStore conn _) fk = do
         results <- query conn "SELECT id FROM retcon_fk WHERE entity = ? AND source = ? AND fk = ? LIMIT 1" $ foreignKeyValue fk
         case results of
             Only key:_ -> return $ Just (InternalKey key)
             []         -> return Nothing
 
-    storeDeleteInternalKey (PGStore conn) ik = do
+    storeDeleteInternalKey (PGStore conn _) ik = do
         let execute' sql = execute conn sql (internalKeyValue ik)
         d1 <- execute' "DELETE FROM retcon_initial WHERE entity = ? AND id = ?"
         d2 <- execute' "DELETE FROM retcon_diff WHERE entity = ? AND id = ?"
@@ -83,19 +92,19 @@ instance RetconStore PGStorage where
         d4 <- execute' "DELETE FROM retcon WHERE entity = ? AND id = ?"
         return . sum . map fromIntegral $ [d1, d2, d3, d4]
 
-    storeRecordForeignKey (PGStore conn) ik fk = do
+    storeRecordForeignKey (PGStore conn _) ik fk = do
         let (entity, source, fid) = foreignKeyValue fk
         let (_, iid) = internalKeyValue ik
         let values = (entity, iid, source, fid)
         let sql = "INSERT INTO retcon_fk (entity, id, source, fk) VALUES (?, ?, ?, ?)"
         void $ execute conn sql values
 
-    storeDeleteForeignKey (PGStore conn) fk = do
+    storeDeleteForeignKey (PGStore conn _) fk = do
         let sql = "DELETE FROM retcon_fk WHERE entity = ? AND source = ? AND fk = ?"
         d <- execute conn sql $ foreignKeyValue fk
         return $ fromIntegral  d
 
-    storeDeleteForeignKeys (PGStore conn) ik = do
+    storeDeleteForeignKeys (PGStore conn _) ik = do
         let sql = "DELETE FROM retcon_fk WHERE entity = ? AND id = ?"
         d <- execute conn sql $ internalKeyValue ik
         return $ fromIntegral d
@@ -104,7 +113,7 @@ instance RetconStore PGStorage where
                      => PGStorage
                      -> InternalKey entity
                      -> IO (Maybe (ForeignKey entity source))
-    storeLookupForeignKey (PGStore conn) ik = do
+    storeLookupForeignKey (PGStore conn _) ik = do
         let source = symbolVal (Proxy :: Proxy source)
         let (entity, ik') = internalKeyValue ik
         let sql = "SELECT fk FROM retcon_fk WHERE entity = ? AND id = ? AND source = ?"
@@ -113,7 +122,7 @@ instance RetconStore PGStorage where
             []         -> Nothing
             Only fk':_ -> Just $ ForeignKey fk'
 
-    storeRecordInitialDocument (PGStore conn) ik doc = do
+    storeRecordInitialDocument (PGStore conn _) ik doc = do
         let (entity, ik') = internalKeyValue ik
         let sql = joinSQL [ "BEGIN"
                           , "DELETE FROM retcon_initial WHERE entity = ? AND id = ?"
@@ -123,7 +132,7 @@ instance RetconStore PGStorage where
         _ <- execute conn sql (entity, ik', ik', entity, toJSON doc)
         return ()
 
-    storeLookupInitialDocument (PGStore conn) ik = do
+    storeLookupInitialDocument (PGStore conn _) ik = do
         let sql = "SELECT document FROM retcon_initial WHERE entity = ? AND id = ?"
         res <- query conn sql $ internalKeyValue ik
         case res of
@@ -132,12 +141,12 @@ instance RetconStore PGStorage where
                 Error _     -> return Nothing
                 Success doc -> return . Just $ doc
 
-    storeDeleteInitialDocument (PGStore conn) ik = do
+    storeDeleteInitialDocument (PGStore conn _) ik = do
         let sql = "DELETE FROM retcon_initial WHERE entity = ? AND id = ?"
         d <- execute conn sql $ internalKeyValue ik
         return $ fromIntegral d
 
-    storeRecordDiffs (PGStore conn) ik (d, ds) = do
+    storeRecordDiffs (PGStore conn _) ik (d, ds) = do
         let (entity, key) = internalKeyValue ik
         -- Use `void` to relabel the diffs and operations with () instead of
         -- the arbitrary, possibly unserialisable, labels.
@@ -155,7 +164,7 @@ instance RetconStore PGStorage where
         diffQ = "INSERT INTO retcon_diff (entity, id, is_conflict, content) VALUES (?, ?, ?, ?) RETURNING diff_id"
         opsQ = "INSERT INTO retcon_diff_conflicts (diff_id, content) VALUES (?, ?)"
 
-    storeLookupDiff (PGStore conn) diff_id = do
+    storeLookupDiff (PGStore conn _) diff_id = do
         let query' sql = query conn sql (Only diff_id)
 
         -- Load the merged diff.
@@ -175,30 +184,30 @@ instance RetconStore PGStorage where
         isSuccess (Success _) = True
         isSuccess _ = False
 
-    storeLookupDiffIds (PGStore conn) ik = do
+    storeLookupDiffIds (PGStore conn _) ik = do
         r <- query conn "SELECT diff_id FROM retcon_diff WHERE entity = ? AND id = ?" $ internalKeyValue ik
         return . map fromOnly $ r
 
-    storeDeleteDiff (PGStore conn) diff_id = do
+    storeDeleteDiff (PGStore conn _) diff_id = do
         let execute' sql = execute conn sql (Only diff_id)
         ops <- execute' "DELETE FROM retcon_diff_conflicts WHERE diff_id = ?"
         d <- execute' "DELETE FROM retcon_diff WHERE diff_id = ?"
         return . sum . map fromIntegral $ [ops, d]
 
-    storeDeleteDiffs (PGStore conn) ik = do
+    storeDeleteDiffs (PGStore conn _) ik = do
         let execute' sql = execute conn sql (internalKeyValue ik)
         d1 <- execute' "DELETE FROM retcon_diff_conflicts WHERE diff_id IN (SELECT diff_id FROM retcon_diff WHERE entity = ? AND id = ?)"
         d2 <- execute' "DELETE FROM retcon_notifications WHERE entity = ? AND id = ?"
         d3 <- execute' "DELETE FROM retcon_diff WHERE entity = ? AND id = ?"
         return . sum . map fromIntegral $ [d1, d2, d3]
 
-    storeRecordNotification (PGStore conn) ik did = do
+    storeRecordNotification (PGStore conn _) ik did = do
         let (entity, eid) = internalKeyValue ik
         void $ execute conn sql (entity, eid, did)
       where
         sql = "INSERT INTO retcon_notifications (entity, id, diff_id) VALUES (?, ?, ?)"
 
-    storeFetchNotifications (PGStore conn) limit = do
+    storeFetchNotifications (PGStore conn _) limit = do
         (ids :: [Only Int]) <- query conn sqlI (Only limit)
         let ids' = map fromOnly ids
         let least = minimum ids'

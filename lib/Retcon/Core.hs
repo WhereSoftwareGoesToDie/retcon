@@ -82,9 +82,6 @@ module Retcon.Core
     WritableToken(..),
     RWToken,
     ROToken,
-
-
-
 ) where
 
 import Control.Applicative
@@ -136,7 +133,8 @@ runRetconAction l =
     handle :: (Functor m, MonadError e m) => m v -> m (Either e v)
     handle a = (Right <$> a) `catchError` (return . Left)
 
--- | "Localise" the state as appropriate to run a 'RetconAction' in a 'RetconHandler' context.
+-- | "Localise" the state as appropriate to run a 'RetconAction' in a
+-- 'RetconHandler' context.
 localise
     :: StoreToken s
     => l -- ^ Local state value
@@ -462,6 +460,13 @@ class RetconStore s where
     storeFinalise :: s
                   -> IO ()
 
+    -- | Duplicate a handle to the storage backend.
+    --
+    -- (E.g. open another connection to the database server, etc.)
+    storeClone
+        :: s
+        -> IO s
+
     -- | Allocate and return a new 'InternalKey'.
     storeCreateInternalKey :: forall entity. (RetconEntity entity)
                            => s
@@ -599,6 +604,9 @@ class StoreToken s where
     -- | Restrict a token to be read-only.
     restrictToken :: s -> ROToken
 
+    -- | Create a token with a cloned handle to the same storage backend.
+    cloneToken :: s -> IO s
+
 -- | Storage tokens which support reading operations.
 class StoreToken s => ReadableToken s where
     -- | Find the 'InternalKey' associated with a 'ForeignKey'.
@@ -705,6 +713,8 @@ data ROToken = forall s. RetconStore s => ROToken s
 instance StoreToken ROToken where
     restrictToken = id
 
+    cloneToken (ROToken s) = ROToken <$> storeClone s
+
 instance ReadableToken ROToken where
     lookupInternalKey fk = do
         ROToken store <- getRetconStore
@@ -731,6 +741,8 @@ data RWToken = forall s. RetconStore s => RWToken s
 
 instance StoreToken RWToken where
     restrictToken (RWToken st) = ROToken st
+
+    cloneToken (RWToken s) = RWToken <$> storeClone s
 
 instance ReadableToken RWToken where
     lookupInternalKey fk = do
