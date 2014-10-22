@@ -19,6 +19,7 @@
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TupleSections              #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 -- | Server component for the retcon network API.
 module Retcon.Network.Server where
@@ -72,7 +73,7 @@ instance Enum RetconAPIError where
 -- diff for resolveDiff.
 newtype DiffID = DiffID
     { unDiffID :: Int }
-    deriving (Binary)
+  deriving (Binary, Eq, Show)
 
 -- | A notification for Retcon that the document with 'ForeignID' which is an
 -- 'EntityName' at the data source 'SourceName' has changed in some way.
@@ -81,33 +82,45 @@ data ChangeNotification = ChangeNotification
     , _notificationSource    :: SourceName
     , _notificationForeignID :: ForeignID
     }
+  deriving (Eq, Show)
 makeLenses ''ChangeNotification
 
 -- | An opaque reference to a DiffOp, used when sending the list of selected
 -- DiffOps to resolveDiff
 newtype ConflictedDiffOpID = ConflictedDiffOpID
     { unConflictedDiffOpID :: Int }
-    deriving (Binary)
+  deriving (Binary, Eq, Show)
+
+getJSON
+    :: FromJSON a
+    => Get a
+getJSON = do
+    json <- Aeson.eitherDecode <$> get
+    case json of
+        Right x -> return x
+        Left msg -> fail msg
 
 instance Binary (Diff ()) where
     put = put . Aeson.encode
-    get = decode <$> get
+    get = getJSON
 
 instance Binary (DiffOp ()) where
     put = put . Aeson.encode
-    get = decode <$> get
+    get = getJSON
 
 instance Binary Document where
     put = put . Aeson.encode
-    get = decode <$> get
+    get = getJSON
 
 data RequestConflicted = RequestConflicted
+  deriving (Eq, Show)
 data ResponseConflicted = ResponseConflicted
     [ ( Document
       , Diff ()
       , DiffID
       , [(ConflictedDiffOpID, DiffOp ())]
-      )]
+    )]
+  deriving (Eq, Show)
 
 instance Binary RequestConflicted where
     put _ = return ()
@@ -117,7 +130,9 @@ instance Binary ResponseConflicted where
     get = ResponseConflicted <$> get
 
 data RequestChange = RequestChange ChangeNotification
+  deriving (Eq, Show)
 data ResponseChange = ResponseChange
+  deriving (Eq, Show)
 
 instance Binary RequestChange where
     put (RequestChange (ChangeNotification entity source fk)) =
@@ -130,7 +145,9 @@ instance Binary ResponseChange where
     get = return ResponseChange
 
 data RequestResolve = RequestResolve DiffID [ConflictedDiffOpID]
+  deriving (Eq, Show)
 data ResponseResolve = ResponseResolve
+  deriving (Eq, Show)
 
 instance Binary RequestResolve where
     put (RequestResolve did conflicts) = put (did, conflicts)
@@ -142,7 +159,9 @@ instance Binary ResponseResolve where
     get = return ResponseResolve
 
 data InvalidRequest = InvalidRequest
+  deriving (Eq, Show)
 data InvalidResponse = InvalidResponse
+  deriving (Eq, Show)
 
 instance Binary InvalidRequest where
     put _ = return ()

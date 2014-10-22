@@ -37,16 +37,20 @@ branchingFactor = 8
 -- - size 1 - make a single leaf node.
 -- - size <= 5 - make a node with leafish children.
 -- - size > 5 - split it into roughly branchingFactor branches.
+--
+-- This will only generate JSON-ish trees.
 generateTree :: (Ord key, Arbitrary key, Arbitrary value)
              => Int
              -> Gen (Tree key value)
 generateTree 0 = return $ Node Nothing M.empty
 generateTree 1 = Node <$> (Just <$> arbitrary) <*> return M.empty
 generateTree n = do
-    value <- arbitrary
     branches <- choose (1, branchingFactor)
     assign <- vectorOf (n-1) $ choose (1, branches)
     kids <- mapM (generateTree . length) $ group $ sort assign
+    value <- case kids of
+        [] -> arbitrary
+        _  -> return Nothing
     labels <- vectorOf (n-1) arbitrary
     return $ Node value $ M.fromList $ zip labels kids
 
