@@ -328,20 +328,25 @@ apiServer retconCfg serverCfg = do
     loop
         :: WritableToken s
         => RetconHandler s ()
-    loop = getWorkItem >>= processWorkItem >> loop
+    loop = getWorkItem >>= maybe (return ()) (processWorkItem) >> loop
 
 -- | Get a work item from the store.
+--
+-- Inspect the work queue and, if there is an unclaimed task available, claim
+-- and return it.
 getWorkItem
-    :: MonadIO m
-    => m QueuedWork
-getWorkItem = return . Process $ ChangeNotification "" "" ""
+    :: WritableToken s
+    => RetconHandler s (Maybe QueuedWork)
+getWorkItem = do
+    return Nothing
 
 -- | Mark a work item as "completed".
 markWorkItemComplete
-    :: Monad m
+    :: WritableToken s
     => QueuedWork
-    -> m ()
-markWorkItemComplete _ = return ()
+    -> RetconHandler s ()
+markWorkItemComplete work = do
+    return ()
 
 -- | Inspect a work item and perform whatever task is required.
 processWorkItem
