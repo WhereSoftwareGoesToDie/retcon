@@ -91,7 +91,7 @@ newtype RetconClientZMQ z a =
 -- recieving messages from a Retcon server.
 class (MonadError RetconAPIError m, Functor m)
         => RetconClientConnection m where
-    performRequest :: (Handler request response, Binary request, Binary response)
+    performRequest :: (Binary request, Binary response)
                    => Header request response -> request -> m response
 
 
