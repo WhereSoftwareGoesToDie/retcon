@@ -349,9 +349,6 @@ processWorkItem
     => QueuedWork
     -> RetconHandler s ()
 processWorkItem work = do
-    case work of
-        (Process note) -> liftIO . putStrLn $ "Processing notification"
-        (Apply did diff) -> liftIO . putStrLn $ "Applying diff"
     markWorkItemComplete work
 
 data QueuedWork
