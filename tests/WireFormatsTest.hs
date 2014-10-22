@@ -39,12 +39,16 @@ instance Arbitrary Document where
     arbitrary = Document <$> arbitrary
 
 instance Arbitrary (Diff ()) where
-    arbitrary = Diff <$> arbitrary <*> arbitrary
+    arbitrary = sized $ \n -> do
+        l <- arbitrary
+        childs <- choose (0,n)
+        ops <- sequence $ replicate childs $ arbitrary
+        return $ Diff l ops
 
 instance Arbitrary (DiffOp ()) where
     arbitrary = oneof [
-                InsertOp <$> arbitrary <*> arbitrary <*> arbitrary,
-                DeleteOp <$> arbitrary <*> arbitrary
+                InsertOp <$> arbitrary <*> resize 10 arbitrary <*> arbitrary,
+                DeleteOp <$> arbitrary <*> resize 10 arbitrary
                 ]
 
 instance Arbitrary RequestChange where
