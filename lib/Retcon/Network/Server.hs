@@ -69,17 +69,26 @@ newtype ConflictedDiffOpID = ConflictedDiffOpID
     { unConflictedDiffOpID :: Int }
   deriving (Binary, Eq, Show)
 
+getJSON
+    :: FromJSON a
+    => Get a
+getJSON = do
+    json <- Aeson.eitherDecode <$> get
+    case json of
+        Right x -> return x
+        Left msg -> fail msg
+
 instance Binary (Diff ()) where
     put = put . Aeson.encode
-    get = decode <$> get
+    get = getJSON
 
 instance Binary (DiffOp ()) where
     put = put . Aeson.encode
-    get = decode <$> get
+    get = getJSON
 
 instance Binary Document where
     put = put . Aeson.encode
-    get = decode <$> get
+    get = getJSON
 
 data RequestConflicted = RequestConflicted
   deriving (Eq, Show)
