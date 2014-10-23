@@ -46,6 +46,7 @@ import System.ZMQ4.Monadic hiding (async)
 import Retcon.Core
 import Retcon.Diff
 import Retcon.Document
+import Retcon.Handler
 import Retcon.Monad
 import Retcon.Options
 
@@ -258,9 +259,6 @@ protocol
     :: RetconServer z ()
 protocol = loop
   where
-    log :: String -> RetconMonad e s l ()
-    log = whenVerbose . logInfoN . fromString
-
     loop = do
         sock <- ask
         cmd <- liftZMQ . receiveMulti $ sock
@@ -297,6 +295,14 @@ notify
 notify (RequestChange (ChangeNotification n d i)) = do
     logInfoN . fromString $
         "Processing change notification: " <> show (n,d,i)
+
+    -- TODO: We're in the wrong monad to run these. How best shall we achieve
+    -- this?
+
+    -- addWork (WorkNotify (n,d,i))
+
+    error "Retcon.Network.Server.notify is not implemented yet"
+
     return ResponseChange
 
 -- | Process a _resolve conflict_ message from the client.
@@ -310,6 +316,15 @@ resolveConflict (RequestResolve diff_id op_ids) = do
     logInfoN . fromString $
         "Resolving diff " <> show (unDiffID diff_id) <> " with " <>
         (show . map unConflictedDiffOpID $ op_ids)
+
+    -- TODO: We're in the wrong monad to run these. How best shall we achieve
+    -- this?
+
+    -- new_diff <- composeNewDiff op_ids
+    -- addWork (WorkApplyPatch (unDiffID diff_id) new_diff)
+
+    error "Retcon.Network.Server.resolveConflict is not implemented yet"
+
     return ResponseResolve
 
 -- | Fetch the details of outstanding conflicts and return them to the client.
@@ -319,7 +334,25 @@ listConflicts
 listConflicts RequestConflicted = do
     logInfoN . fromString $
         "Listing conflicts for client"
-    return $ ResponseConflicted []
+
+    -- TODO: We're in the wrong monad to run store operations. How best shall
+    -- we achieve this?
+
+    -- conflicts <- getConflictedDiffs
+    let conflicts = []
+
+    error "Retcon.Network.Server.listConflicts is not implemented yet"
+
+    return $ ResponseConflicted conflicts
+
+-- | Retrieve selected 'DiffOp's from the store and combine them into a new
+-- 'Diff'.
+composeNewDiff
+    :: ReadableToken s
+    => [ConflictedDiffOpID]
+    -> RetconMonad e s l (Diff ())
+composeNewDiff op_ids =
+    error "Retcon.Network.Server.composeNewDiff is not implemented yet."
 
 -- * API server
 
@@ -375,6 +408,8 @@ processWorkItem
     => WorkItem
     -> RetconHandler s ()
 processWorkItem work = do
+    whenVerbose . logInfoN . fromString $
+        "Processing work item: " <> show work
     case work of
         WorkNotify fkval ->
             logDebugN . fromString $
