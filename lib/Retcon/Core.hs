@@ -12,6 +12,7 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
@@ -72,6 +73,8 @@ module Retcon.Core
     encodeForeignKey,
     foreignKeyValue,
 
+    WorkItem(..),
+
     -- * Internal stores for operational data
     RetconStore(..),
     token,
@@ -85,12 +88,14 @@ module Retcon.Core
 ) where
 
 import Control.Applicative
+import Control.Concurrent
 import Control.Exception
 import Control.Exception.Enclosed
 import Control.Lens.Operators
 import Control.Monad.Base
 import Control.Monad.Except
 import Control.Monad.Reader
+import Data.Aeson as A
 import Data.Biapplicative
 import Data.Map (Map)
 import qualified Data.Map as M
@@ -460,9 +465,13 @@ class RetconStore s where
     storeFinalise :: s
                   -> IO ()
 
-    -- | Duplicate a handle to the storage backend.
+    -- | Clone a store handle for concurrent operations. The new handle must be
+    -- safe to use concurrently with the original handle.
     --
-    -- (E.g. open another connection to the database server, etc.)
+    -- (E.g. open a second connection to the same PostgreSQL database.)
+    --
+    -- This may be a no-op for backends which are already thread-safe (e.g.
+    -- in-memory IORefs).
     storeClone
         :: s
         -> IO s
@@ -584,6 +593,48 @@ class RetconStore s where
         -> Int -- ^ Maximum number to return.
         -> IO (Int, [Notification])
 
+    -- | Add a work item to the work queue.
+    storeAddWork
+        :: s
+        -> WorkItem
+        -> IO ()
+
+    -- | Get a work item from the work queue.
+    --
+    -- The item will be locked for a period of time, after which it will become
+    -- available for other workers to claim.
+    --
+    -- TODO: The period of time is currently hardcoded in the implementations.
+    storeGetWork
+        :: s
+        -> IO (Maybe (WorkItemID, WorkItem))
+
+    -- | Remove a completed work item from the queue.
+    storeCompleteWork
+        :: s
+        -> WorkItemID
+        -> IO ()
+
+type WorkItemID = Int
+
+-- | An item of work to be stored in the work queue.
+data WorkItem
+    -- | A document was changed; process the update.
+    = WorkNotify ForeignKeyIdentifier
+    -- | A patch was submitted by a human; apply it.
+    | WorkApplyPatch Int (Diff ())
+    deriving (Show, Eq)
+
+instance ToJSON WorkItem where
+    toJSON (WorkNotify fki) = object ["notify" A..= fki]
+    toJSON (WorkApplyPatch did diff) =
+        object ["did" A..= did, "diff" A..= diff]
+
+instance FromJSON WorkItem where
+    parseJSON (Object v) =
+        (WorkNotify <$> v .: "notify") <>
+        (WorkApplyPatch <$> v .: "did" <*> v .: "diff")
+    parseJSON _ = mzero
 -- * Tokens
 
 -- $ Tokens wrap storage backend values and expose particular subsets of the
@@ -604,7 +655,10 @@ class StoreToken s where
     -- | Restrict a token to be read-only.
     restrictToken :: s -> ROToken
 
-    -- | Create a token with a cloned handle to the same storage backend.
+    -- | Clone a token.
+    --
+    -- The new token is safe to use concurrently with the existing token. See
+    -- the document 'storeClone' for more details.
     cloneToken :: s -> IO s
 
 -- | Storage tokens which support reading operations.
@@ -706,6 +760,16 @@ class StoreToken s => WritableToken s where
     fetchNotifications
         :: Int -- ^ Maximum number to fetch.
         -> RetconMonad e s l (Int, [Notification])
+
+    -- | Add a work item to the work queue in the data store.
+    addWork
+        :: WorkItem
+        -> RetconMonad e s l ()
+
+    -- | Take a work item from the work queue and process it.
+    processWork
+        :: (WorkItem -> RetconMonad e s l v)
+        -> RetconMonad e s l v
 
 -- | A token exposing only the 'ReadableToken' API.
 data ROToken = forall s. RetconStore s => ROToken s
@@ -813,3 +877,20 @@ instance WritableToken RWToken where
     fetchNotifications limit = do
         RWToken store <- getRetconStore
         liftIO $ storeFetchNotifications store limit
+
+    addWork work = do
+        RWToken store <- getRetconStore
+        liftIO $ storeAddWork store work
+
+    processWork worker = do
+        RWToken store <- getRetconStore
+        (work_id, work) <- liftIO $ getIt store
+        result <- worker work
+        liftIO $ storeCompleteWork store work_id
+        return result
+      where
+        getIt store = do
+            work <- storeGetWork store
+            case work of
+                Just item -> return item
+                Nothing   -> threadDelay 50000 >> getIt store

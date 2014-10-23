@@ -384,6 +384,40 @@ postgresqlSuite = around prepareDatabase $
 
             storeFinalise store
 
+        it "should maintain a work queue" $ do
+            store@PGStore{} <- storeInitialise options
+
+            let work1 = WorkNotify ("tests", "foo", "1")
+            let work2 = WorkNotify ("tests", "foo", "2")
+
+            let work3 = WorkApplyPatch 3 mempty
+
+            -- Add some WorkItems
+            storeAddWork store work1
+            storeAddWork store work2
+
+            -- Order should be preserved
+            work1' <- storeGetWork store
+            snd <$> work1' `shouldBe` Just work1
+
+            -- Work should not be removed unless deleted
+            work1'' <- storeGetWork store
+            snd <$> work1'' `shouldBe` Just work1
+
+            let Just wid1 = fst <$> work1'
+            storeCompleteWork store wid1
+            work2' <- storeGetWork store
+            snd <$> work2' `shouldBe` Just work2
+
+            let Just wid2 = fst <$> work2'
+            storeCompleteWork store wid2
+            nowork <- storeGetWork store
+            nowork `shouldBe` Nothing
+
+            storeAddWork store work3
+            work3' <- storeGetWork store
+            snd <$> work3' `shouldBe` Just work3
+
 -- $ Entities and Data Sources
 --
 -- This test suite uses two data entities, each with two data sources, in all
