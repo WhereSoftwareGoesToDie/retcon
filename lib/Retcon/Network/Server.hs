@@ -7,6 +7,7 @@
 -- the 3-clause BSD licence.
 --
 
+{-# LANGUAGE DeriveDataTypeable         #-}
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
@@ -25,7 +26,6 @@
 module Retcon.Network.Server where
 
 import Control.Applicative
-import Control.Concurrent
 import Control.Concurrent.Async
 import Control.Exception hiding (Handler, handle)
 import Control.Lens.Operators
@@ -41,13 +41,13 @@ import qualified Data.ByteString.Lazy as LBS
 import Data.List.NonEmpty
 import Data.Monoid
 import Data.String
+import Data.Typeable
 import Options.Applicative
 import System.ZMQ4.Monadic hiding (async)
 
 import Retcon.Core
 import Retcon.Diff
 import Retcon.Document
-import Retcon.Monad
 import Retcon.Options
 
 -- | Values describing error states of the retcon API.
@@ -56,7 +56,9 @@ data RetconAPIError
     | TimeoutError
     | DecodeError
     | InvalidNumberOfMessageParts
-  deriving (Show, Eq)
+  deriving (Show, Eq, Typeable)
+
+instance Exception RetconAPIError
 
 instance Enum RetconAPIError where
     fromEnum TimeoutError = 0

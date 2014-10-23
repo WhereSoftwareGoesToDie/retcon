@@ -6,6 +6,13 @@ Retcon
 A Haskell library and daemon for synchronising data sources. `retcon`
 operates by generating, merging, and applying diffs according.
 
+This library is intended to used via the (yet to be built) daemon that allows
+clients to query and signal it via the [wire format]{docs/design/wire-format.md}.
+
+The first client to be developed will be a HTTP/HTML frontend to Retcon that
+allows users to resolve conflicts intelligently. A link will be placed here
+when that is ready.
+
 This package contains:
 
 - A library `retcon` which implements the functionality (code in `lib/`)
@@ -21,8 +28,6 @@ the API client (in `src/client-demo.hs`).
 
 - A command-line application `send-notifications` which send email messages
 warning of conflicts (in `src/`).
-
-In future it will also contain a Snap-based daemon exposing a REST-ish API.
 
 Usage
 -----
