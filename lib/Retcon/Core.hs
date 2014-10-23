@@ -12,6 +12,7 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
@@ -72,6 +73,8 @@ module Retcon.Core
     encodeForeignKey,
     foreignKeyValue,
 
+    WorkItem(..),
+
     -- * Internal stores for operational data
     RetconStore(..),
     token,
@@ -82,9 +85,6 @@ module Retcon.Core
     WritableToken(..),
     RWToken,
     ROToken,
-
-    -- * Work queue
-    WorkItem(..),
 ) where
 
 import Control.Applicative
@@ -97,6 +97,7 @@ import Control.Monad.Base
 import Control.Monad.Except
 import Control.Monad.Logger
 import Control.Monad.Reader
+import Data.Aeson as A
 import Data.Biapplicative
 import Data.Map (Map)
 import qualified Data.Map as M
@@ -609,13 +610,15 @@ class RetconStore s where
     -- TODO: The period of time is currently hardcoded in the implementations.
     storeGetWork
         :: s
-        -> IO (Maybe WorkItem)
+        -> IO (Maybe (WorkItemID, WorkItem))
 
     -- | Remove a completed work item from the queue.
     storeCompleteWork
         :: s
-        -> WorkItem
+        -> WorkItemID
         -> IO ()
+
+type WorkItemID = Int
 
 -- | An item of work to be stored in the work queue.
 data WorkItem
@@ -623,7 +626,18 @@ data WorkItem
     = WorkNotify ForeignKeyIdentifier
     -- | A patch was submitted by a human; apply it.
     | WorkApplyPatch Int (Diff ())
+    deriving (Show, Eq)
 
+instance ToJSON WorkItem where
+    toJSON (WorkNotify fki) = object ["notify" A..= fki]
+    toJSON (WorkApplyPatch did new_diff) =
+        object ["did" A..= did, "diff" A..= new_diff]
+
+instance FromJSON WorkItem where
+    parseJSON (Object v) =
+        (WorkNotify <$> v .: "notify") <>
+        (WorkApplyPatch <$> v .: "did" <*> v .: "diff")
+    parseJSON _ = mzero
 -- * Tokens
 
 -- $ Tokens wrap storage backend values and expose particular subsets of the
@@ -876,9 +890,9 @@ instance WritableToken RWToken where
         LE.handle
             (\e -> logException e >> return Nothing)
             (do
-                item <- liftIO $ getIt store
+                (work_id, item) <- liftIO $ getIt store
                 result <- worker item
-                liftIO $ storeCompleteWork store item
+                liftIO $ storeCompleteWork store work_id
                 return $ Just result)
       where
         logException :: SomeException -> RetconMonad e s l ()

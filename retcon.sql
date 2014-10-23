@@ -76,3 +76,11 @@ CREATE TABLE retcon_notifications (
     FOREIGN KEY (entity, id) REFERENCES retcon (entity, id),
     FOREIGN KEY (diff_id) REFERENCES retcon_diff (diff_id)
 );
+
+-- | the `retcon_workitems` table acts as a persistent queue for `WorkItem`s
+CREATE TABLE retcon_workitems (
+    id       SERIAL NOT NULL,
+    content  JSON NOT NULL,
+
+    PRIMARY KEY (id)
+);

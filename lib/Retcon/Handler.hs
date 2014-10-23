@@ -83,7 +83,7 @@ dispatch (entity_str, source_str, key) = do
             unless res $ $logDebug . fromString $ "no such entity: " ++ entity_str
   where
     anyM :: Monad m => [a] -> (a -> m Bool) -> m Bool
-    anyM xs f = foldM (\b x -> if b then return True else f x >>= return . (&& b)) False xs
+    anyM xs f = foldM (\b x -> if b then return True else liftM (&& b) (f x)) False xs
 
 -- * Operations
 
@@ -212,7 +212,7 @@ create state fk = do
 
     -- Record any errors in the log.
     let (_succeeded, failed) = partitionEithers results
-    when (not . null $ failed) $
+    unless (null failed) $
         $logError . fromString $
             "ERROR creating " <> show ik <> " from " <> show fk <> ". " <>
             show failed
@@ -233,7 +233,7 @@ delete ik = do
 
     -- Record failures in the log.
     let (_succeeded, failed) = partitionEithers results
-    when (not . null $ failed) $
+    unless (null failed) $
         $logError . fromString $
             "ERROR deleting " <> show ik <> ". " <> show failed
 
@@ -252,7 +252,7 @@ update ik = do
     -- Fetch documents, logging any errors.
     docs <- getDocuments ik
     let (failures, valid) = partitionEithers docs
-    when (not . null $ failures) $
+    unless (null failures) $
         $logWarn . fromString $
             "WARNING updating " <> show ik <> ". Unable to fetch some documents: "
             <> show failures
@@ -284,7 +284,7 @@ update ik = do
     -- Save documents, logging any errors.
     results <- setDocuments ik output
     let (failed, _) = partitionEithers results
-    when (not . null $ failed) $
+    unless (null failed) $
         $logWarn . fromString $
             "WARNING updating " <> show ik <> ". Unable to set some documents: "
             <> show failed
