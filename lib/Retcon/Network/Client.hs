@@ -55,15 +55,13 @@ import Control.Applicative
 import Control.Monad.Except
 import Control.Monad.Reader
 import Data.Binary
-import Data.ByteString.Lazy (fromStrict, toStrict)
+import Data.ByteString.Lazy (fromStrict)
 import Data.List.NonEmpty
-
+import System.ZMQ4.Monadic
 
 import Retcon.Diff
 import Retcon.Document
 import Retcon.Network.Server hiding (liftZMQ)
-
-import System.ZMQ4.Monadic
 
 -- | Retrieve all documents that are currently marked as being conflicted
 getConflicted
@@ -125,7 +123,7 @@ instance RetconClientConnection (RetconClientZMQ z) where
         case response of
             [success,body]
                 | decode . fromStrict $ success ->
-                    decodeStrict $ body
+                    decodeStrict body
                 | otherwise -> throwError =<< (toEnum <$> decodeStrict body)
             _ -> throwError InvalidNumberOfMessageParts
 
