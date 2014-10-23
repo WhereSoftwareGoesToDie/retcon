@@ -334,8 +334,7 @@ getDocuments ik = do
                         "Lookup of " <> show ik <> " resulted in " <> show mkey
                     -- If there was a key, use it to fetch the document.
                     case mkey of
-                        Nothing -> do
-                            return . Left $ RetconFailed
+                        Nothing -> return . Left $ RetconFailed
                         Just fk -> do
                             res <- runRetconAction state $ getDocument fk
                             whenVerbose . $logError . fromString $
