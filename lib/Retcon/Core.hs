@@ -12,6 +12,7 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
@@ -72,6 +73,8 @@ module Retcon.Core
     encodeForeignKey,
     foreignKeyValue,
 
+    WorkItem(..),
+
     -- * Internal stores for operational data
     RetconStore(..),
     token,
@@ -92,6 +95,7 @@ import Control.Lens.Operators
 import Control.Monad.Base
 import Control.Monad.Except
 import Control.Monad.Reader
+import Data.Aeson as A
 import Data.Biapplicative
 import Data.Map (Map)
 import qualified Data.Map as M
@@ -618,6 +622,15 @@ data WorkItem
     -- | A patch was submitted by a human; apply it.
     | WorkApplyPatch Int (Diff ())
 
+instance ToJSON WorkItem where
+    toJSON (WorkNotify fki) = object ["notify" A..= fki]
+    toJSON (WorkApplyPatch did diff) = object ["did" A..= did, "diff" A..= diff]
+
+instance FromJSON WorkItem where
+    parseJSON (Object v) =
+        (WorkNotify <$> v .: "notify") <>
+        (WorkApplyPatch <$> v .: "did" <*> v .: "diff")
+    parseJSON _ = mzero
 -- * Tokens
 
 -- $ Tokens wrap storage backend values and expose particular subsets of the

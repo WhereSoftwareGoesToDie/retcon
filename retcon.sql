@@ -76,3 +76,9 @@ CREATE TABLE retcon_notifications (
     FOREIGN KEY (entity, id) REFERENCES retcon (entity, id),
     FOREIGN KEY (diff_id) REFERENCES retcon_diff (diff_id)
 );
+
+CREATE TABLE retcon_workitems (
+    content  JSON NOT NULL,
+
+    PRIMARY KEY content
+);

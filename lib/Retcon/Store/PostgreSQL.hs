@@ -20,12 +20,14 @@
 -- operational data storage interface using a PostgreSQL database.
 module Retcon.Store.PostgreSQL (PGStorage(..), prepareConfig) where
 
+import Control.Applicative
 import Control.Lens
 import Control.Monad
 import Data.Aeson
 import Data.ByteString (ByteString)
 import Data.List
 import Data.Map.Strict (Map)
+import Data.Maybe
 import Data.Monoid
 import Data.Proxy
 import Data.String
@@ -219,6 +221,28 @@ instance RetconStore PGStorage where
         sqlI = "SELECT id FROM retcon_notifications ORDER BY created ASC LIMIT ?"
         sqlN = "SELECT created, entity, key, diff_id FROM retcon_notifications WHERE id >= ? AND id <= ?"
         sqlD = "DELETE FROM retcon_notifications WHERE id >= ? AND id <= ?; SELECT count(*) FROM retcon_notifications"
+
+    storeAddWork (PGStore conn _) work = do
+        let content = toJSON work
+        void $ execute conn sql (Only content)
+      where
+        sql = "INSERT INTO retcon_workitems (content) VALUES (?)"
+
+    storeGetWork (PGStore conn _) = do
+        res <- listToMaybe <$> query_ conn sql
+        case res of
+           Just (Only work) -> case fromJSON work of
+               Success x -> return (Just x)
+               _         -> return Nothing
+           _ -> return Nothing
+      where
+        sql = "SELECT id content FROM retcon_workitems ORDER BY created ASC LIMIT 1"
+
+    storeCompleteWork (PGStore conn _) work = do
+        let content = toJSON work
+        void $ execute conn sql (Only content)
+      where
+        sql = "DELETE FROM retcon_workitems WHERE content = ?"
 
 -- | Load the parameters from the path specified in the options.
 prepareConfig
