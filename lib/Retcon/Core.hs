@@ -85,6 +85,7 @@ module Retcon.Core
 ) where
 
 import Control.Applicative
+import Control.Concurrent
 import Control.Exception
 import Control.Exception.Enclosed
 import Control.Lens.Operators
@@ -748,15 +749,10 @@ class StoreToken s => WritableToken s where
         :: WorkItem
         -> RetconMonad e s l ()
 
-    -- | Claim and return an available work item from the work queue in the
-    -- data store.
-    getWork
-        :: RetconMonad e s l (Maybe WorkItem)
-
-    -- | Mark a work item as completed in the work queue in the data store.
-    completeWork
-        :: WorkItem
-        -> RetconMonad e s l ()
+    -- | Take a work item from the work queue and process it.
+    processWork
+        :: (WorkItem -> RetconMonad e s l v)
+        -> RetconMonad e s l v
 
 -- | A token exposing only the 'ReadableToken' API.
 data ROToken = forall s. RetconStore s => ROToken s
@@ -869,10 +865,15 @@ instance WritableToken RWToken where
         RWToken store <- getRetconStore
         liftIO $ storeAddWork store work
 
-    getWork = do
+    processWork worker = do
         RWToken store <- getRetconStore
-        liftIO $ storeGetWork store
-
-    completeWork work = do
-        RWToken store <- getRetconStore
+        work <- liftIO $ getIt store
+        result <- worker work
         liftIO $ storeCompleteWork store work
+        return result
+      where
+        getIt store = do
+            work <- storeGetWork store
+            case work of
+                Just item -> return item
+                Nothing   -> threadDelay 50000 >> getIt store
