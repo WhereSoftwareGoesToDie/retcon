@@ -32,6 +32,7 @@ library
                      , Retcon.Options
                      , Retcon.Store.PostgreSQL
                      , Retcon.Store.Memory
+                     -- Utility modules
                      , Data.Tree.GenericTrie
                      , Utility.Configuration
   build-depends:       base >=4.7 && <4.8
@@ -48,6 +49,7 @@ library
                      , old-locale
                      , HStringTemplate
                      , lens
+                     , lifted-base
                      , mime-mail
                      , monad-control
                      , monad-logger

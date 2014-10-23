@@ -16,7 +16,6 @@
 module Main where
 
 import Control.Applicative
-import Control.Exception (throw)
 import Data.Binary
 import Retcon.Diff
 import Retcon.Document
@@ -24,7 +23,8 @@ import Retcon.Network.Server
 import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck
-import TreeHelpers
+
+import TreeHelpers ()
 
 instance Arbitrary RequestConflicted where
     arbitrary = return RequestConflicted
