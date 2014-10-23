@@ -607,13 +607,15 @@ class RetconStore s where
     -- TODO: The period of time is currently hardcoded in the implementations.
     storeGetWork
         :: s
-        -> IO (Maybe WorkItem)
+        -> IO (Maybe (WorkItemID, WorkItem))
 
     -- | Remove a completed work item from the queue.
     storeCompleteWork
         :: s
-        -> WorkItem
+        -> WorkItemID
         -> IO ()
+
+type WorkItemID = Int
 
 -- | An item of work to be stored in the work queue.
 data WorkItem
@@ -621,10 +623,12 @@ data WorkItem
     = WorkNotify ForeignKeyIdentifier
     -- | A patch was submitted by a human; apply it.
     | WorkApplyPatch Int (Diff ())
+    deriving (Show, Eq)
 
 instance ToJSON WorkItem where
     toJSON (WorkNotify fki) = object ["notify" A..= fki]
-    toJSON (WorkApplyPatch did diff) = object ["did" A..= did, "diff" A..= diff]
+    toJSON (WorkApplyPatch did diff) =
+        object ["did" A..= did, "diff" A..= diff]
 
 instance FromJSON WorkItem where
     parseJSON (Object v) =
@@ -880,9 +884,9 @@ instance WritableToken RWToken where
 
     processWork worker = do
         RWToken store <- getRetconStore
-        work <- liftIO $ getIt store
+        (work_id, work) <- liftIO $ getIt store
         result <- worker work
-        liftIO $ storeCompleteWork store work
+        liftIO $ storeCompleteWork store work_id
         return result
       where
         getIt store = do

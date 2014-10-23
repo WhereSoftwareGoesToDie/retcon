@@ -230,19 +230,19 @@ instance RetconStore PGStorage where
 
     storeGetWork (PGStore conn _) = do
         res <- listToMaybe <$> query_ conn sql
+        print res
         case res of
-           Just (Only work) -> case fromJSON work of
-               Success x -> return (Just x)
+           Just (work_id, work) -> case fromJSON work of
+               Success x -> return (Just (work_id, x))
                _         -> return Nothing
            _ -> return Nothing
       where
-        sql = "SELECT id content FROM retcon_workitems ORDER BY created ASC LIMIT 1"
+        sql = "SELECT id, content FROM retcon_workitems ORDER BY id ASC LIMIT 1"
 
-    storeCompleteWork (PGStore conn _) work = do
-        let content = toJSON work
-        void $ execute conn sql (Only content)
+    storeCompleteWork (PGStore conn _) work_id =
+        void $ execute conn sql (Only work_id)
       where
-        sql = "DELETE FROM retcon_workitems WHERE content = ?"
+        sql = "DELETE FROM retcon_workitems WHERE id = ?"
 
 -- | Load the parameters from the path specified in the options.
 prepareConfig
