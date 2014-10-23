@@ -7,6 +7,7 @@
 -- the 3-clause BSD licence.
 --
 
+{-# LANGUAGE DeriveDataTypeable         #-}
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
@@ -29,6 +30,7 @@ import Control.Concurrent.Async
 import Control.Lens.Operators
 import Control.Lens.TH
 import Control.Monad
+import Control.Exception
 import Control.Monad.Except
 import Control.Monad.Logger
 import Control.Monad.Reader
@@ -40,13 +42,13 @@ import qualified Data.ByteString.Lazy as LBS
 import Data.List.NonEmpty hiding (map)
 import Data.Monoid
 import Data.String
+import Data.Typeable
 import Options.Applicative
 import System.ZMQ4.Monadic hiding (async)
 
 import Retcon.Core
 import Retcon.Diff
 import Retcon.Document
-import Retcon.Handler
 import Retcon.Monad
 import Retcon.Options
 
@@ -56,7 +58,9 @@ data RetconAPIError
     | TimeoutError
     | DecodeError
     | InvalidNumberOfMessageParts
-  deriving (Show, Eq)
+  deriving (Show, Eq, Typeable)
+
+instance Exception RetconAPIError
 
 instance Enum RetconAPIError where
     fromEnum TimeoutError = 0

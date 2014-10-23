@@ -1,6 +1,18 @@
+--
+-- Copyright © 2013-2014 Anchor Systems, Pty Ltd and Others
+--
+-- The code in this file, and the program it is a part of, is
+-- made available to you by its authors as open source software:
+-- you can redistribute it and/or modify it under the terms of
+-- the 3-clause BSD licence.
+--
+
+{-# LANGUAGE DeriveDataTypeable #-}
+
 module Retcon.Error where
 
 import Control.Exception
+import Data.Typeable
 
 -- * Errors
 
@@ -13,15 +25,7 @@ data RetconError =
     | RetconError SomeException -- ^ An unexpected exception was raised.
     | RetconNotSupported String -- ^ An unsupported configuration.
     | RetconUnknown String -- ^ Unknown entity, source, or document.
-  deriving (Show)
+  deriving (Show, Typeable)
 
-instance Eq RetconError where
-
-    (RetconFailed)          == (RetconFailed)          = True
-    (RetconError e1)        == (RetconError e2)        = False
-    (RetconDBError s1)      == (RetconDBError s2)      = s1 == s2
-    (RetconSourceError s1)  == (RetconSourceError s2)  = s1 == s2
-    (RetconNotSupported s1) == (RetconNotSupported s2) = s1 == s2
-    (RetconUnknown s1)      == (RetconUnknown s2)      = s1 == s2
-    _ == _ = False
+instance Exception RetconError
 
