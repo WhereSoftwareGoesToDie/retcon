@@ -230,7 +230,6 @@ instance RetconStore PGStorage where
 
     storeGetWork (PGStore conn _) = do
         res <- listToMaybe <$> query_ conn sql
-        print res
         case res of
            Just (work_id, work) -> case fromJSON work of
                Success x -> return (Just (work_id, x))

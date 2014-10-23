@@ -267,27 +267,11 @@ update ik = do
     let diffs = map (diff initial) valid
     let (merged, fragments) = mergeDiffs ignoreConflicts diffs
 
-    -- Apply the diff to each source document.
-    --
-    -- We replace documents we couldn't get with the initial document. The
-    -- initial document may not be "valid". These missing cases are logged
-    -- above.
-    let output = map (applyDiff merged . either (const initial) id) docs
+    -- Replace any missing 'Document's with the intial document.
+    let docs' = map (either (const initial) id) docs
 
-    -- Record changes in database.
-    did <- recordDiffs ik (merged, fragments)
-
-    -- Record notifications, if required.
-    unless (null fragments) $
-        recordNotification ik did
-
-    -- Save documents, logging any errors.
-    results <- setDocuments ik output
-    let (failed, _) = partitionEithers results
-    unless (null failed) $
-        $logWarn . fromString $
-            "WARNING updating " <> show ik <> ". Unable to set some documents: "
-            <> show failed
+    -- Apply the 'Diff' to the 'Document's, and save everything.
+    distributeDiff ik initial (void merged, map void fragments) docs'
 
     return ()
 
@@ -301,10 +285,39 @@ update ik = do
 distributeDiff
     :: (ReadableToken store, WritableToken store, RetconEntity entity)
     => InternalKey entity
-    -> Diff l
+    -> Document
+    -> (Diff (), [Diff ()])
+    -> [Document]
     -> RetconHandler store ()
-distributeDiff ik new_diff =
-    error "Retcon.Handler.distributeDiff is not implemented yet"
+distributeDiff ik initial (merged, fragments) docs = do
+
+    -- Apply the diff to each source document.
+    --
+    -- We replace documents we couldn't get with the initial document. The
+    -- initial document may not be "valid". These missing cases are logged
+    -- above.
+    let output = map (applyDiff merged) docs
+
+    -- Save documents, logging any errors.
+    results <- setDocuments ik output
+    let (failed, _) = partitionEithers results
+    unless (null failed) $
+        $logWarn . fromString $
+            "WARNING updating " <> show ik <> ". Unable to set some documents: "
+            <> show failed
+
+    -- Record changes in database.
+    did <- recordDiffs ik (merged, fragments)
+
+    -- Record notifications, if required.
+    unless (null fragments) $
+        recordNotification ik did
+
+    -- Update the initial document.
+    let initial' = applyDiff merged initial
+    recordInitialDocument ik initial'
+
+    return ()
 
 -- | Report an error in determining the operation, communicating with the data
 -- source or similar.
