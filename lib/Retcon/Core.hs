@@ -82,21 +82,27 @@ module Retcon.Core
     WritableToken(..),
     RWToken,
     ROToken,
+
+    -- * Work queue
+    WorkItem(..),
 ) where
 
 import Control.Applicative
 import Control.Concurrent
 import Control.Exception
 import Control.Exception.Enclosed
+import qualified Control.Exception.Lifted as LE
 import Control.Lens.Operators
 import Control.Monad.Base
 import Control.Monad.Except
+import Control.Monad.Logger
 import Control.Monad.Reader
 import Data.Biapplicative
 import Data.Map (Map)
 import qualified Data.Map as M
 import Data.Monoid
 import Data.Proxy
+import Data.String
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Type.Equality
@@ -155,8 +161,8 @@ runRetconMonadOnce
 runRetconMonadOnce cfg l action =
     let params   = cfg ^. cfgParams
         entities = cfg ^. cfgEntities
-    in bracket (initialiseEntities params entities)
-               (void . finaliseEntities params)
+    in LE.bracket (putStrLn "Initialise retcon" >> initialiseEntities params entities)
+               (\s -> finaliseEntities params s >> putStrLn "finalise retcon")
                (\state -> let cfg' = cfg & cfgEntities .~ state
                           in runRetconMonad (RetconMonadState cfg' l) action)
 
@@ -752,7 +758,7 @@ class StoreToken s => WritableToken s where
     -- | Take a work item from the work queue and process it.
     processWork
         :: (WorkItem -> RetconMonad e s l v)
-        -> RetconMonad e s l v
+        -> RetconMonad e s l (Maybe v)
 
 -- | A token exposing only the 'ReadableToken' API.
 data ROToken = forall s. RetconStore s => ROToken s
@@ -867,13 +873,33 @@ instance WritableToken RWToken where
 
     processWork worker = do
         RWToken store <- getRetconStore
-        work <- liftIO $ getIt store
-        result <- worker work
-        liftIO $ storeCompleteWork store work
-        return result
+        LE.handle
+            (\e -> logException e >> return Nothing)
+            (do
+                item <- liftIO $ getIt store
+                result <- worker item
+                liftIO $ storeCompleteWork store item
+                return $ Just result)
       where
+        logException :: SomeException -> RetconMonad e s l ()
+        logException e =
+            logErrorN . fromString $ "Error processing work: " <> show e
+
+        -- | Print an exception.
+        --
+        -- TODO replace this with logException above.
+        printException :: SomeException -> IO (Maybe a)
+        printException e = do
+            putStrLn . fromString $
+                "Error getting work: " <> show e
+            return Nothing
+
+        -- | Get a work item from the work queue.
+        --
+        -- If there isn't one or an error occurs, try waiting for a while
+        -- before trying again.
         getIt store = do
-            work <- storeGetWork store
+            work <- storeGetWork store `catch` printException
             case work of
                 Just item -> return item
                 Nothing   -> threadDelay 50000 >> getIt store

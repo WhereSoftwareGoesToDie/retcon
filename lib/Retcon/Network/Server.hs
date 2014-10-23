@@ -24,20 +24,19 @@
 module Retcon.Network.Server where
 
 import Control.Applicative
-import Control.Concurrent
 import Control.Concurrent.Async
-import Control.Exception hiding (Handler, handle)
 import Control.Lens.Operators
 import Control.Lens.TH
 import Control.Monad
 import Control.Monad.Except
+import Control.Monad.Logger
 import Control.Monad.Reader
 import qualified Data.Aeson as Aeson
 import Data.Binary
 import qualified Data.ByteString as BS
 import Data.ByteString.Lazy (fromStrict, toStrict)
 import qualified Data.ByteString.Lazy as LBS
-import Data.List.NonEmpty
+import Data.List.NonEmpty hiding (map)
 import Data.Monoid
 import Data.String
 import Options.Applicative
@@ -196,25 +195,27 @@ serverParser = ServerConfig <$> connString
 
 -- | Monad for the API server actions to run in.
 newtype RetconServer z a = RetconServer
-    { unRetconServer :: ExceptT RetconAPIError (ReaderT (Socket z Rep) (ZMQ z)) a
+    { unRetconServer :: ExceptT RetconAPIError (ReaderT (Socket z Rep) (LoggingT (ZMQ z))) a
     }
   deriving (Applicative, Functor, Monad, MonadIO, MonadReader (Socket z Rep),
-  MonadError RetconAPIError)
+  MonadError RetconAPIError, MonadLogger)
 
 -- | Run a handler in the 'RetconServer' monad using the ZMQ connection details.
 runRetconServer
     :: forall a. ServerConfig
     -> (forall z. RetconServer z a)
     -> IO ()
-runRetconServer cfg act = runZMQ $ do
-    sock <- socket Rep
-    bind sock $ cfg ^. cfgConnectionString
+runRetconServer cfg act = runZMQ $ runStdoutLoggingT $ do
+    logDebugN . fromString $ "Running a server"
+    sock <- lift . socket $ Rep
+    lift . bind sock $ cfg ^. cfgConnectionString
+    logDebugN . fromString $ "Socket ready!"
     void $ flip runReaderT sock . runExceptT . unRetconServer $ act
 
 -- * Monads with ZMQ
 
 liftZMQ :: ZMQ z a -> RetconServer z a
-liftZMQ = RetconServer . lift . lift
+liftZMQ = RetconServer . lift . lift . lift
 
 -- * Server actions
 
@@ -238,6 +239,9 @@ protocol
     :: RetconServer z ()
 protocol = loop
   where
+    log :: String -> RetconMonad e s l ()
+    log = whenVerbose . logInfoN . fromString
+
     loop = do
         sock <- ask
         cmd <- liftZMQ . receiveMulti $ sock
@@ -256,22 +260,24 @@ protocol = loop
         :: SomeHeader
         -> LBS.ByteString
         -> RetconServer z (Bool, BS.ByteString)
-    dispatch (SomeHeader hdr) body = do
-        flip catchError
-            (\e -> return (False, toStrict . encode . fromEnum $ e))
+    dispatch (SomeHeader hdr) body =
+        catchError
             ((True,) <$> case hdr of
                 HeaderConflicted -> encodeStrict <$> listConflicts (decode body)
                 HeaderResolve -> encodeStrict <$> resolveConflict (decode body)
                 HeaderChange -> encodeStrict <$> notify (decode body)
                 InvalidHeader -> return . encodeStrict $ InvalidResponse)
+            (\e -> do
+                liftIO . putStrLn . fromString $ "Could not process message: " <> show e
+                return (False, toStrict . encode . fromEnum $ e))
 
 -- | Process a _notify_ message from the client, checking the
 notify
     :: RequestChange
     -> RetconServer z ResponseChange
-notify (RequestChange nid) = do
-    liftIO . putStrLn $ "Notified"
-    throwError InvalidNumberOfMessageParts
+notify (RequestChange (ChangeNotification n d i)) = do
+    logInfoN . fromString $
+        "Processing change notification: " <> show (n,d,i)
     return ResponseChange
 
 -- | Process a _resolve conflict_ message from the client.
@@ -282,15 +288,18 @@ resolveConflict
     :: RequestResolve
     -> RetconServer z ResponseResolve
 resolveConflict (RequestResolve diff_id op_ids) = do
-    liftIO . putStrLn $ "Resolving diff " <> show (unDiffID diff_id)
+    logInfoN . fromString $
+        "Resolving diff " <> show (unDiffID diff_id) <> " with " <>
+        (show . map unConflictedDiffOpID $ op_ids)
     return ResponseResolve
 
 -- | Fetch the details of outstanding conflicts and return them to the client.
 listConflicts
     :: RequestConflicted
     -> RetconServer z ResponseConflicted
-listConflicts _ = do
-    liftIO . putStrLn $ "Listing conflicts!"
+listConflicts RequestConflicted = do
+    logInfoN . fromString $
+        "Listing conflicts for client"
     return $ ResponseConflicted []
 
 -- * API server
@@ -310,57 +319,48 @@ apiServer retconCfg serverCfg = do
         "Running server on " <> serverCfg ^. cfgConnectionString
 
     -- Start the API server thread.
-    server <- async $ serverThread
+    server <- async serverThread
+    putStrLn . fromString $
+        "Started API server in: " <> show (asyncThreadId server)
 
     -- Start the processing thread.
-    retcon <- async $ retconThread
+    retcon <- async retconThread
+    putStrLn . fromString $
+        "Started processing in: " <> show (asyncThreadId retcon)
 
+    wait retcon
     -- Wait for completion.
-    let procs = [server, retcon]
+    let procs = [retcon]
     (done, _) <- waitAnyCancel procs
 
-    if (done == server)
-        then putStrLn "Server shutdown!"
-        else putStrLn "Retcon go boom!"
+    putStrLn $ if done == server
+        then "Server shutdown!"
+        else "Retcon go boom!"
   where
-    serverThread = runRetconServer serverCfg protocol
-    retconThread = void $ runRetconMonadOnce retconCfg () loop
+    serverThread = do
+        putStrLn "Starting server thread"
+        runRetconServer serverCfg protocol
+    retconThread = do
+        putStrLn "Starting retcon thread"
+        void $ runRetconMonadOnce retconCfg () loop
     loop
         :: WritableToken s
         => RetconHandler s ()
-    loop = getWorkItem >>= maybe (return ()) (processWorkItem) >> loop
-
--- | Get a work item from the store.
---
--- Inspect the work queue and, if there is an unclaimed task available, claim
--- and return it.
-getWorkItem
-    :: WritableToken s
-    => RetconHandler s (Maybe QueuedWork)
-getWorkItem = do
-    return Nothing
-
--- | Mark a work item as "completed".
-markWorkItemComplete
-    :: WritableToken s
-    => QueuedWork
-    -> RetconHandler s ()
-markWorkItemComplete work = do
-    return ()
+    loop = do
+        void $ processWork processWorkItem
+        loop
 
 -- | Inspect a work item and perform whatever task is required.
 processWorkItem
     :: WritableToken s
-    => QueuedWork
+    => WorkItem
     -> RetconHandler s ()
 processWorkItem work = do
-    markWorkItemComplete work
-
-data QueuedWork
-    = Process ChangeNotification
-    | Apply DiffID (Diff ())
-
-instance Show QueuedWork where
-    show (Process _) = "Process"
-    show (Apply _ _) = "Apply"
-
+    case work of
+        WorkNotify fkval ->
+            logDebugN . fromString $
+                "Processing a notifcation: " <> show fkval
+        WorkApplyPatch did _ ->
+            logDebugN . fromString $
+                "Processing a diff: " <> show did
+    return ()
