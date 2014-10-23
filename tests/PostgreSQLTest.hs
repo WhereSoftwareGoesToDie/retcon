@@ -18,6 +18,7 @@
 
 module Main where
 
+import Control.Exception
 import Control.Lens.Operators
 import Control.Monad.IO.Class
 import Data.Monoid
@@ -124,11 +125,11 @@ suite =
 
             let fk2 = ForeignKey "1" :: ForeignKey "customer" "db2"
             state2 <- runInitialiser mempty initialiseState
-            res2 <- run state2 $
+            Right res2 <- run state2 $
                 setDocument doc4 (Just fk2)
             runInitialiser mempty $ finaliseState state2
 
-            res2 `shouldBe` Right fk2
+            res2 `shouldBe` fk2
 
         it "can delete db2/row1" $ do
             let fk2 = ForeignKey "1" :: ForeignKey "customer" "db2"
@@ -144,7 +145,7 @@ suite =
             res2 <- run state $
                 deleteDocument fk2
             runInitialiser mempty $ finaliseState state
-            res2 `shouldBe` Right ()
+            either throwIO return res2
 
 sourceDb :: DBName
 sourceDb = "retcon_pg_test"

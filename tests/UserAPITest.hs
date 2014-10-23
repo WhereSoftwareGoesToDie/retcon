@@ -117,10 +117,10 @@ suite =
 
             let fk = ForeignKey "01-diff-source" :: ForeignKey "customer" "test-results"
             state2 <- runInitialiser mempty initialiseState
-            result <- run state2 $
+            Right result <- run state2 $
                 setDocument doc3 (Just fk)
             runInitialiser mempty $ finaliseState state2
-            result `shouldBe` Right fk
+            result `shouldBe` fk
 
         it "can write 01-diff-source to another source with new key" $ do
             state <- runInitialiser mempty initialiseState

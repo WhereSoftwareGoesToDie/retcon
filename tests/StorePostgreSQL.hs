@@ -175,9 +175,8 @@ postgresqlSuite = around prepareDatabase $
                 Left  _          -> error "Couldn't create internal keys"
                 Right (k1, _, _) -> return k1
 
-            result <- runAction store $
-                deleteInternalKey ik1
-            result `shouldBe` Right 3
+            runAction store (deleteInternalKey ik1)
+                >>= either throwIO (`shouldBe` 3)
 
             try2 <- countStore store
             try2 `shouldBe` (2, 1, 0, 0)
@@ -222,11 +221,10 @@ postgresqlSuite = around prepareDatabase $
                 ("tests", 2, "test", "test2"), ("tests", 3, "more", "more3"), ("tests", 3, "test", "test1")],
                 [], [], [])
 
-            result <- runAction store $
-                deleteForeignKey fk5
+            runAction store (deleteForeignKey fk5)
+                >>= either throwIO return
 
             -- Check there are as many things in the database as we expect.
-            result `shouldBe` Right 1
             counts <- countStore store
             counts `shouldBe` (3, 5, 0, 0)
 
@@ -243,7 +241,7 @@ postgresqlSuite = around prepareDatabase $
                     Right k -> deleteInternalKey k
 
             -- Check there are as many things in the database as we expect.
-            result `shouldBe` (Right 3)
+            either throwIO (`shouldBe` 3) result
             counts <- countStore store
             counts `shouldBe` (2, 3, 0, 0)
 
@@ -270,13 +268,12 @@ postgresqlSuite = around prepareDatabase $
                 (ik4 :: InternalKey "tests") <- createInternalKey
                 return (ik1, ik2, ik3, ik4)
 
-            result <- runAction store $ do
+            (runAction store $ do
                 recordInitialDocument ik1 doc1
                 recordInitialDocument ik2 doc2
-                recordInitialDocument ik3 doc3
+                recordInitialDocument ik3 doc3) >>= either throwIO return
 
             -- Check it.
-            result `shouldBe` Right ()
             count <- countStore store
             count `shouldBe` (4, 0, 3, 0)
 
@@ -288,11 +285,10 @@ postgresqlSuite = around prepareDatabase $
                 ("tests", 3, toJSON doc3)],
                 [], [])
 
-            runAction store $
-                recordInitialDocument ik3 doc4
+            runAction store (recordInitialDocument ik3 doc4)
+                >>= either throwIO return
 
             -- Check it.
-            result `shouldBe` Right ()
             count <- countStore store
             count `shouldBe` (4, 0, 3, 0)
 
@@ -304,11 +300,10 @@ postgresqlSuite = around prepareDatabase $
                 ("tests", 3, toJSON doc4)],
                 [], [])
 
-            result <- runAction store $
-                deleteInitialDocument ik2
+            result <- runAction store (deleteInitialDocument ik2)
+                >>= either throwIO return
 
             -- Check it.
-            result `shouldBe` (Right 1)
             count <- countStore store
             count `shouldBe` (4, 0, 2, 0)
 
@@ -348,7 +343,7 @@ postgresqlSuite = around prepareDatabase $
                      <*> recordDiffs ik2 ds2
                      <*> recordDiffs ik3 ds3
 
-            result `shouldBe` Right (1,2,3)
+            either throwIO (`shouldBe` (1,2,3)) result
             count <- countStore store
             count `shouldBe` (4, 0, 0, 3)
 
@@ -370,7 +365,7 @@ postgresqlSuite = around prepareDatabase $
             result <- runAction store $
                 deleteDiffs ik2
 
-            result `shouldBe` (Right 1) -- deletes a successful and unsuccessful diff
+            either throwIO (`shouldBe` 1) result -- deletes a successful and unsuccessful diff
             count <- countStore store
             count `shouldBe` (4, 0, 0, 2)
 
