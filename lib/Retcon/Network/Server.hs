@@ -411,10 +411,21 @@ processWorkItem work = do
     whenVerbose . logInfoN . fromString $
         "Processing work item: " <> show work
     case work of
-        WorkNotify fkval ->
+        WorkNotify fkval -> do
             logDebugN . fromString $
                 "Processing a notifcation: " <> show fkval
-        WorkApplyPatch did _ ->
+            -- TODO Something like this:
+            --
+            -- dispatch fkval
+
+        WorkApplyPatch did new_diff -> do
             logDebugN . fromString $
                 "Processing a diff: " <> show did
+            -- TODO Something like this:
+            --
+            -- ik <- getIKForDiff did
+            -- distributeDiff ik new_diff
+
+    -- TODO This is not implemented yet.
+    error "Retcon.Network.Server.processWorkItem is not implemented."
     return ()

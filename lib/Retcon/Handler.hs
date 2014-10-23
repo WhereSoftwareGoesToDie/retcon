@@ -291,6 +291,21 @@ update ik = do
 
     return ()
 
+-- | Apply a 'Diff' to the 'Document's associated with an 'InternalKey'.
+--
+-- This is the second part to 'update' and is used by the conflict resolution
+-- API calls.
+--
+-- TODO: Rename this function. Also implement it. Mostly this means moving code
+-- from 'update' into this function.
+distributeDiff
+    :: (ReadableToken store, WritableToken store, RetconEntity entity)
+    => InternalKey entity
+    -> Diff l
+    -> RetconHandler store ()
+distributeDiff ik new_diff =
+    error "Retcon.Handler.distributeDiff is not implemented yet"
+
 -- | Report an error in determining the operation, communicating with the data
 -- source or similar.
 reportError
