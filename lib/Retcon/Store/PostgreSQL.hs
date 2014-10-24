@@ -202,12 +202,12 @@ instance RetconStore PGStorage where
                     . filter (\(op_diff_id,_,_) -> diff_id == op_diff_id)
                     $ all_ops
             in (doc, diff, diff_id, ops)
-        diffS = "SELECT doc.document, diff.content, diff.id "
+        diffS = "SELECT CAST(doc.document AS TEXT), CAST(diff.content AS TEXT), diff.id "
             <> "FROM retcon_diff AS diff "
             <> "JOIN retcon_initial AS doc "
             <> "ON (diff.entity = doc.entity AND diff.id = doc.id) "
             <> "WHERE diff.is_conflict ORDER BY diff.id ASC"
-        opsS = "SELECT op.diff_id, op.operation_id, op.content "
+        opsS = "SELECT op.diff_id, op.operation_id, CAST(op.content AS TEXT) "
             <> "FROM retcon_diff_conflicts AS op "
             <> "LEFT JOIN retcon_diff AS diff ON (op.diff_id = diff.diff_id) "
             <> "WHERE diff.is_conflict ORDER BY op.diff_id ASC"

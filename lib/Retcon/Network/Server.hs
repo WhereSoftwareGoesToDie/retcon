@@ -270,7 +270,9 @@ decodeStrict
     -> m a
 decodeStrict bs =
     case decodeOrFail . fromStrict $ bs of
-        Left{} -> throwError DecodeError
+        Left e -> do
+            error $ show e
+            throwError DecodeError
         Right (_, _, x) -> return x
 
 encodeStrict
