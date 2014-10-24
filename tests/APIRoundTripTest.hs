@@ -24,19 +24,19 @@ import Retcon.Store.PostgreSQL
 suite :: String -> Spec
 suite conn = describe "Retcon API" $ do
     it "replies to conflict list requests" $ do
-        Right result <- runRetconZMQ conn getConflicted
-        result `shouldBe` []
+        result <- runRetconZMQ conn getConflicted
+        result `shouldBe` Right []
 
     it "replies to resolve conflict requests" $ do
         let diff_id = DiffID 1
         let ops = []
-        Right result <- runRetconZMQ conn $ enqueueResolveDiff diff_id ops
-        result `shouldBe` ()
+        result <- runRetconZMQ conn $ enqueueResolveDiff diff_id ops
+        result `shouldBe` Right ()
 
     it "replies to notify requests" $ do
         let note = ChangeNotification "TestEntity" "TestSource" "item1"
-        Right result <- runRetconZMQ conn $ enqueueChangeNotification note
-        result `shouldBe` ()
+        result <- runRetconZMQ conn $ enqueueChangeNotification note
+        result `shouldBe` Right ()
 
     it "replies to invalid requests" $
         -- Right result <- runRetconZMQ conn $ performRequest InvalidHeader
@@ -51,7 +51,7 @@ main = do
 
     -- Prepare the retcon and server configurations.
     let serverConfig = ServerConfig conn
-    let retconOpt = RetconOptions False LogStdout db Nothing
+    let retconOpt = RetconOptions False LogStderr db Nothing
     retconConfig <- prepareConfig (retconOpt, []) entities
 
     -- Spawn the server.
