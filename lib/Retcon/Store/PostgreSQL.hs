@@ -191,7 +191,7 @@ instance RetconStore PGStorage where
     storeLookupConflicts (PGStore conn _) = do
         diffs <- query_ conn diffS
         ops <- query_ conn opsS
-        return $ map (match ops) diffs 
+        return $ map (match ops) diffs
       where
         -- Filter the operations which correspond to a diff and add them to the
         -- tuple.
