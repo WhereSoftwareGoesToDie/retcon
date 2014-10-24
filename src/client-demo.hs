@@ -26,9 +26,8 @@ main = do
             putStr ":-( "
             print e
         Right l -> do
-            let ids = map (\(_, _, did, _) -> unDiffID did) l
+            print l
             putStrLn ":-)"
-            print ids
 
     -- Try to send a "something changed" notification.
     let change = ChangeNotification "LOL" "no u" "123"
