@@ -271,7 +271,7 @@ decodeStrict
 decodeStrict bs =
     case decodeOrFail . fromStrict $ bs of
         Left e -> do
-            error $ show e
+            -- TODO: Log this error somehow.
             throwError DecodeError
         Right (_, _, x) -> return x
 
