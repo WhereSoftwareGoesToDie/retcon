@@ -183,10 +183,10 @@ runRetconMonadOnce
     -> l
     -> RetconMonad InitialisedEntity s l a
     -> IO (Either RetconError a)
-runRetconMonadOnce cfg l action = do
+runRetconMonadOnce cfg l action =
     LE.bracket (initialiseRetconState cfg l)
                (void . finaliseRetconState)
-               (\state -> runRetconMonad state action)
+               (`runRetconMonad` action)
 
 -- | The 'RetconEntity' type class associates a 'Symbol' identifying a
 -- particular entity (i.e. a type of data) with a list of 'RetconDataSource's

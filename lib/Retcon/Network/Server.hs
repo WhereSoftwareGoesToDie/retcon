@@ -270,7 +270,7 @@ decodeStrict
     -> m a
 decodeStrict bs =
     case decodeOrFail . fromStrict $ bs of
-        Left e -> do
+        Left e ->
             -- TODO: Log this error somehow.
             throwError DecodeError
         Right (_, _, x) -> return x
@@ -306,11 +306,11 @@ protocol = loop
         -> LBS.ByteString
         -> RetconServer z (Bool, BS.ByteString)
     dispatch (SomeHeader hdr) body =
-        ((True,) <$> case hdr of
+        (True,) <$> case hdr of
             HeaderConflicted -> encodeStrict <$> listConflicts (decode body)
             HeaderResolve -> encodeStrict <$> resolveConflict (decode body)
             HeaderChange -> encodeStrict <$> notify (decode body)
-            InvalidHeader -> return . encodeStrict $ InvalidResponse)
+            InvalidHeader -> return . encodeStrict $ InvalidResponse
 
     -- Catch exceptions and inject them into the monad as errors.
     --
