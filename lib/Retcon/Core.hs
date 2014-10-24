@@ -31,6 +31,10 @@ module Retcon.Core
     runRetconAction,
     runRetconMonadOnce,
 
+    -- * State helpers
+    initialiseRetconState,
+    finaliseRetconState,
+
     -- * Entities
     RetconEntity(..),
 
@@ -99,6 +103,7 @@ import Control.Monad.Logger
 import Control.Monad.Reader
 import Data.Aeson as A
 import Data.Biapplicative
+import Data.ByteString (ByteString)
 import Data.Map (Map)
 import qualified Data.Map as M
 import Data.Monoid
@@ -152,6 +157,25 @@ localise local_state state =
     state & retconConfig . cfgDB %~ restrictToken
           & localState .~ local_state
 
+initialiseRetconState
+    :: RetconConfig SomeEntity s
+    -> l
+    -> IO (RetconMonadState InitialisedEntity s l)
+initialiseRetconState cfg l = do
+    let params   = cfg ^. cfgParams
+        entities = cfg ^. cfgEntities
+    state <- initialiseEntities params entities
+    let cfg' = cfg & cfgEntities .~ state
+    return $ RetconMonadState cfg' l
+
+finaliseRetconState
+    :: RetconMonadState InitialisedEntity s l
+    -> IO (RetconMonadState SomeEntity s l)
+finaliseRetconState (RetconMonadState cfg l) = do
+    let params = cfg ^. cfgParams
+    entities <- finaliseEntities params $ cfg ^. cfgEntities
+    return $ RetconMonadState (cfg & cfgEntities .~ entities) l
+
 -- | Execute an action in the 'RetconMonad' monad with configuration
 -- initialized and finalized.
 runRetconMonadOnce
@@ -159,13 +183,10 @@ runRetconMonadOnce
     -> l
     -> RetconMonad InitialisedEntity s l a
     -> IO (Either RetconError a)
-runRetconMonadOnce cfg l action =
-    let params   = cfg ^. cfgParams
-        entities = cfg ^. cfgEntities
-    in LE.bracket (putStrLn "Initialise retcon" >> initialiseEntities params entities)
-               (\s -> finaliseEntities params s >> putStrLn "finalise retcon")
-               (\state -> let cfg' = cfg & cfgEntities .~ state
-                          in runRetconMonad (RetconMonadState cfg' l) action)
+runRetconMonadOnce cfg l action = do
+    LE.bracket (initialiseRetconState cfg l)
+               (void . finaliseRetconState)
+               (\state -> runRetconMonad state action)
 
 -- | The 'RetconEntity' type class associates a 'Symbol' identifying a
 -- particular entity (i.e. a type of data) with a list of 'RetconDataSource's
@@ -558,6 +579,11 @@ class RetconStore s where
         -> InternalKey e
         -> IO [Int]
 
+    -- | Lookup the list of conflicted 'Diff's with related information.
+    storeLookupConflicts
+        :: s
+        -> IO [(ByteString, ByteString, Int, [(Int, ByteString)])]
+
     -- | Lookup the merged and conflicting 'Diff's with a given ID.
     storeLookupDiff
         :: s
@@ -688,13 +714,17 @@ class StoreToken s => ReadableToken s where
         => InternalKey entity
         -> RetconMonad e s l [Int]
 
+    -- | Lookup the details of a conflicting 'Diff'.
+    lookupConflicts
+        :: RetconMonad e s l [(ByteString, ByteString, Int, [(Int, ByteString)])]
+
     -- | Lookup a 'Diff' by ID.
     lookupDiff
         :: Int
         -> RetconMonad e s l (Maybe (Diff (), [Diff ()]))
 
 -- | Storage tokens which support writing operations.
-class StoreToken s => WritableToken s where
+class ReadableToken s => WritableToken s where
     -- | Allocate and return a new 'InternalKey'.
     createInternalKey :: (RetconEntity entity)
                       => RetconMonad e s l (InternalKey entity)
@@ -795,6 +825,10 @@ instance ReadableToken ROToken where
         ROToken store <- getRetconStore
         liftIO $ storeLookupInitialDocument store ik
 
+    lookupConflicts = do
+        ROToken store <- getRetconStore
+        liftIO $ storeLookupConflicts store
+
     lookupDiff did = do
         ROToken store <- getRetconStore
         liftIO $ storeLookupDiff store did
@@ -823,6 +857,10 @@ instance ReadableToken RWToken where
     lookupInitialDocument ik = do
         RWToken store <- getRetconStore
         liftIO $ storeLookupInitialDocument store ik
+
+    lookupConflicts = do
+        RWToken store <- getRetconStore
+        liftIO $ storeLookupConflicts store
 
     lookupDiff did = do
         RWToken store <- getRetconStore

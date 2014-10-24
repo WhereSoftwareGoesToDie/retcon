@@ -25,6 +25,7 @@ import Control.Lens
 import Control.Monad
 import Data.Aeson
 import Data.ByteString (ByteString)
+import Data.Function
 import Data.List
 import Data.Map.Strict (Map)
 import Data.Maybe
@@ -185,6 +186,31 @@ instance RetconStore PGStorage where
         fromSuccess _ = error "fromSuccess: Cannot unwrap not-a-success."
         isSuccess (Success _) = True
         isSuccess _ = False
+
+    -- | Lookup the list of conflicted 'Diff's with related information.
+    storeLookupConflicts (PGStore conn _) = do
+        diffs <- query_ conn diffS
+        ops <- query_ conn opsS
+        return $ map (match ops) diffs 
+      where
+        -- Filter the operations which correspond to a diff and add them to the
+        -- tuple.
+        --
+        -- TODO This is O(mn). I am embarrassing.
+        match all_ops (doc, diff, diff_id) =
+            let ops = map (\(_, op_id, op) -> (op_id, op))
+                    . filter (\(op_diff_id,_,_) -> diff_id == op_diff_id)
+                    $ all_ops
+            in (doc, diff, diff_id, ops)
+        diffS = "SELECT doc.document, diff.content, diff.id "
+            <> "FROM retcon_diff AS diff "
+            <> "JOIN retcon_initial AS doc "
+            <> "ON (diff.entity = doc.entity AND diff.id = doc.id) "
+            <> "WHERE diff.is_conflict ORDER BY diff.id ASC"
+        opsS = "SELECT op.diff_id, op.operation_id, op.content "
+            <> "FROM retcon_diff_conflicts AS op "
+            <> "LEFT JOIN retcon_diff AS diff ON (op.diff_id = diff.diff_id) "
+            <> "WHERE diff.is_conflict ORDER BY op.diff_id ASC"
 
     storeLookupDiffIds (PGStore conn _) ik = do
         r <- query conn "SELECT diff_id FROM retcon_diff WHERE entity = ? AND id = ?" $ internalKeyValue ik

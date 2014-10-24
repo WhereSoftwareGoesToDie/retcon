@@ -27,7 +27,7 @@ module Retcon.Network.Server where
 
 import Control.Applicative
 import Control.Concurrent.Async
-import Control.Lens.Operators
+import Control.Lens
 import Control.Lens.TH
 import Control.Monad
 import Control.Monad.Catch
@@ -49,6 +49,7 @@ import System.ZMQ4.Monadic hiding (async)
 import Retcon.Core
 import Retcon.Diff
 import Retcon.Document
+import Retcon.Handler
 import Retcon.Monad
 import Retcon.Options
 
@@ -118,12 +119,22 @@ instance Binary Document where
 
 data RequestConflicted = RequestConflicted
   deriving (Eq, Show)
-data ResponseConflicted = ResponseConflicted
-    [ ( Document
-      , Diff ()
-      , DiffID
-      , [(ConflictedDiffOpID, DiffOp ())]
-    )]
+data ResponseConflicted
+    = ResponseConflicted
+        [ ( Document
+          , Diff ()
+          , DiffID
+          , [(ConflictedDiffOpID, DiffOp ())]
+        )]
+    -- | Pre-serialised version of the same data. This is generated on the server
+    -- to avoid the overhead of de-serialising from the database only to serialise
+    -- immediately. Woo.
+    | ResponseConflictedSerialised
+        [ ( BS.ByteString
+          , BS.ByteString
+          , Int
+          , [(Int, BS.ByteString)]
+        )]
   deriving (Eq, Show)
 
 instance Binary RequestConflicted where
@@ -131,6 +142,7 @@ instance Binary RequestConflicted where
     get = return RequestConflicted
 instance Binary ResponseConflicted where
     put (ResponseConflicted ds) = put ds
+    put (ResponseConflictedSerialised ds) = put ds
     get = ResponseConflicted <$> get
 
 data RequestChange = RequestChange ChangeNotification
@@ -217,27 +229,38 @@ serverParser = ServerConfig <$> connString
 
 -- * Server monad
 
+-- | The State carried around in the server for retcon actions it needs to run.
+type State = RetconMonadState InitialisedEntity RWToken ()
+
 -- | Monad for the API server actions to run in.
 newtype RetconServer z a = RetconServer
-    { unRetconServer :: ExceptT RetconAPIError (ReaderT (Socket z Rep) (LoggingT (ZMQ z))) a
+    { unRetconServer :: ExceptT RetconAPIError
+        (ReaderT (Socket z Rep)
+            (ReaderT State
+                (LoggingT
+                    (ZMQ z)))) a
     }
   deriving (Applicative, Functor, Monad, MonadIO, MonadReader (Socket z Rep),
-  MonadError RetconAPIError, MonadLogger, MonadCatch, MonadThrow)
+            MonadError RetconAPIError, MonadLogger, MonadCatch, MonadThrow)
 
 -- | Run a handler in the 'RetconServer' monad using the ZMQ connection details.
 runRetconServer
     :: forall a. ServerConfig
+    -> State
     -> (forall z. RetconServer z a)
     -> IO ()
-runRetconServer cfg act = runZMQ $ runStdoutLoggingT $ do
+runRetconServer cfg state act = runZMQ $ runStdoutLoggingT $ do
     sock <- lift . socket $ Rep
     lift . bind sock $ cfg ^. cfgConnectionString
-    void $ flip runReaderT sock . runExceptT . unRetconServer $ act
+    void $ flip runReaderT state . flip runReaderT sock . runExceptT . unRetconServer $ act
 
 -- * Monads with ZMQ
 
 liftZMQ :: ZMQ z a -> RetconServer z a
-liftZMQ = RetconServer . lift . lift . lift
+liftZMQ = RetconServer . lift . lift . lift . lift
+
+askState :: (forall z. RetconServer z State)
+askState = RetconServer . lift . lift $ ask
 
 -- * Server actions
 
@@ -296,8 +319,14 @@ protocol = loop
         -> RetconServer z (Bool, BS.ByteString)
     catchAndInject act = catchError (catch act injectSomeException) reportAPIError
       where
-        injectSomeException :: MonadError RetconAPIError m => SomeException -> m a
-        injectSomeException _ = throwError UnknownServerError
+        injectSomeException
+            :: (MonadLogger m, MonadError RetconAPIError m)
+            => SomeException
+            -> m a
+        injectSomeException e = do
+            logErrorN . fromString $
+                "Intercepted error to forward to client: " <> show e
+            throwError UnknownServerError
 
     -- Handle an error in executing operations by sending it back to the client.
     reportAPIError
@@ -308,6 +337,21 @@ protocol = loop
         liftIO . putStrLn . fromString $ "Could not process message: " <> show e
         return (False, toStrict . encode . fromEnum $ e)
 
+-- | Run a RetconMonad action in the RetconServer monad.
+runRetconMonadInServer
+    :: RetconMonad InitialisedEntity RWToken () r
+    -> RetconServer z r
+runRetconMonadInServer act = do
+    state <- askState
+    result <- liftIO . runRetconMonad state $ act
+
+    case result of
+        Left e -> do
+            logErrorN . fromString $
+                "Error running retcon action in server: " <> show e
+            throwError UnknownServerError
+        Right r -> return r
+
 -- | Process a _notify_ message from the client, checking the
 notify
     :: RequestChange
@@ -316,12 +360,7 @@ notify (RequestChange (ChangeNotification n d i)) = do
     logInfoN . fromString $
         "Processing change notification: " <> show (n,d,i)
 
-    -- TODO: We're in the wrong monad to run these. How best shall we achieve
-    -- this?
-
-    -- addWork (WorkNotify (n,d,i))
-
-    error "Retcon.Network.Server.notify is not implemented yet"
+    runRetconMonadInServer $ addWork (WorkNotify (n,d,i))
 
     return ResponseChange
 
@@ -337,13 +376,9 @@ resolveConflict (RequestResolve diff_id op_ids) = do
         "Resolving diff " <> show (unDiffID diff_id) <> " with " <>
         (show . map unConflictedDiffOpID $ op_ids)
 
-    -- TODO: We're in the wrong monad to run these. How best shall we achieve
-    -- this?
-
-    -- new_diff <- composeNewDiff op_ids
-    -- addWork (WorkApplyPatch (unDiffID diff_id) new_diff)
-
-    error "Retcon.Network.Server.resolveConflict is not implemented yet"
+    runRetconMonadInServer $ do
+        new_diff <- composeNewDiff op_ids
+        addWork (WorkApplyPatch (unDiffID diff_id) new_diff)
 
     return ResponseResolve
 
@@ -355,15 +390,12 @@ listConflicts RequestConflicted = do
     logInfoN . fromString $
         "Listing conflicts for client"
 
-    -- TODO: We're in the wrong monad to run store operations. How best shall
-    -- we achieve this?
+    conflicts <- runRetconMonadInServer lookupConflicts
 
-    -- conflicts <- getConflictedDiffs
+    logInfoN . fromString $
+        "Found " <> show (Prelude.length conflicts) <> " conflicts!"
 
-    error "Retcon.Network.Server.listConflicts is not implemented yet"
-
-    let conflicts = []
-    return $ ResponseConflicted conflicts
+    return $ ResponseConflictedSerialised conflicts
 
 -- | Retrieve selected 'DiffOp's from the store and combine them into a new
 -- 'Diff'.
@@ -381,45 +413,44 @@ composeNewDiff op_ids =
 -- Open a ZMQ_REP socket and receive requests from it; unhandled errors are caught
 -- and fed back through the socket to the client.
 apiServer
-    :: WritableToken store
-    => RetconConfig SomeEntity store
+    :: RetconConfig SomeEntity RWToken
     -> ServerConfig
     -> IO ()
-apiServer retconCfg serverCfg = do
+apiServer retcon_cfg server_cfg = do
     -- TODO: We should probably do logging here just as in retcon proper.
     putStrLn . fromString $
-        "Running server on " <> serverCfg ^. cfgConnectionString
+        "Running server on " <> server_cfg ^. cfgConnectionString
 
     -- Start the API server thread.
-    server <- async serverThread
+    server_state <- initialiseRetconState retcon_cfg ()
+    server_thread <- async $ serverThread server_state
     putStrLn . fromString $
-        "Started API server in: " <> show (asyncThreadId server)
+        "Started API server in: " <> show (asyncThreadId server_thread)
 
     -- Start the processing thread.
-    retcon <- async retconThread
+    retcon_state <- initialiseRetconState retcon_cfg ()
+    retcon_thread <- async $ retconThread retcon_state
     putStrLn . fromString $
-        "Started processing in: " <> show (asyncThreadId retcon)
+        "Started processing in: " <> show (asyncThreadId retcon_thread)
 
     -- Wait for completion.
-    let procs = [server, retcon]
+    let procs = [server_thread, retcon_thread]
     (done, _) <- waitAnyCancel procs
 
-    putStrLn $ if done == server
+    -- Clean up.
+    void $ both finaliseRetconState (server_state, retcon_state)
+
+    putStrLn $ if done == server_thread
         then "Server shutdown!"
         else "Retcon go boom!"
   where
-    serverThread = do
+    serverThread state = do
         putStrLn "Starting server thread"
-        runRetconServer serverCfg protocol
-    retconThread = do
+        runRetconServer server_cfg state protocol
+    retconThread state = do
         putStrLn "Starting retcon thread"
-        void $ runRetconMonadOnce retconCfg () loop
-    loop
-        :: WritableToken s
-        => RetconHandler s ()
-    loop = do
-        void $ processWork processWorkItem
-        loop
+        void $ runRetconMonad state (forever $ processWork processWorkItem)
+        error "Unpossible in retcon processing thread!"
 
 -- | Inspect a work item and perform whatever task is required.
 processWorkItem
@@ -433,9 +464,7 @@ processWorkItem work = do
         WorkNotify fkval -> do
             logDebugN . fromString $
                 "Processing a notifcation: " <> show fkval
-            -- TODO Something like this:
-            --
-            -- dispatch fkval
+            dispatch fkval
 
         WorkApplyPatch did new_diff -> do
             logDebugN . fromString $
@@ -444,7 +473,5 @@ processWorkItem work = do
             --
             -- ik <- getIKForDiff did
             -- distributeDiff ik new_diff
-
-    -- TODO This is not implemented yet.
-    error "Retcon.Network.Server.processWorkItem is not implemented."
+            error "Retcon.Network.Server.processWorkItem is not implemented."
     return ()
