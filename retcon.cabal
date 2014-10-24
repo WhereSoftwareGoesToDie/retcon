@@ -42,6 +42,7 @@ library
                      , bytestring
                      , containers
                      , directory
+                     , exceptions
                      , semigroups
                      , enclosed-exceptions
                      , filepath
