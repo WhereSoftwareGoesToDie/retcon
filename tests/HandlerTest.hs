@@ -208,9 +208,9 @@ operationSuite = do
 
                 (fk', _) <- newTestDocument "dispatch1-" Nothing ref
                 let fk = ForeignKey (T.unpack fk') :: ForeignKey "dispatchtest" "dispatch1"
-                op <- run opts state $ determineOperation st fk
+                Right op <- run opts state $ determineOperation st fk
 
-                op `shouldBe` (Right $ RetconCreate fk)
+                op `shouldBe` RetconCreate fk
 
         it "should result in an error when new key is seen, but no document." $
             withConfiguration testOpts $ \(state, store, opts) -> do
@@ -220,9 +220,9 @@ operationSuite = do
                 let Just st@(Dispatch1 ref) = accessState state entity source
 
                 let fk = ForeignKey "this is new" :: ForeignKey "dispatchtest" "dispatch1"
-                op <- run opts state $ determineOperation st fk
+                Right op <- run opts state $ determineOperation st fk
 
-                op `shouldBe` (Right $ RetconProblem fk RetconFailed)
+                op `shouldBe` RetconProblem fk RetconFailed
 
         it "should result in a update when old key is seen, with document." $
             withConfiguration testOpts $ \(state, store, opts) -> do
@@ -247,8 +247,8 @@ operationSuite = do
                     return (op, ik)
 
                 case result of
-                    Right (RetconUpdate _, ik) ->
-                        result `shouldBe` Right (RetconUpdate ik, ik)
+                    Right x@(RetconUpdate ik, ik') ->
+                        ik `shouldBe` ik'
                     _ -> error "Does not match"
 
         it "should result in a delete when old key is seen, but no document." $
@@ -293,6 +293,7 @@ operationSuite = do
                     let op = RetconCreate fk :: RetconOperation "dispatchtest" "dispatch1"
 
                     runOperation st op
+                either throwIO return result
 
                 mem <- case store of
                     Memory.MemStorage ref -> readIORef ref
@@ -300,7 +301,7 @@ operationSuite = do
                 let iks = mem ^. Memory.memItoF
                 let fks = mem ^. Memory.memFtoI
 
-                (result, M.size iks, M.size fks) `shouldBe` (Right (), 1, 2)
+                (M.size iks, M.size fks) `shouldBe` (1, 2)
 
         it "should process an error operation." $
             withConfiguration testOpts $ \(state, store, opts) -> do
@@ -314,9 +315,7 @@ operationSuite = do
                 let fk = ForeignKey (T.unpack fk')
                 let op = RetconProblem fk (RetconUnknown "Testing error reporting.") :: RetconOperation "dispatchtest" "dispatch1"
 
-                res <- run opts state $ runOperation st op
-
-                res `shouldBe` Right ()
+                (run opts state $ runOperation st op) >>= either throwIO return
 
         it "should process an update operation." $
             withConfiguration testOpts $ \(state, store, opts) -> do
@@ -519,17 +518,14 @@ dispatchSuite = do
                 let fk1 = ForeignKey fk1' :: ForeignKey "dispatchtest" "dispatch1"
                 let fk2 = ForeignKey (T.unpack fk2') :: ForeignKey "dispatchtest" "dispatch2"
 
-                result <- testHandler state store $ do
+                (testHandler state store $ do
                     (ik :: InternalKey "dispatchtest") <- createInternalKey
                     recordForeignKey ik fk1
-                    recordForeignKey ik fk2
+                    recordForeignKey ik fk2) >>= either throwIO return
 
-                result `shouldBe` Right ()
 
-                result <- testHandler state store $
-                    dispatch . foreignKeyValue $ fk1
-
-                result `shouldBe` Right ()
+                (testHandler state store $
+                    dispatch . foreignKeyValue $ fk1) >>= either throwIO return
 
                 -- Both stores should be empty, along with both the retcon and
                 -- retcon_fk tables.
@@ -608,7 +604,7 @@ initialDocumentSuite = do
 
                     return (put, get)
 
-                result `shouldBe` Right ((), Just testDoc)
+                either throwIO (`shouldBe` ((), Just testDoc)) result
 
         it "deletes initial documents" $
             withConfiguration testOpts $ \(state, store, _) -> do
@@ -620,7 +616,7 @@ initialDocumentSuite = do
                     maybeGet <- lookupInitialDocument ik
                     return (maybePut, maybeDel, maybeGet)
 
-                result `shouldBe` Right ((), 0, Nothing)
+                either throwIO (`shouldBe` ((), 0, Nothing)) result
 
 -- | Test suite for diff database handling.
 diffDatabaseSuite :: Spec

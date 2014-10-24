@@ -12,7 +12,7 @@
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE Rank2Types            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TupleSections         #-}
 
 -- | Description: PostgreSQL storage for operational data.
 --

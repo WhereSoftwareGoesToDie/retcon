@@ -25,7 +25,21 @@
 -- Example usage:
 --
 -- @
---         TODO: Put example usage here
+--      main :: IO ()
+--      main = do
+--          runRetconZMQ "tcp://10.2.3.4:1234" $ do
+--              conflicts <- getConflicted
+--              liftIO . putStrLn $
+--                  "Got " ++ show (length conflicts) ++ " conflicts."
+--
+--              \-\- This is probably a terrible idea
+--              forM_ conflicts $ \\(_, _, diff_id, _) ->
+--                  enqueueResolveDiff diff_id []
+--
+--              liftIO $ putStrLn "Marked them all resolved."
+--          >>= either throwIO return
+--
+--
 -- @
 module Retcon.Network.Client
 (
