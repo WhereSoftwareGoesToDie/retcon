@@ -29,6 +29,7 @@ import Control.Concurrent.Async
 import Control.Lens.Operators
 import Control.Lens.TH
 import Control.Monad
+import Control.Monad.Catch
 import Control.Monad.Except
 import Control.Monad.Logger
 import Control.Monad.Reader
@@ -218,7 +219,7 @@ newtype RetconServer z a = RetconServer
     { unRetconServer :: ExceptT RetconAPIError (ReaderT (Socket z Rep) (LoggingT (ZMQ z))) a
     }
   deriving (Applicative, Functor, Monad, MonadIO, MonadReader (Socket z Rep),
-  MonadError RetconAPIError, MonadLogger)
+  MonadError RetconAPIError, MonadLogger, MonadCatch, MonadThrow)
 
 -- | Run a handler in the 'RetconServer' monad using the ZMQ connection details.
 runRetconServer
@@ -262,9 +263,10 @@ protocol = loop
         cmd <- liftZMQ . receiveMulti $ sock
         -- Decode and process the message.
         (status, resp) <- case cmd of
-            [hdr, req] -> join $ dispatch <$> (toEnum <$> decodeStrict hdr)
+            [hdr, req] -> catchAndInject $
+                          join $ dispatch <$> (toEnum <$> decodeStrict hdr)
                                           <*> pure (fromStrict req)
-            _        -> throwError InvalidNumberOfMessageParts
+            _          -> throwError InvalidNumberOfMessageParts
         -- Encode and send the response.
         liftZMQ . sendMulti sock . fromList $ [encodeStrict status, resp]
         -- LOOOOOP
@@ -276,15 +278,32 @@ protocol = loop
         -> LBS.ByteString
         -> RetconServer z (Bool, BS.ByteString)
     dispatch (SomeHeader hdr) body =
-        catchError
-            ((True,) <$> case hdr of
-                HeaderConflicted -> encodeStrict <$> listConflicts (decode body)
-                HeaderResolve -> encodeStrict <$> resolveConflict (decode body)
-                HeaderChange -> encodeStrict <$> notify (decode body)
-                InvalidHeader -> return . encodeStrict $ InvalidResponse)
-            (\e -> do
-                liftIO . putStrLn . fromString $ "Could not process message: " <> show e
-                return (False, toStrict . encode . fromEnum $ e))
+        ((True,) <$> case hdr of
+            HeaderConflicted -> encodeStrict <$> listConflicts (decode body)
+            HeaderResolve -> encodeStrict <$> resolveConflict (decode body)
+            HeaderChange -> encodeStrict <$> notify (decode body)
+            InvalidHeader -> return . encodeStrict $ InvalidResponse)
+
+    -- Catch exceptions and inject them into the monad as errors.
+    --
+    -- TODO: Chain together the catching and handling of difference Exception
+    -- types and return more specific errors, if available.
+    catchAndInject
+        :: RetconServer z (Bool, BS.ByteString)
+        -> RetconServer z (Bool, BS.ByteString)
+    catchAndInject act = catchError (catch act injectSomeException) reportAPIError
+      where
+        injectSomeException :: MonadError RetconAPIError m => SomeException -> m a
+        injectSomeException _ = throwError UnknownServerError
+
+    -- Handle an error in executing operations by sending it back to the client.
+    reportAPIError
+        :: RetconAPIError
+        -> RetconServer z (Bool, BS.ByteString)
+    reportAPIError e = do
+        -- TODO Log this more properly.
+        liftIO . putStrLn . fromString $ "Could not process message: " <> show e
+        return (False, toStrict . encode . fromEnum $ e)
 
 -- | Process a _notify_ message from the client, checking the
 notify
@@ -337,10 +356,10 @@ listConflicts RequestConflicted = do
     -- we achieve this?
 
     -- conflicts <- getConflictedDiffs
-    let conflicts = []
 
     error "Retcon.Network.Server.listConflicts is not implemented yet"
 
+    let conflicts = []
     return $ ResponseConflicted conflicts
 
 -- | Retrieve selected 'DiffOp's from the store and combine them into a new
