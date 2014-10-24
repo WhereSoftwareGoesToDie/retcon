@@ -226,10 +226,8 @@ runRetconServer
     -> (forall z. RetconServer z a)
     -> IO ()
 runRetconServer cfg act = runZMQ $ runStdoutLoggingT $ do
-    logDebugN . fromString $ "Running a server"
     sock <- lift . socket $ Rep
     lift . bind sock $ cfg ^. cfgConnectionString
-    logDebugN . fromString $ "Socket ready!"
     void $ flip runReaderT sock . runExceptT . unRetconServer $ act
 
 -- * Monads with ZMQ
@@ -380,9 +378,8 @@ apiServer retconCfg serverCfg = do
     putStrLn . fromString $
         "Started processing in: " <> show (asyncThreadId retcon)
 
-    wait retcon
     -- Wait for completion.
-    let procs = [retcon]
+    let procs = [server, retcon]
     (done, _) <- waitAnyCancel procs
 
     putStrLn $ if done == server
