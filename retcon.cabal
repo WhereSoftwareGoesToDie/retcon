@@ -335,4 +335,26 @@ test-suite           wire-formats-test
                      -Wwarn
                      -fwarn-tabs
 
+test-suite           api-round-trip-test
+  hs-source-dirs:    tests
+  main-is:           APIRoundTripTest.hs
+  type:              exitcode-stdio-1.0
+  default-language:  Haskell2010
+  build-depends:     base
+                   , QuickCheck
+                   , async
+                   , binary
+                   , bytestring
+                   , containers
+                   , hspec
+                   , mtl
+                   , text
+                   , retcon
+
+  ghc-options:       -O2
+                     -threaded
+                     -Wall
+                     -Wwarn
+                     -fwarn-tabs
+
 -- vim: set tabstop=21 expandtab:
