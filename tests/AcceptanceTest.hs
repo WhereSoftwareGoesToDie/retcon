@@ -7,80 +7,79 @@
 -- the 3-clause BSD licence.
 --
 
--- | Description: Command-line application to process individual events.
---
--- This is a sample command-line interface to process events using the retcon
--- algorithm. It is intended as an example and demonstration piece more than a
--- useful tool.
+{-# LANGUAGE OverloadedStrings #-}
 
-{-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE OverloadedStrings     #-}
-{-# LANGUAGE TypeFamilies          #-}
-
-{-# OPTIONS_GHC -fno-warn-orphans #-}
-
+-- | Test the API round-trip.
 module Main where
 
-import Control.Applicative
-import Data.Proxy
-
-import Retcon.Core
-import Retcon.DataSource.JsonDirectory
-import Retcon.Monad
-
+import Control.Concurrent.Async
+import Control.Exception
+import Data.ByteString ()
+import qualified Data.ByteString.Char8 as BS
+import System.Process
 import Test.Hspec
-import TestHelpers
 
--- | Set up an upstream and downstream entity reading writing to/from a JSON
--- directory.
+import Retcon.Network.Client
+import Retcon.Network.Server
+import Retcon.Options
+import Retcon.Store.PostgreSQL
 
-instance RetconEntity "entity" where
-    entitySources _ = [ SomeDataSource (Proxy :: Proxy "upstream")
-                      , SomeDataSource (Proxy :: Proxy "downstream")
-                      ]
+prepareDatabase :: BS.ByteString -> IO () -> IO ()
+prepareDatabase dbname action = bracket setupSuite teardownSuite (const action)
+  where
+    db = BS.unpack dbname
 
-instance RetconDataSource "entity" "upstream" where
+    setupSuite :: IO ()
+    setupSuite = do
+        _ <- system $ concat [ " dropdb --if-exists ", db, " >/dev/null 2>&1 "
+                             , " && createdb ", db
+                             , " && psql --quiet --file=retcon.sql ", db
+                             ]
+        return ()
 
-    data DataSourceState "entity" "upstream" = Upstream FilePath
+    teardownSuite :: a -> IO ()
+    teardownSuite _ = do
+        _ <- system $ concat [ "dropdb --if-exists ", db, " >/dev/null 2>&1 " ]
+        return ()
 
-    initialiseState = Upstream <$> testJSONFilePath
-    finaliseState _ = return ()
+suite :: String -> BS.ByteString -> Spec
+suite conn dbname = around (prepareDatabase dbname) $ describe "Retcon API" $ do
+    it "replies to conflict list requests" $ do
+        result <- runRetconZMQ conn getConflicted
+        result `shouldBe` Right []
 
-    getDocument key =
-        getActionState >>= \(Upstream fp) -> getJSONDir fp key
-    setDocument doc key =
-        getActionState >>= \(Upstream fp) -> setJSONDir fp doc key
-    deleteDocument key =
-        getActionState >>= \(Upstream fp) -> deleteJSONDir fp key
+    it "replies to resolve conflict requests" $ do
+        let diff_id = DiffID 1
+        let ops = []
+        result <- runRetconZMQ conn $ enqueueResolveDiff diff_id ops
+        result `shouldBe` Right ()
 
-instance RetconDataSource "entity" "downstream" where
+    it "replies to notify requests" $ do
+        let note = ChangeNotification "TestEntity" "TestSource" "item1"
+        result <- runRetconZMQ conn $ enqueueChangeNotification note
+        result `shouldBe` Right ()
 
-    data DataSourceState "entity" "downstream" = Downstream FilePath
-    initialiseState = Downstream <$> testJSONFilePath
-    finaliseState _ = return ()
-
-    getDocument key =
-        getActionState >>= \(Downstream fp) -> getJSONDir fp key
-    setDocument doc key =
-        getActionState >>= \(Downstream fp) -> setJSONDir fp doc key
-    deleteDocument key =
-        getActionState >>= \(Downstream fp) -> deleteJSONDir fp key
-
-entities :: [SomeEntity]
-entities = [ SomeEntity (Proxy :: Proxy "entity") ]
+    it "replies to invalid requests" $
+        -- Right result <- runRetconZMQ conn $ performRequest InvalidHeader
+        -- result `shouldbe` InvalidResponse
+        pendingWith "This cannot be implemented without changing the interface."
 
 main :: IO ()
-main = hspec suite
+main = do
+    let conn = "tcp://127.0.0.1:1234"
+    let db = "dbname=retcon_test"
+    let entities = []
 
-suite :: Spec
-suite =
-    describe "Run with upstream change" $
-        it "propogates locally" pending
-            {--
-            let opts = defaultOptions
-            tok <- token . PGStore <$> connectPostgreSQL (opts ^. optDB)
-            let (entity:source:key:_) = opts ^. optArgs
-            res <- retcon opts cfg tok $ show (entity, source, key)
-            --}
+    -- Prepare the retcon and server configurations.
+    let serverConfig = ServerConfig conn
+    let retconOpt = RetconOptions False LogStderr db Nothing
+    retconConfig <- prepareConfig (retconOpt, []) entities
+
+    -- Spawn the server.
+    server <- async $ apiServer retconConfig serverConfig
+
+    -- Run the test suite.
+    hspec (suite conn db)
+
+    -- Shut the server down.
+    cancel server
