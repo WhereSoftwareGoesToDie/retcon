@@ -325,6 +325,8 @@ test-suite           acceptance-test
                    , QuickCheck
                    , async
                    , binary
+                   , hspec
+                   , filepath
                    , bytestring
                    , containers
                    , hspec

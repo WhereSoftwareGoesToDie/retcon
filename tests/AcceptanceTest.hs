@@ -14,65 +14,59 @@ module Main where
 
 import Control.Concurrent.Async
 import Control.Exception
+import Control.Monad
 import Data.ByteString ()
 import qualified Data.ByteString.Char8 as BS
+import Data.String
 import System.Process
 import Test.Hspec
 
+import DBHelpers
+import Retcon.DataSource.PostgreSQL
 import Retcon.Network.Client
 import Retcon.Network.Server
 import Retcon.Options
 import Retcon.Store.PostgreSQL
 
-prepareDatabase :: BS.ByteString -> IO () -> IO ()
-prepareDatabase dbname action = bracket setupSuite teardownSuite (const action)
+prepareDatabase :: DBName -> IO () -> IO ()
+prepareDatabase dbname =
+    bracket_ setup teardown
   where
-    db = BS.unpack dbname
+    setup =
+        resetTestDBWithFixture dbname "retcon.sql"
+    teardown =
+        void . system . concat $
+            [ "dropdb --if-exists ", unDBName dbname, " >/dev/null 2>&1 " ]
 
-    setupSuite :: IO ()
-    setupSuite = do
-        _ <- system $ concat [ " dropdb --if-exists ", db, " >/dev/null 2>&1 "
-                             , " && createdb ", db
-                             , " && psql --quiet --file=retcon.sql ", db
-                             ]
-        return ()
+suite :: String -> DBName -> Spec
+suite conn dbname =
+    around (prepareDatabase dbname) . describe "Retcon API" $ do
+        -- | A modification is made upstream, Retcon is notified and it makes
+        -- the appropriate change locally
+        it "upstream change propogates locally" pending
 
-    teardownSuite :: a -> IO ()
-    teardownSuite _ = do
-        _ <- system $ concat [ "dropdb --if-exists ", db, " >/dev/null 2>&1 " ]
-        return ()
+        -- | A record is removed upstream, retcon is notified, identifies this
+        -- as a a delete and removes the appropriate record locally.
+        it "upstream delete propogates locally" pending
 
-suite :: String -> BS.ByteString -> Spec
-suite conn dbname = around (prepareDatabase dbname) $ describe "Retcon API" $ do
-    it "replies to conflict list requests" $ do
-        result <- runRetconZMQ conn getConflicted
-        result `shouldBe` Right []
-
-    it "replies to resolve conflict requests" $ do
-        let diff_id = DiffID 1
-        let ops = []
-        result <- runRetconZMQ conn $ enqueueResolveDiff diff_id ops
-        result `shouldBe` Right ()
-
-    it "replies to notify requests" $ do
-        let note = ChangeNotification "TestEntity" "TestSource" "item1"
-        result <- runRetconZMQ conn $ enqueueChangeNotification note
-        result `shouldBe` Right ()
-
-    it "replies to invalid requests" $
-        -- Right result <- runRetconZMQ conn $ performRequest InvalidHeader
-        -- result `shouldbe` InvalidResponse
-        pendingWith "This cannot be implemented without changing the interface."
+        -- | A record is modified both upstream and downstream in an
+        -- incompatible way. Retcon is notified of the upstream and downstream
+        -- change (two notifications in total) and correctly indicates a conflict
+        -- once.
+        --
+        -- The local change is chosen and this preference is propogated
+        -- upstream.
+        it "comparing and resolving diff works" pending
 
 main :: IO ()
 main = do
     let conn = "tcp://127.0.0.1:1234"
-    let db = "dbname=retcon_test"
+    let db = DBName "retcon_test"
     let entities = []
 
     -- Prepare the retcon and server configurations.
     let serverConfig = ServerConfig conn
-    let retconOpt = RetconOptions False LogStderr db Nothing
+    let retconOpt = RetconOptions False LogStderr (fromString . unDBName $ db) Nothing
     retconConfig <- prepareConfig (retconOpt, []) entities
 
     -- Spawn the server.
