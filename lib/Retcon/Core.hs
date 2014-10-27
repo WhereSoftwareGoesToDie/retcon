@@ -1039,7 +1039,7 @@ massageLookupDiff
     -> RetconMonad InitialisedEntity s l
        (Maybe (SomeInternalKey, Diff (), [Diff ()]))
 massageLookupDiff did result = do
-    entities <- map dropState <$> getRetconEntities
+    entities <- map dropState <$> getRetconState
     case result of
         Nothing -> return Nothing
         Just (ik', dif, conf) ->

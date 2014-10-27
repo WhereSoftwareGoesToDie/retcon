@@ -37,7 +37,6 @@ module Retcon.Monad (
 
     getRetconState,
     getRetconStore,
-    getRetconEntities,
     getActionState,
     whenVerbose,
 
@@ -110,19 +109,25 @@ runRetconMonad state =
       LogStdout -> runStdoutLoggingT
       LogNone   -> (`runLoggingT` \_ _ _ _ -> return ())
 
--- | Get the retcon component of the environment.
+-- | Get the retcon entities component of the environment.
+--
+-- This will be a list of either 'SomeEntity' or 'IntialisedEntity' depending
+-- on the context.
 getRetconState :: RetconMonad e s l [e]
-getRetconState = view (retconConfig . cfgEntities)
+getRetconState = view $ retconConfig . cfgEntities
 
 -- | Get the action-specific component of the environment.
+--
+-- This will be '()' or some arbitrary datasource-specific type depending on
+-- the context.
 getActionState :: RetconMonad e s l l
 getActionState = view localState
 
+-- | Get the token to access the retcon data store.
+--
+-- This will be a 'RWToken' or 'ROToken' depending on the context.
 getRetconStore :: RetconMonad e s l s
 getRetconStore = view $ retconConfig . cfgDB
-
-getRetconEntities :: RetconMonad e s l [e]
-getRetconEntities = view $ retconConfig . cfgEntities
 
 -- | Do something when the verbose option is set
 whenVerbose :: (MonadReader (RetconMonadState e s x) m) => m () -> m ()
