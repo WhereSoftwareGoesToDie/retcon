@@ -18,7 +18,6 @@
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeFamilies               #-}
 
-
 -- | The "core" of recton, all concrete types and classes that pull together
 -- modules and helpers to define data sources and entities.
 module Retcon.Core
@@ -30,6 +29,10 @@ module Retcon.Core
     -- * Action runners
     runRetconAction,
     runRetconMonadOnce,
+
+    -- * State helpers
+    initialiseRetconState,
+    finaliseRetconState,
 
     -- * Entities
     RetconEntity(..),
@@ -59,6 +62,7 @@ module Retcon.Core
 
     -- * Keys
     InternalKey(..),
+    SomeInternalKey(..),
     ForeignKey(..),
 
     EntityName,
@@ -70,6 +74,7 @@ module Retcon.Core
     ForeignKeyIdentifier,
 
     internalKeyValue,
+    someInternalKey,
     encodeForeignKey,
     foreignKeyValue,
 
@@ -92,6 +97,7 @@ import Control.Concurrent
 import Control.Exception
 import Control.Exception.Enclosed
 import qualified Control.Exception.Lifted as LE
+import Control.Lens (view)
 import Control.Lens.Operators
 import Control.Monad.Base
 import Control.Monad.Except
@@ -99,8 +105,10 @@ import Control.Monad.Logger
 import Control.Monad.Reader
 import Data.Aeson as A
 import Data.Biapplicative
+import Data.ByteString (ByteString)
 import Data.Map (Map)
 import qualified Data.Map as M
+import Data.Maybe
 import Data.Monoid
 import Data.Proxy
 import Data.String
@@ -152,6 +160,25 @@ localise local_state state =
     state & retconConfig . cfgDB %~ restrictToken
           & localState .~ local_state
 
+initialiseRetconState
+    :: RetconConfig SomeEntity s
+    -> l
+    -> IO (RetconMonadState InitialisedEntity s l)
+initialiseRetconState cfg l = do
+    let params   = cfg ^. cfgParams
+        entities = cfg ^. cfgEntities
+    state <- initialiseEntities params entities
+    let cfg' = cfg & cfgEntities .~ state
+    return $ RetconMonadState cfg' l
+
+finaliseRetconState
+    :: RetconMonadState InitialisedEntity s l
+    -> IO (RetconMonadState SomeEntity s l)
+finaliseRetconState (RetconMonadState cfg l) = do
+    let params = cfg ^. cfgParams
+    entities <- finaliseEntities params $ cfg ^. cfgEntities
+    return $ RetconMonadState (cfg & cfgEntities .~ entities) l
+
 -- | Execute an action in the 'RetconMonad' monad with configuration
 -- initialized and finalized.
 runRetconMonadOnce
@@ -160,12 +187,9 @@ runRetconMonadOnce
     -> RetconMonad InitialisedEntity s l a
     -> IO (Either RetconError a)
 runRetconMonadOnce cfg l action =
-    let params   = cfg ^. cfgParams
-        entities = cfg ^. cfgEntities
-    in LE.bracket (putStrLn "Initialise retcon" >> initialiseEntities params entities)
-               (\s -> finaliseEntities params s >> putStrLn "finalise retcon")
-               (\state -> let cfg' = cfg & cfgEntities .~ state
-                          in runRetconMonad (RetconMonadState cfg' l) action)
+    LE.bracket (initialiseRetconState cfg l)
+               (void . finaliseRetconState)
+               (`runRetconMonad` action)
 
 -- | The 'RetconEntity' type class associates a 'Symbol' identifying a
 -- particular entity (i.e. a type of data) with a list of 'RetconDataSource's
@@ -397,6 +421,10 @@ newtype RetconEntity entity => InternalKey entity =
 instance RetconEntity entity => Show (InternalKey entity) where
     show = show . internalKeyValue
 
+-- | An existential wrapper around an 'InternalKey'.
+data SomeInternalKey = forall entity. RetconEntity entity =>
+    SomeInternalKey (InternalKey entity)
+
 -- | The unique identifier used by the 'source' data source to refer to an
 -- 'entity' it stores.
 newtype RetconDataSource entity source => ForeignKey entity source =
@@ -427,6 +455,29 @@ internalKeyValue :: forall entity. (RetconEntity entity)
 internalKeyValue (InternalKey key) =
     let entity = symbolVal (Proxy :: Proxy entity)
     in (entity, key)
+
+-- | Magic up a 'SomeInternalKey' value, if possible, given the name and ID
+-- values.
+someInternalKey
+    :: [SomeEntity]
+    -> InternalKeyIdentifier
+    -> Maybe SomeInternalKey
+someInternalKey entities (name, key) =
+    let symb = someSymbolVal name
+        same = mapMaybe (matching symb) entities
+    in listToMaybe same
+  where
+    matching
+        :: SomeSymbol
+        -> SomeEntity
+        -> Maybe SomeInternalKey
+    matching (SomeSymbol symb) (SomeEntity (entity :: Proxy entity)) =
+        case sameSymbol symb entity of
+            Just refl ->
+                let ik = InternalKey key :: (InternalKey entity)
+                    sik = SomeInternalKey ik
+                in Just sik
+            _         -> Nothing
 
 -- | Extract the type-level information from a 'ForeignKey'.
 --
@@ -551,6 +602,12 @@ class RetconStore s where
                      -> (Diff l, [Diff l])
                      -> IO Int
 
+    -- | Record that the conflicts in a 'Diff' are resolved.
+    storeResolveDiff
+        :: s
+        -> Int
+        -> IO ()
+
     -- | Lookup the list of 'Diff' IDs associated with an 'InternalKey'.
     storeLookupDiffIds
         :: (RetconEntity e)
@@ -558,11 +615,28 @@ class RetconStore s where
         -> InternalKey e
         -> IO [Int]
 
+    -- | Lookup the list of conflicted 'Diff's with related information.
+    --
+    -- This returns serialised JSON values straight from the data store,
+    -- avoiding the text -> JSON -> value -> JSON -> text overhead.
+    storeLookupConflicts
+        :: s
+        -> IO [(ByteString, ByteString, Int, [(Int, ByteString)])]
+
     -- | Lookup the merged and conflicting 'Diff's with a given ID.
     storeLookupDiff
         :: s
         -> Int -- 'Diff' ID.
-        -> IO (Maybe (Diff (), [Diff ()]))
+        -> IO (Maybe ((String, Int), Diff (), [Diff ()]))
+
+    -- | Lookup the specified 'DiffOp's from the data store.
+    --
+    -- Returns triples of the 'Diff' identifier, the 'DiffOp' identifier, and
+    -- the 'DiffOp'.
+    storeLookupDiffConflicts
+        :: s
+        -> [Int]
+        -> IO [(Int, Int, DiffOp ())]
 
     -- | Delete the 'Diff', if any, with a given ID.
     storeDeleteDiff
@@ -618,6 +692,7 @@ class RetconStore s where
         -> WorkItemID
         -> IO ()
 
+-- | The identifier of a work item in the work queue.
 type WorkItemID = Int
 
 -- | An item of work to be stored in the work queue.
@@ -638,6 +713,7 @@ instance FromJSON WorkItem where
         (WorkNotify <$> v .: "notify") <>
         (WorkApplyPatch <$> v .: "did" <*> v .: "diff")
     parseJSON _ = mzero
+
 -- * Tokens
 
 -- $ Tokens wrap storage backend values and expose particular subsets of the
@@ -688,13 +764,21 @@ class StoreToken s => ReadableToken s where
         => InternalKey entity
         -> RetconMonad e s l [Int]
 
+    -- | Lookup the details of a conflicting 'Diff'.
+    lookupConflicts
+        :: RetconMonad e s l [(ByteString, ByteString, Int, [(Int, ByteString)])]
+
     -- | Lookup a 'Diff' by ID.
     lookupDiff
         :: Int
-        -> RetconMonad e s l (Maybe (Diff (), [Diff ()]))
+        -> RetconMonad InitialisedEntity s l (Maybe (SomeInternalKey, Diff (), [Diff ()]))
+
+    lookupDiffConflicts
+        :: [Int]
+        -> RetconMonad e s l [(Int, Int, DiffOp ())]
 
 -- | Storage tokens which support writing operations.
-class StoreToken s => WritableToken s where
+class ReadableToken s => WritableToken s where
     -- | Allocate and return a new 'InternalKey'.
     createInternalKey :: (RetconEntity entity)
                       => RetconMonad e s l (InternalKey entity)
@@ -748,6 +832,11 @@ class StoreToken s => WritableToken s where
                 => InternalKey entity
                 -> RetconMonad e s l Int
 
+    -- | Mark a 'Diff' as resolved.
+    resolveDiff
+        :: Int
+        -> RetconMonad e s l ()
+
     -- | Record a 'Notification' associated with a given 'InternalKey'
     -- and 'Diff' ID.
     recordNotification
@@ -795,9 +884,18 @@ instance ReadableToken ROToken where
         ROToken store <- getRetconStore
         liftIO $ storeLookupInitialDocument store ik
 
+    lookupConflicts = do
+        ROToken store <- getRetconStore
+        liftIO $ storeLookupConflicts store
+
     lookupDiff did = do
         ROToken store <- getRetconStore
-        liftIO $ storeLookupDiff store did
+        result <- liftIO $ storeLookupDiff store did
+        massageLookupDiff did result
+
+    lookupDiffConflicts op_ids = do
+        ROToken store <- getRetconStore
+        liftIO $ storeLookupDiffConflicts store op_ids
 
     lookupDiffIds ik = do
         ROToken store <- getRetconStore
@@ -824,9 +922,18 @@ instance ReadableToken RWToken where
         RWToken store <- getRetconStore
         liftIO $ storeLookupInitialDocument store ik
 
+    lookupConflicts = do
+        RWToken store <- getRetconStore
+        liftIO $ storeLookupConflicts store
+
     lookupDiff did = do
         RWToken store <- getRetconStore
-        liftIO $ storeLookupDiff store did
+        result <- liftIO $ storeLookupDiff store did
+        massageLookupDiff did result
+
+    lookupDiffConflicts op_ids = do
+        RWToken store <- getRetconStore
+        liftIO $ storeLookupDiffConflicts store op_ids
 
     lookupDiffIds ik = do
         RWToken store <- getRetconStore
@@ -873,6 +980,10 @@ instance WritableToken RWToken where
         RWToken store <- getRetconStore
         liftIO $ storeDeleteDiffs store ik
 
+    resolveDiff did = do
+        RWToken store <- getRetconStore
+        liftIO $ storeResolveDiff store did
+
     recordNotification ik did = do
         RWToken store <- getRetconStore
         liftIO $ storeRecordNotification store ik did
@@ -917,3 +1028,28 @@ instance WritableToken RWToken where
             case work of
                 Just item -> return item
                 Nothing   -> threadDelay 50000 >> getIt store
+
+-- | Massage the result of 'lookupDiff' to include a SomeInternalKey rather
+-- than (String, Int).
+--
+-- This is used in the implementations of 'lookupDiff' above.
+massageLookupDiff
+    :: Int -- ^ Diff ID.
+    -> Maybe (InternalKeyIdentifier, Diff (), [Diff ()])
+    -> RetconMonad InitialisedEntity s l
+       (Maybe (SomeInternalKey, Diff (), [Diff ()]))
+massageLookupDiff did result = do
+    entities <- map dropState <$> getRetconEntities
+    case result of
+        Nothing -> return Nothing
+        Just (ik', dif, conf) ->
+            case someInternalKey entities ik' of
+                Just sk -> return $ Just (sk, dif, conf)
+                Nothing -> do
+                    logErrorN . fromString $
+                        "Unable to construct InternalKey for diff: "
+                        <> show did
+                    return Nothing
+  where
+    dropState :: InitialisedEntity -> SomeEntity
+    dropState (InitialisedEntity p _) = SomeEntity p

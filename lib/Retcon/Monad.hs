@@ -37,6 +37,7 @@ module Retcon.Monad (
 
     getRetconState,
     getRetconStore,
+    getRetconEntities,
     getActionState,
     whenVerbose,
 
@@ -119,6 +120,9 @@ getActionState = view localState
 
 getRetconStore :: RetconMonad e s l s
 getRetconStore = view $ retconConfig . cfgDB
+
+getRetconEntities :: RetconMonad e s l [e]
+getRetconEntities = view $ retconConfig . cfgEntities
 
 -- | Do something when the verbose option is set
 whenVerbose :: (MonadReader (RetconMonadState e s x) m) => m () -> m ()

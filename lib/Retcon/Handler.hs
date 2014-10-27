@@ -77,10 +77,15 @@ dispatch (entity_str, source_str, key) = do
                             else return False
                       if res
                         then return True
-                        else do $logDebug . fromString $ "no souch source: " ++ source_str
-                                return False
+                        else do
+                            $logError . fromString $
+                                "Cannot process unknown data source: " <>
+                                show (entity_str, source_str, key)
+                            return False
                    else return False
-            unless res $ $logDebug . fromString $ "no such entity: " ++ entity_str
+            unless res $ $logError . fromString $
+                "Cannot process unknown entity: " <>
+                show (entity_str, source_str, key)
   where
     anyM :: Monad m => [a] -> (a -> m Bool) -> m Bool
     anyM xs f = foldM (\b x -> if b then return True else liftM (&& b) (f x)) False xs
