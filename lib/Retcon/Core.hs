@@ -464,7 +464,7 @@ someInternalKey
     -> Maybe SomeInternalKey
 someInternalKey entities (name, key) =
     let symb = someSymbolVal name
-        same = mapMaybe (matching symb) $ entities
+        same = mapMaybe (matching symb) entities
     in listToMaybe same
   where
     matching
