@@ -328,6 +328,9 @@ test-suite           acceptance-test
                    , hspec
                    , filepath
                    , bytestring
+                   , transformers
+                   , directory
+                   , lens
                    , containers
                    , hspec
                    , mtl
