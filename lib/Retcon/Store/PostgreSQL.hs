@@ -218,7 +218,7 @@ instance RetconStore PGStorage where
             <> "WHERE diff.is_conflict ORDER BY op.diff_id ASC"
 
     storeLookupDiffConflicts (PGStore conn _) ids = do
-        (map parse) <$> (query conn sql $ ids)
+        (map parse) <$> (query conn sql . Only . In $ ids)
       where
         sql = "SELECT diff_id, operation_id, content FROM retcon_diff_conflicts WHERE operation_id IN ?"
         parse :: (Int, Int, Value) -> (Int, Int, DiffOp ())
