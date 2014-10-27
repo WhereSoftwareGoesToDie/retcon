@@ -477,21 +477,28 @@ processWorkItem work = do
             logDebugN . fromString $
                 "Processing a diff: " <> show did
 
-            -- TODO: Check that the diff actually exists!
-            Just (SomeInternalKey ik, _, _) <- lookupDiff did
+            details <- lookupDiff did
+            case details of
+                Nothing -> do
+                    logErrorN . fromString $
+                        "Could not process diff " <> show did <>
+                        " because it is missing!"
+                    return ()
+                Just (SomeInternalKey ik, _, _) -> do
+                    -- TODO: Check that the diff is conflicting.
 
-            -- TODO: Check that the diff is conflicting.
+                    -- Get the documents from the data sources.
+                    docs <- getDocuments ik
 
-            -- Get the documents from the data sources.
-            docs <- getDocuments ik
+                    -- Get or build and initial document.
+                    initial <- fromMaybe (calculateInitialDocument . rights $ docs) <$>
+                               lookupInitialDocument ik
 
-            -- Get or build and initial document.
-            initial <- fromMaybe (calculateInitialDocument . rights $ docs) <$>
-                       lookupInitialDocument ik
-            distributeDiff ik initial (new_diff, [])
-                . map (either (const initial) id)
-                $ docs
+                    -- Apply the diff and save the altered documents.
+                    distributeDiff ik initial (new_diff, [])
+                        . map (either (const initial) id)
+                        $ docs
 
-            -- Mark the diff as being resolved.
-            resolveDiff did
+                    -- Mark the diff as being resolved.
+                    resolveDiff did
     return ()
