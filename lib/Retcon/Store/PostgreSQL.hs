@@ -25,6 +25,7 @@ import Control.Lens
 import Control.Monad
 import Data.Aeson
 import Data.ByteString (ByteString)
+import Data.Function
 import Data.List
 import Data.Map.Strict (Map)
 import Data.Maybe
@@ -166,25 +167,67 @@ instance RetconStore PGStorage where
         diffQ = "INSERT INTO retcon_diff (entity, id, is_conflict, content) VALUES (?, ?, ?, ?) RETURNING diff_id"
         opsQ = "INSERT INTO retcon_diff_conflicts (diff_id, content) VALUES (?, ?)"
 
+    storeResolveDiff (PGStore conn _) did = do
+        void $ execute conn sql (Only did)
+      where
+        sql = "UPDATE retcon_diff SET is_conflict = FALSE WHERE diff_id = ?"
+
     storeLookupDiff (PGStore conn _) diff_id = do
         let query' sql = query conn sql (Only diff_id)
 
         -- Load the merged diff.
-        diff <- query' "SELECT content FROM retcon_diff WHERE diff_id = ?"
-        let diff' = map (fromJSON . fromOnly) diff
+        diff <- query' "SELECT entity, id, content FROM retcon_diff WHERE diff_id = ?"
+        let diff' = map (\(entity, key, c) -> (entity,key,) <$> fromJSON c) diff
 
         -- Load the conflicting fragments.
         conflicts <- query' "SELECT content FROM retcon_diff_conflicts WHERE diff_id = ?"
         let conflicts' = map fromSuccess . filter isSuccess . map (fromJSON . fromOnly) $ conflicts
 
         return $ case diff' of
-            Success d:_ -> Just (d, conflicts')
+            Success (entity,key,d):_ -> Just ((entity,key), d, conflicts')
             _           -> Nothing
       where
         fromSuccess (Success a) = a
         fromSuccess _ = error "fromSuccess: Cannot unwrap not-a-success."
         isSuccess (Success _) = True
         isSuccess _ = False
+
+    -- | Lookup the list of conflicted 'Diff's with related information.
+    storeLookupConflicts (PGStore conn _) = do
+        diffs <- query_ conn diffS
+        ops <- query_ conn opsS
+        return $ map (match ops) diffs
+      where
+        -- Filter the operations which correspond to a diff and add them to the
+        -- tuple.
+        --
+        -- TODO This is O(mn). I am embarrassing.
+        match all_ops (doc, diff, diff_id) =
+            let ops = map (\(_, op_id, op) -> (op_id, op))
+                    . filter (\(op_diff_id,_,_) -> diff_id == op_diff_id)
+                    $ all_ops
+            in (doc, diff, diff_id, ops)
+        diffS = "SELECT CAST(doc.document AS TEXT), CAST(diff.content AS TEXT), diff.id "
+            <> "FROM retcon_diff AS diff "
+            <> "JOIN retcon_initial AS doc "
+            <> "ON (diff.entity = doc.entity AND diff.id = doc.id) "
+            <> "WHERE diff.is_conflict ORDER BY diff.id ASC"
+        opsS = "SELECT op.diff_id, op.operation_id, CAST(op.content AS TEXT) "
+            <> "FROM retcon_diff_conflicts AS op "
+            <> "LEFT JOIN retcon_diff AS diff ON (op.diff_id = diff.diff_id) "
+            <> "WHERE diff.is_conflict ORDER BY op.diff_id ASC"
+
+    storeLookupDiffConflicts (PGStore conn _) ids = do
+        (map parse) <$> (query conn sql . Only . In $ ids)
+      where
+        sql = "SELECT diff_id, operation_id, content FROM retcon_diff_conflicts WHERE operation_id IN ?"
+        parse :: (Int, Int, Value) -> (Int, Int, DiffOp ())
+        parse (did, opid, op_json) = do
+            case fromJSON op_json of
+                Success dop -> (did, opid, dop)
+                Error e     -> error $
+                   "Could not load diff operation: " <> show (did,opid) <> " " <>
+                   e
 
     storeLookupDiffIds (PGStore conn _) ik = do
         r <- query conn "SELECT diff_id FROM retcon_diff WHERE entity = ? AND id = ?" $ internalKeyValue ik
