@@ -167,19 +167,24 @@ instance RetconStore PGStorage where
         diffQ = "INSERT INTO retcon_diff (entity, id, is_conflict, content) VALUES (?, ?, ?, ?) RETURNING diff_id"
         opsQ = "INSERT INTO retcon_diff_conflicts (diff_id, content) VALUES (?, ?)"
 
+    storeResolveDiff (PGStore conn _) did = do
+        void $ execute conn sql (Only did)
+      where
+        sql = "UPDATE retcon_diff SET is_conflict = FALSE WHERE diff_id = ?"
+
     storeLookupDiff (PGStore conn _) diff_id = do
         let query' sql = query conn sql (Only diff_id)
 
         -- Load the merged diff.
-        diff <- query' "SELECT content FROM retcon_diff WHERE diff_id = ?"
-        let diff' = map (fromJSON . fromOnly) diff
+        diff <- query' "SELECT entity, id, content FROM retcon_diff WHERE diff_id = ?"
+        let diff' = map (\(entity, key, c) -> (entity,key,) <$> fromJSON c) diff
 
         -- Load the conflicting fragments.
         conflicts <- query' "SELECT content FROM retcon_diff_conflicts WHERE diff_id = ?"
         let conflicts' = map fromSuccess . filter isSuccess . map (fromJSON . fromOnly) $ conflicts
 
         return $ case diff' of
-            Success d:_ -> Just (d, conflicts')
+            Success (entity,key,d):_ -> Just ((entity,key), d, conflicts')
             _           -> Nothing
       where
         fromSuccess (Success a) = a
@@ -211,6 +216,18 @@ instance RetconStore PGStorage where
             <> "FROM retcon_diff_conflicts AS op "
             <> "LEFT JOIN retcon_diff AS diff ON (op.diff_id = diff.diff_id) "
             <> "WHERE diff.is_conflict ORDER BY op.diff_id ASC"
+
+    storeLookupDiffConflicts (PGStore conn _) ids = do
+        (map parse) <$> (query conn sql $ ids)
+      where
+        sql = "SELECT diff_id, operation_id, content FROM retcon_diff_conflicts WHERE operation_id IN ?"
+        parse :: (Int, Int, Value) -> (Int, Int, DiffOp ())
+        parse (did, opid, op_json) = do
+            case fromJSON op_json of
+                Success dop -> (did, opid, dop)
+                Error e     -> error $
+                   "Could not load diff operation: " <> show (did,opid) <> " " <>
+                   e
 
     storeLookupDiffIds (PGStore conn _) ik = do
         r <- query conn "SELECT diff_id FROM retcon_diff WHERE entity = ? AND id = ?" $ internalKeyValue ik

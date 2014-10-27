@@ -39,7 +39,9 @@ import Data.Binary
 import qualified Data.ByteString as BS
 import Data.ByteString.Lazy (fromStrict, toStrict)
 import qualified Data.ByteString.Lazy as LBS
-import Data.List.NonEmpty hiding (map)
+import Data.Either
+import Data.List.NonEmpty hiding (filter, map)
+import Data.Maybe
 import Data.Monoid
 import Data.String
 import Data.Typeable
@@ -335,8 +337,8 @@ protocol = loop
         :: RetconAPIError
         -> RetconServer z (Bool, BS.ByteString)
     reportAPIError e = do
-        -- TODO Log this more properly.
-        liftIO . putStrLn . fromString $ "Could not process message: " <> show e
+        logErrorN . fromString $
+            "Could not process message: " <> show e
         return (False, toStrict . encode . fromEnum $ e)
 
 -- | Run a RetconMonad action in the RetconServer monad.
@@ -405,8 +407,11 @@ composeNewDiff
     :: ReadableToken s
     => [ConflictedDiffOpID]
     -> RetconMonad e s l (Diff ())
-composeNewDiff op_ids =
-    error "Retcon.Network.Server.composeNewDiff is not implemented yet."
+composeNewDiff op_ids = do
+    ops <- lookupDiffConflicts . map unConflictedDiffOpID $ op_ids
+    return $ Diff () $ map thrd ops
+  where
+    thrd (_, _, c) = c
 
 -- * API server
 
@@ -471,9 +476,22 @@ processWorkItem work = do
         WorkApplyPatch did new_diff -> do
             logDebugN . fromString $
                 "Processing a diff: " <> show did
-            -- TODO Something like this:
-            --
-            -- ik <- getIKForDiff did
-            -- distributeDiff ik new_diff
-            error "Retcon.Network.Server.processWorkItem is not implemented."
+
+            -- TODO: Check that the diff actually exists!
+            Just (SomeInternalKey ik, _, _) <- lookupDiff did
+
+            -- TODO: Check that the diff is conflicting.
+
+            -- Get the documents from the data sources.
+            docs <- getDocuments ik
+
+            -- Get or build and initial document.
+            initial <- fromMaybe (calculateInitialDocument . rights $ docs) <$>
+                       lookupInitialDocument ik
+            distributeDiff ik initial (new_diff, [])
+                . map (either (const initial) id)
+                $ docs
+
+            -- Mark the diff as being resolved.
+            resolveDiff did
     return ()

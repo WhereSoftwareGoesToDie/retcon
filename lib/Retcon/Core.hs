@@ -97,6 +97,7 @@ import Control.Concurrent
 import Control.Exception
 import Control.Exception.Enclosed
 import qualified Control.Exception.Lifted as LE
+import Control.Lens (view)
 import Control.Lens.Operators
 import Control.Monad.Base
 import Control.Monad.Except
@@ -421,7 +422,7 @@ instance RetconEntity entity => Show (InternalKey entity) where
     show = show . internalKeyValue
 
 -- | An existential wrapper around an 'InternalKey'.
-data SomeInternalKey = forall entity.
+data SomeInternalKey = forall entity. RetconEntity entity =>
     SomeInternalKey (InternalKey entity)
 
 -- | The unique identifier used by the 'source' data source to refer to an
@@ -601,6 +602,12 @@ class RetconStore s where
                      -> (Diff l, [Diff l])
                      -> IO Int
 
+    -- | Record that the conflicts in a 'Diff' are resolved.
+    storeResolveDiff
+        :: s
+        -> Int
+        -> IO ()
+
     -- | Lookup the list of 'Diff' IDs associated with an 'InternalKey'.
     storeLookupDiffIds
         :: (RetconEntity e)
@@ -609,6 +616,9 @@ class RetconStore s where
         -> IO [Int]
 
     -- | Lookup the list of conflicted 'Diff's with related information.
+    --
+    -- This returns serialised JSON values straight from the data store,
+    -- avoiding the text -> JSON -> value -> JSON -> text overhead.
     storeLookupConflicts
         :: s
         -> IO [(ByteString, ByteString, Int, [(Int, ByteString)])]
@@ -617,7 +627,16 @@ class RetconStore s where
     storeLookupDiff
         :: s
         -> Int -- 'Diff' ID.
-        -> IO (Maybe (Diff (), [Diff ()]))
+        -> IO (Maybe ((String, Int), Diff (), [Diff ()]))
+
+    -- | Lookup the specified 'DiffOp's from the data store.
+    --
+    -- Returns triples of the 'Diff' identifier, the 'DiffOp' identifier, and
+    -- the 'DiffOp'.
+    storeLookupDiffConflicts
+        :: s
+        -> [Int]
+        -> IO [(Int, Int, DiffOp ())]
 
     -- | Delete the 'Diff', if any, with a given ID.
     storeDeleteDiff
@@ -673,6 +692,7 @@ class RetconStore s where
         -> WorkItemID
         -> IO ()
 
+-- | The identifier of a work item in the work queue.
 type WorkItemID = Int
 
 -- | An item of work to be stored in the work queue.
@@ -751,7 +771,11 @@ class StoreToken s => ReadableToken s where
     -- | Lookup a 'Diff' by ID.
     lookupDiff
         :: Int
-        -> RetconMonad e s l (Maybe (Diff (), [Diff ()]))
+        -> RetconMonad InitialisedEntity s l (Maybe (SomeInternalKey, Diff (), [Diff ()]))
+
+    lookupDiffConflicts
+        :: [Int]
+        -> RetconMonad e s l [(Int, Int, DiffOp ())]
 
 -- | Storage tokens which support writing operations.
 class ReadableToken s => WritableToken s where
@@ -808,6 +832,11 @@ class ReadableToken s => WritableToken s where
                 => InternalKey entity
                 -> RetconMonad e s l Int
 
+    -- | Mark a 'Diff' as resolved.
+    resolveDiff
+        :: Int
+        -> RetconMonad e s l ()
+
     -- | Record a 'Notification' associated with a given 'InternalKey'
     -- and 'Diff' ID.
     recordNotification
@@ -861,7 +890,12 @@ instance ReadableToken ROToken where
 
     lookupDiff did = do
         ROToken store <- getRetconStore
-        liftIO $ storeLookupDiff store did
+        result <- liftIO $ storeLookupDiff store did
+        massageLookupDiff did result
+
+    lookupDiffConflicts op_ids = do
+        ROToken store <- getRetconStore
+        liftIO $ storeLookupDiffConflicts store op_ids
 
     lookupDiffIds ik = do
         ROToken store <- getRetconStore
@@ -894,7 +928,12 @@ instance ReadableToken RWToken where
 
     lookupDiff did = do
         RWToken store <- getRetconStore
-        liftIO $ storeLookupDiff store did
+        result <- liftIO $ storeLookupDiff store did
+        massageLookupDiff did result
+
+    lookupDiffConflicts op_ids = do
+        RWToken store <- getRetconStore
+        liftIO $ storeLookupDiffConflicts store op_ids
 
     lookupDiffIds ik = do
         RWToken store <- getRetconStore
@@ -941,6 +980,10 @@ instance WritableToken RWToken where
         RWToken store <- getRetconStore
         liftIO $ storeDeleteDiffs store ik
 
+    resolveDiff did = do
+        RWToken store <- getRetconStore
+        liftIO $ storeResolveDiff store did
+
     recordNotification ik did = do
         RWToken store <- getRetconStore
         liftIO $ storeRecordNotification store ik did
@@ -985,3 +1028,28 @@ instance WritableToken RWToken where
             case work of
                 Just item -> return item
                 Nothing   -> threadDelay 50000 >> getIt store
+
+-- | Massage the result of 'lookupDiff' to include a SomeInternalKey rather
+-- than (String, Int).
+--
+-- This is used in the implementations of 'lookupDiff' above.
+massageLookupDiff
+    :: Int -- ^ Diff ID.
+    -> Maybe (InternalKeyIdentifier, Diff (), [Diff ()])
+    -> RetconMonad InitialisedEntity s l
+       (Maybe (SomeInternalKey, Diff (), [Diff ()]))
+massageLookupDiff did result = do
+    entities <- map dropState <$> getRetconEntities
+    case result of
+        Nothing -> return Nothing
+        Just (ik', dif, conf) ->
+            case someInternalKey entities ik' of
+                Just sk -> return $ Just (sk, dif, conf)
+                Nothing -> do
+                    logErrorN . fromString $
+                        "Unable to construct InternalKey for diff: "
+                        <> show did
+                    return Nothing
+  where
+    dropState :: InitialisedEntity -> SomeEntity
+    dropState (InitialisedEntity p _) = SomeEntity p
