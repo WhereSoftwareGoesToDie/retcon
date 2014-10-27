@@ -18,7 +18,6 @@
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeFamilies               #-}
 
-
 -- | The "core" of recton, all concrete types and classes that pull together
 -- modules and helpers to define data sources and entities.
 module Retcon.Core
@@ -63,6 +62,7 @@ module Retcon.Core
 
     -- * Keys
     InternalKey(..),
+    SomeInternalKey(..),
     ForeignKey(..),
 
     EntityName,
@@ -74,6 +74,7 @@ module Retcon.Core
     ForeignKeyIdentifier,
 
     internalKeyValue,
+    someInternalKey,
     encodeForeignKey,
     foreignKeyValue,
 
@@ -106,6 +107,7 @@ import Data.Biapplicative
 import Data.ByteString (ByteString)
 import Data.Map (Map)
 import qualified Data.Map as M
+import Data.Maybe
 import Data.Monoid
 import Data.Proxy
 import Data.String
@@ -418,6 +420,10 @@ newtype RetconEntity entity => InternalKey entity =
 instance RetconEntity entity => Show (InternalKey entity) where
     show = show . internalKeyValue
 
+-- | An existential wrapper around an 'InternalKey'.
+data SomeInternalKey = forall entity.
+    SomeInternalKey (InternalKey entity)
+
 -- | The unique identifier used by the 'source' data source to refer to an
 -- 'entity' it stores.
 newtype RetconDataSource entity source => ForeignKey entity source =
@@ -448,6 +454,29 @@ internalKeyValue :: forall entity. (RetconEntity entity)
 internalKeyValue (InternalKey key) =
     let entity = symbolVal (Proxy :: Proxy entity)
     in (entity, key)
+
+-- | Magic up a 'SomeInternalKey' value, if possible, given the name and ID
+-- values.
+someInternalKey
+    :: [SomeEntity]
+    -> InternalKeyIdentifier
+    -> Maybe SomeInternalKey
+someInternalKey entities (name, key) =
+    let symb = someSymbolVal name
+        same = mapMaybe (matching symb) $ entities
+    in listToMaybe same
+  where
+    matching
+        :: SomeSymbol
+        -> SomeEntity
+        -> Maybe SomeInternalKey
+    matching (SomeSymbol symb) (SomeEntity (entity :: Proxy entity)) =
+        case sameSymbol symb entity of
+            Just refl ->
+                let ik = InternalKey key :: (InternalKey entity)
+                    sik = SomeInternalKey ik
+                in Just sik
+            _         -> Nothing
 
 -- | Extract the type-level information from a 'ForeignKey'.
 --
@@ -664,6 +693,7 @@ instance FromJSON WorkItem where
         (WorkNotify <$> v .: "notify") <>
         (WorkApplyPatch <$> v .: "did" <*> v .: "diff")
     parseJSON _ = mzero
+
 -- * Tokens
 
 -- $ Tokens wrap storage backend values and expose particular subsets of the
