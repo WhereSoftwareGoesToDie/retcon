@@ -22,6 +22,7 @@ import Control.Applicative
 import Control.Concurrent
 import Control.Concurrent.Async
 import Control.Exception
+import Control.Monad.Trans.Maybe
 import Control.Lens
 import Data.ByteString ()
 import Data.Proxy
@@ -76,13 +77,18 @@ instance RetconDataSource "acceptance-user" "local" where
     deleteDocument key =
         getActionState >>= \(LocalUser fp) -> deleteJSONDir fp key
 
-suite :: String -> Spec
-suite conn =
+suite
+    :: String -- ^ ZMQ connection string
+    -> FilePath -- ^ File path for JSON
+    -> Spec
+suite conn fp =
     describe "Retcon" $ do
         -- | A modification is made upstream, Retcon is notified and it makes
         -- the appropriate change locally
-        it "upstream change propogates locally" . withTestState conn $ \fk -> do
-            pending
+        it "upstream change propogates locally" . withTestState conn $ \lk uk -> do
+            -- Do the modification upstream
+            setJSONDir fp (hubert & _Wrapped . at (["address"]) ?~ "123 Unicorn Avenue") Nothing
+            print (lk,uk)
 
         -- | A record is removed upstream, retcon is notified, identifies this
         -- as a a delete and removes the appropriate record locally.
@@ -97,21 +103,22 @@ suite conn =
         -- upstream.
         it "comparing and resolving diff works" pending
 
+
+hubert :: Document
+hubert =
+    [ (["name"], "Hubert")
+    , (["address"], "123 Pony Avenue")
+    ] ^. to fromList . from _Wrapped
+
 withTestState
     :: String
-    -> (ForeignKey "acceptance-user" "upstream" -> IO a)
+    -> (ForeignKey "acceptance-user" "local" -> ForeignKey "acceptance-user" "upstream" -> IO a)
     -> IO a
-withTestState conn f = bracket setup teardown (f . fst)
+withTestState conn f = bracket setup teardown (uncurry f . fst)
   where
-    hubert :: Document
-    hubert =
-        [ (["name"], "Hubert")
-        , (["address"], "123 Pony Avenue")
-        ] ^. to fromList . from _Wrapped
-
     setup = do
         let db = DBName "retcon_test"
-        let entities = []
+        let entities = [SomeEntity (Proxy :: Proxy "acceptance-user")]
 
         -- Prepare the retcon and server configurations.
         let server_cfg = ServerConfig conn
@@ -134,16 +141,25 @@ withTestState conn f = bracket setup teardown (f . fst)
 
         -- TODO: Don't wait here, check retcon somehow.
         threadDelay 100000
-        return (local_fk, server)
 
+        result <- runRetconMonadOnce retcon_cfg () . runMaybeT $
+            MaybeT (lookupInternalKey local_fk) >>= MaybeT . lookupForeignKey
+
+        case result of
+            Right (Just upstream_fk) -> 
+                return ((local_fk, upstream_fk), server)
+            Left e ->   
+                throwIO e
+            _ ->
+                error "Expected to get FK"
 
     teardown (_, server) = do
         cancel server
         -- Clear all the JSON blobs out
-        (</> "acceptance-user") <$> testJSONFilePath >>= removeFile
+        (</> "acceptance-user") <$> testJSONFilePath >>= removeDirectoryRecursive
 
 main :: IO ()
 main = do
     let conn = "tcp://127.0.0.1:1234"
     -- Run the test suite.
-    hspec (suite conn)
+    hspec (testJSONFilePath >>= suite conn)
