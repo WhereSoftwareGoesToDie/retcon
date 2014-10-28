@@ -474,7 +474,63 @@ internalKeyValue (InternalKey key) =
     let entity = symbolVal (Proxy :: Proxy entity)
     in (entity, key)
 
--- | Magic up a 'SomeInternalKey' value, if possible, given the name and ID
+-- | Extract the type-level information from a 'ForeignKey'.
+--
+-- The triple contains the entity, data source, and key in that order.
+foreignKeyValue :: forall entity source. (RetconDataSource entity source)
+                => ForeignKey entity source
+                -> ForeignKeyIdentifier
+foreignKeyValue (ForeignKey key) =
+    let entity = symbolVal (Proxy :: Proxy entity)
+        source = symbolVal (Proxy :: Proxy source)
+    in (entity, source, key)
+
+-- | Encode a 'ForeignKey' as an opaque 'String'.
+--
+-- Under the hood this is represented as a showed 'ForeignKeyIdentifier'
+encodeForeignKey :: forall entity source. (RetconDataSource entity source)
+                 => ForeignKey entity source
+                 -> String
+encodeForeignKey = show . foreignKeyValue
+
+-- | Construct a 'SomeForeignKey' value, if possible, with the supplied entity,
+-- source, and key strings.
+someForeignKey
+    :: [SomeEntity]
+    -> ForeignKeyIdentifier
+    -> Maybe SomeForeignKey
+someForeignKey entities (entity_name, source_name, key) =
+    let entity_sym = someSymbolVal entity_name
+        source_sym = someSymbolVal source_name
+        same = concatMap (expandEntity entity_sym source_sym) entities
+    in listToMaybe $ same
+  where
+    expandEntity
+        :: SomeSymbol
+        -> SomeSymbol
+        -> SomeEntity
+        -> [SomeForeignKey]
+    expandEntity entity_sym source_sym (SomeEntity entity) =
+        let sources = entitySources entity
+            keys = mapMaybe (matching entity_sym source_sym) sources
+        in keys
+    matching
+        :: forall entity.
+           SomeSymbol
+        -> SomeSymbol
+        -> SomeDataSource entity
+        -> Maybe SomeForeignKey
+    matching (SomeSymbol entity_sym) (SomeSymbol source_sym) (SomeDataSource (source :: Proxy source)) =
+        case sameSymbol entity_sym (Proxy :: Proxy entity) of
+            Nothing -> Nothing
+            Just _  -> case sameSymbol source_sym source of
+                Nothing -> Nothing
+                Just _  -> let
+                    fk = ForeignKey key :: ForeignKey entity source
+                    sfk = SomeForeignKey fk
+                    in Just sfk
+
+-- | Contstruct a 'SomeInternalKey' value, if possible, given the name and ID
 -- values.
 someInternalKey
     :: [SomeEntity]
@@ -496,32 +552,6 @@ someInternalKey entities (name, key) =
                     sik = SomeInternalKey ik
                 in Just sik
             _         -> Nothing
-
--- | Extract the type-level information from a 'ForeignKey'.
---
--- The triple contains the entity, data source, and key in that order.
-foreignKeyValue :: forall entity source. (RetconDataSource entity source)
-                => ForeignKey entity source
-                -> ForeignKeyIdentifier
-foreignKeyValue (ForeignKey key) =
-    let entity = symbolVal (Proxy :: Proxy entity)
-        source = symbolVal (Proxy :: Proxy source)
-    in (entity, source, key)
-
--- | Encode a 'ForeignKey' as an opaque 'String'.
---
--- Under the hood this is represented as a showed 'ForeignKeyIdentifier'
-encodeForeignKey :: forall entity source. (RetconDataSource entity source)
-                 => ForeignKey entity source
-                 -> String
-encodeForeignKey = show . foreignKeyValue
-
-someForeignKey
-    :: [SomeEntity]
-    -> ForeignKeyIdentifier
-    -> Maybe SomeForeignKey
-someForeignKey entities (en, sn, key) =
-    Nothing
 
 -- | A storage backend for retcon operational data
 --
