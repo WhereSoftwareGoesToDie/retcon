@@ -86,7 +86,7 @@ suite conn fp =
     describe "Retcon" $ do
         -- | A modification is made upstream, Retcon is notified and it makes
         -- the appropriate change locally
-        it "upstream change propogates locally" . withTestState conn $ \lk uk -> do
+{-        it "upstream change propogates locally" . withTestState conn $ \lk uk -> do
             let document = (hubert & _Wrapped . at (["address"]) ?~ "123 Unicorn Avenue")
 
             -- Do the modification upstream
@@ -120,15 +120,44 @@ suite conn fp =
 
             -- Read the documents out from Retcon and compare to the initial document
             getJSONDir fp lk `shouldThrow` anyIOException
-
+-}
         -- | A record is modified both upstream and downstream in an
         -- incompatible way. Retcon is notified of the upstream and downstream
         -- change (two notifications in total) and correctly indicates a conflict
         -- once.
         --
-        -- The local change is chosen and this preference is propogated
+        -- One change is chosen and this preference is propogated
         -- upstream.
-        it "comparing and resolving diff works" pending
+        it "comparing and resolving diff works" . withTestState conn $ \lk uk -> do
+            let document1 = (hubert & _Wrapped . at (["address"]) ?~ "123 Unicorn Avenue")
+                document2 = (hubert & _Wrapped . at (["address"]) ?~ "987 Pink Elephant Street")
+
+            -- Do the modification upstream
+            setJSONDir fp document1 (Just uk)
+
+            -- Do the modification locally
+            setJSONDir fp document2 (Just lk)
+
+            -- Send notification to retcon
+            (runRetconZMQ conn $ enqueueChangeNotification $
+                ChangeNotification "acceptance-user" "upstream" (unForeignKey uk))
+            (runRetconZMQ conn $ enqueueChangeNotification $
+                ChangeNotification "acceptance-user" "upstream" (unForeignKey lk))
+
+            -- TODO: Don't wait here, check retcon somehow.
+            threadDelay 100000
+
+            -- Get a list of conflicts. There should be exatly one.
+            conflicts <- runRetconZMQ conn getConflicted >>= either throwIO return
+            length conflicts `shouldBe` 1
+            
+            -- Resolve conflict by chosing the local change
+            let [(_,_,did,(change_id,change):_)] = conflicts
+            (runRetconZMQ conn $ enqueueResolveDiff did [change_id])
+                >>= either throwIO return
+            print change
+
+            
 
 
 hubert :: Document
