@@ -36,6 +36,7 @@ import Retcon.Core
 import Retcon.DataSource.JsonDirectory
 import Retcon.DataSource.PostgreSQL
 import Retcon.Document
+import Retcon.Handler
 import Retcon.Monad
 import Retcon.Network.Client
 import Retcon.Network.Server
@@ -86,9 +87,23 @@ suite conn fp =
         -- | A modification is made upstream, Retcon is notified and it makes
         -- the appropriate change locally
         it "upstream change propogates locally" . withTestState conn $ \lk uk -> do
+            let document = (hubert & _Wrapped . at (["address"]) ?~ "123 Unicorn Avenue")
+
             -- Do the modification upstream
-            setJSONDir fp (hubert & _Wrapped . at (["address"]) ?~ "123 Unicorn Avenue") Nothing
-            print (lk,uk)
+            setJSONDir fp document (Just uk)
+
+            -- Send notification to retcon
+            (runRetconZMQ conn $ enqueueChangeNotification $
+                ChangeNotification "acceptance-user" "upstream" (unForeignKey uk))
+                >>= either throwIO return
+
+            -- TODO: Don't wait here, check retcon somehow.
+            threadDelay 100000
+
+            -- Read the documents out from Retcon and compare to the initial document
+            document' <- getJSONDir fp lk
+            document' `shouldBe` document
+
 
         -- | A record is removed upstream, retcon is notified, identifies this
         -- as a a delete and removes the appropriate record locally.
@@ -148,7 +163,7 @@ withTestState conn f = bracket setup teardown (uncurry f . fst)
         case result of
             Right (Just upstream_fk) -> 
                 return ((local_fk, upstream_fk), server)
-            Left e ->   
+            Left e ->
                 throwIO e
             _ ->
                 error "Expected to get FK"
@@ -162,4 +177,5 @@ main :: IO ()
 main = do
     let conn = "tcp://127.0.0.1:1234"
     -- Run the test suite.
-    hspec (testJSONFilePath >>= suite conn)
+    fp <- testJSONFilePath
+    hspec (suite conn fp)
