@@ -42,6 +42,7 @@ module Retcon.Monad (
 
     -- ** Evaluators
     runRetconMonad,
+    runLogging,
 ) where
 
 import Control.Applicative
@@ -100,14 +101,21 @@ runRetconMonad :: RetconMonadState entity store local_state
                -> RetconMonad entity store local_state a
                -> IO (Either RetconError a)
 runRetconMonad state =
-    runLogging .
+    runLogging (state ^. retconConfig . cfgLogging) .
     runExceptT .
     flip runReaderT state . unRetconMonad
-  where
-    runLogging = case state ^. retconConfig . cfgLogging of
-      LogStderr -> runStderrLoggingT
-      LogStdout -> runStdoutLoggingT
-      LogNone   -> (`runLoggingT` \_ _ _ _ -> return ())
+
+-- | Execute a LoggingT monad transformer, using the specified logging
+-- function.
+runLogging
+    :: MonadIO m
+    => Logging
+    -> LoggingT m a
+    -> m a
+runLogging logging = case logging of
+  LogStderr -> runStderrLoggingT
+  LogStdout -> runStdoutLoggingT
+  LogNone   -> (`runLoggingT` \_ _ _ _ -> return ())
 
 -- | Get the retcon entities component of the environment.
 --
