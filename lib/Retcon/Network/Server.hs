@@ -28,7 +28,6 @@ module Retcon.Network.Server where
 import Control.Applicative
 import Control.Concurrent.Async
 import Control.Lens
-import Control.Lens.TH
 import Control.Monad
 import Control.Monad.Catch
 import Control.Monad.Except
@@ -441,28 +440,16 @@ apiServer retcon_cfg server_cfg = runLogging (retcon_cfg ^. cfgLogging) $ do
     logInfoN . fromString $
         "Running server on " <> server_cfg ^. cfgConnectionString
 
-    -- Start the API server thread.
-    server_state <- liftIO $ initialiseRetconState retcon_cfg ()
-    server_thread <- liftIO . async $ serverThread server_state
+    -- Start the threads
+    liftIO $ race_
+        (bracket newState finaliseRetconState serverThread)
+        (bracket newState finaliseRetconState retconThread)
+
     logDebugN . fromString $
-        "Started API server thread: " <> show (asyncThreadId server_thread)
-
-    -- Start the processing thread.
-    retcon_state <- liftIO $ initialiseRetconState retcon_cfg ()
-    retcon_thread <- liftIO . async $ retconThread retcon_state
-    logDebugN . fromString $
-        "Started processing thread: " <> show (asyncThreadId retcon_thread)
-
-    -- Wait for completion.
-    let procs = [server_thread, retcon_thread]
-    (done, _) <- liftIO . waitAnyCancel $ procs
-
-    -- Clean up.
-    liftIO . void $ both finaliseRetconState (server_state, retcon_state)
-
-    logInfoN . fromString $
-        "Shutdown due to termination of thread: " <> show (asyncThreadId done)
+        "Started API server and processing thread."
   where
+    newState =
+        initialiseRetconState retcon_cfg ()
     serverThread state =
         runRetconServer server_cfg state protocol
     retconThread state =
