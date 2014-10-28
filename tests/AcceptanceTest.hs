@@ -104,10 +104,22 @@ suite conn fp =
             document' <- getJSONDir fp lk
             document' `shouldBe` document
 
-
         -- | A record is removed upstream, retcon is notified, identifies this
         -- as a a delete and removes the appropriate record locally.
-        it "upstream delete propogates locally" pending
+        it "upstream delete propogates locally" . withTestState conn $ \lk uk -> do
+            -- Delete the document upstream
+            deleteJSONDir fp uk
+
+            -- Send notification to retcon
+            (runRetconZMQ conn $ enqueueChangeNotification $
+                ChangeNotification "acceptance-user" "upstream" (unForeignKey uk))
+                >>= either throwIO return
+
+            -- TODO: Don't wait here, check retcon somehow.
+            threadDelay 100000
+
+            -- Read the documents out from Retcon and compare to the initial document
+            getJSONDir fp lk `shouldThrow` anyIOException
 
         -- | A record is modified both upstream and downstream in an
         -- incompatible way. Retcon is notified of the upstream and downstream
