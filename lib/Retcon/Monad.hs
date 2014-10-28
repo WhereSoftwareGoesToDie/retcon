@@ -37,12 +37,12 @@ module Retcon.Monad (
 
     getRetconState,
     getRetconStore,
-    getRetconEntities,
     getActionState,
     whenVerbose,
 
     -- ** Evaluators
     runRetconMonad,
+    runLogging,
 ) where
 
 import Control.Applicative
@@ -101,28 +101,41 @@ runRetconMonad :: RetconMonadState entity store local_state
                -> RetconMonad entity store local_state a
                -> IO (Either RetconError a)
 runRetconMonad state =
-    runLogging .
+    runLogging (state ^. retconConfig . cfgLogging) .
     runExceptT .
     flip runReaderT state . unRetconMonad
-  where
-    runLogging = case state ^. retconConfig . cfgLogging of
-      LogStderr -> runStderrLoggingT
-      LogStdout -> runStdoutLoggingT
-      LogNone   -> (`runLoggingT` \_ _ _ _ -> return ())
 
--- | Get the retcon component of the environment.
+-- | Execute a LoggingT monad transformer, using the specified logging
+-- function.
+runLogging
+    :: MonadIO m
+    => Logging
+    -> LoggingT m a
+    -> m a
+runLogging logging = case logging of
+  LogStderr -> runStderrLoggingT
+  LogStdout -> runStdoutLoggingT
+  LogNone   -> (`runLoggingT` \_ _ _ _ -> return ())
+
+-- | Get the retcon entities component of the environment.
+--
+-- This will be a list of either 'SomeEntity' or 'IntialisedEntity' depending
+-- on the context.
 getRetconState :: RetconMonad e s l [e]
-getRetconState = view (retconConfig . cfgEntities)
+getRetconState = view $ retconConfig . cfgEntities
 
 -- | Get the action-specific component of the environment.
+--
+-- This will be '()' or some arbitrary datasource-specific type depending on
+-- the context.
 getActionState :: RetconMonad e s l l
 getActionState = view localState
 
+-- | Get the token to access the retcon data store.
+--
+-- This will be a 'RWToken' or 'ROToken' depending on the context.
 getRetconStore :: RetconMonad e s l s
 getRetconStore = view $ retconConfig . cfgDB
-
-getRetconEntities :: RetconMonad e s l [e]
-getRetconEntities = view $ retconConfig . cfgEntities
 
 -- | Do something when the verbose option is set
 whenVerbose :: (MonadReader (RetconMonadState e s x) m) => m () -> m ()

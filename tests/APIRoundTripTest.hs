@@ -33,10 +33,10 @@ suite conn = describe "Retcon API" $ do
         result <- runRetconZMQ conn $ enqueueResolveDiff diff_id ops
         result `shouldBe` Right ()
 
-    it "replies to notify requests" $ do
+    it "replies to bad notify requests with error" $ do
         let note = ChangeNotification "TestEntity" "TestSource" "item1"
         result <- runRetconZMQ conn $ enqueueChangeNotification note
-        result `shouldBe` Right ()
+        result `shouldBe` Left UnknownKeyError
 
     it "replies to invalid requests" $
         -- Right result <- runRetconZMQ conn $ performRequest InvalidHeader

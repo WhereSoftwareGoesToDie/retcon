@@ -60,10 +60,13 @@ module Retcon.Core
     InitialisedEntity(..),
     InitialisedSource(..),
 
+    dropEntityState,
+
     -- * Keys
     InternalKey(..),
     SomeInternalKey(..),
     ForeignKey(..),
+    SomeForeignKey(..),
 
     EntityName,
     SourceName,
@@ -77,6 +80,7 @@ module Retcon.Core
     someInternalKey,
     encodeForeignKey,
     foreignKeyValue,
+    someForeignKey,
 
     WorkItem(..),
 
@@ -401,6 +405,16 @@ data InitialisedEntity = forall e. (RetconEntity e) =>
                       , entityState :: [InitialisedSource e]
                       }
 
+-- | Convert an 'InitialisedEntity' value into a 'SomeEntity' value by
+-- discarding the state.
+--
+-- This is a "cast" and not a finaliser; it should be used only to avoid
+-- writing two versions of a function like `massageLookupDiff` below.
+dropEntityState
+    :: InitialisedEntity
+    -> SomeEntity
+dropEntityState (InitialisedEntity p _) = SomeEntity p
+
 -- | Wrap an arbitrary 'RetconDataSource' for some entity 'e', together with
 -- it's initialised state.
 data InitialisedSource e = forall s. RetconDataSource e s =>
@@ -434,6 +448,10 @@ newtype RetconDataSource entity source => ForeignKey entity source =
 instance (RetconDataSource entity source) => Show (ForeignKey entity source) where
     show = show . foreignKeyValue
 
+-- | An existential wrapper around a 'ForeignKey'.
+data SomeForeignKey = forall entity source. RetconDataSource entity source =>
+    SomeForeignKey (ForeignKey entity source)
+
 -- Aliases for clarity, all of these are value level fragments identifying
 -- Internal and Foreign Keys.
 type EntityName = String
@@ -456,7 +474,63 @@ internalKeyValue (InternalKey key) =
     let entity = symbolVal (Proxy :: Proxy entity)
     in (entity, key)
 
--- | Magic up a 'SomeInternalKey' value, if possible, given the name and ID
+-- | Extract the type-level information from a 'ForeignKey'.
+--
+-- The triple contains the entity, data source, and key in that order.
+foreignKeyValue :: forall entity source. (RetconDataSource entity source)
+                => ForeignKey entity source
+                -> ForeignKeyIdentifier
+foreignKeyValue (ForeignKey key) =
+    let entity = symbolVal (Proxy :: Proxy entity)
+        source = symbolVal (Proxy :: Proxy source)
+    in (entity, source, key)
+
+-- | Encode a 'ForeignKey' as an opaque 'String'.
+--
+-- Under the hood this is represented as a showed 'ForeignKeyIdentifier'
+encodeForeignKey :: forall entity source. (RetconDataSource entity source)
+                 => ForeignKey entity source
+                 -> String
+encodeForeignKey = show . foreignKeyValue
+
+-- | Construct a 'SomeForeignKey' value, if possible, with the supplied entity,
+-- source, and key strings.
+someForeignKey
+    :: [SomeEntity]
+    -> ForeignKeyIdentifier
+    -> Maybe SomeForeignKey
+someForeignKey entities (entity_name, source_name, key) =
+    let entity_sym = someSymbolVal entity_name
+        source_sym = someSymbolVal source_name
+        same = concatMap (expandEntity entity_sym source_sym) entities
+    in listToMaybe $ same
+  where
+    expandEntity
+        :: SomeSymbol
+        -> SomeSymbol
+        -> SomeEntity
+        -> [SomeForeignKey]
+    expandEntity entity_sym source_sym (SomeEntity entity) =
+        let sources = entitySources entity
+            keys = mapMaybe (matching entity_sym source_sym) sources
+        in keys
+    matching
+        :: forall entity.
+           SomeSymbol
+        -> SomeSymbol
+        -> SomeDataSource entity
+        -> Maybe SomeForeignKey
+    matching (SomeSymbol entity_sym) (SomeSymbol source_sym) (SomeDataSource (source :: Proxy source)) =
+        case sameSymbol entity_sym (Proxy :: Proxy entity) of
+            Nothing -> Nothing
+            Just _  -> case sameSymbol source_sym source of
+                Nothing -> Nothing
+                Just _  -> let
+                    fk = ForeignKey key :: ForeignKey entity source
+                    sfk = SomeForeignKey fk
+                    in Just sfk
+
+-- | Contstruct a 'SomeInternalKey' value, if possible, given the name and ID
 -- values.
 someInternalKey
     :: [SomeEntity]
@@ -478,25 +552,6 @@ someInternalKey entities (name, key) =
                     sik = SomeInternalKey ik
                 in Just sik
             _         -> Nothing
-
--- | Extract the type-level information from a 'ForeignKey'.
---
--- The triple contains the entity, data source, and key in that order.
-foreignKeyValue :: forall entity source. (RetconDataSource entity source)
-                => ForeignKey entity source
-                -> ForeignKeyIdentifier
-foreignKeyValue (ForeignKey key) =
-    let entity = symbolVal (Proxy :: Proxy entity)
-        source = symbolVal (Proxy :: Proxy source)
-    in (entity, source, key)
-
--- | Encode a 'ForeignKey' as an opaque 'String'.
---
--- Under the hood this is represented as a showed 'ForeignKeyIdentifier'
-encodeForeignKey :: forall entity source. (RetconDataSource entity source)
-                 => ForeignKey entity source
-                 -> String
-encodeForeignKey = show . foreignKeyValue
 
 -- | A storage backend for retcon operational data
 --
@@ -1039,7 +1094,7 @@ massageLookupDiff
     -> RetconMonad InitialisedEntity s l
        (Maybe (SomeInternalKey, Diff (), [Diff ()]))
 massageLookupDiff did result = do
-    entities <- map dropState <$> getRetconEntities
+    entities <- map dropEntityState <$> getRetconState
     case result of
         Nothing -> return Nothing
         Just (ik', dif, conf) ->
@@ -1050,6 +1105,3 @@ massageLookupDiff did result = do
                         "Unable to construct InternalKey for diff: "
                         <> show did
                     return Nothing
-  where
-    dropState :: InitialisedEntity -> SomeEntity
-    dropState (InitialisedEntity p _) = SomeEntity p

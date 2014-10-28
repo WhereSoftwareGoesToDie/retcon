@@ -51,6 +51,7 @@ import System.ZMQ4.Monadic hiding (async)
 import Retcon.Core
 import Retcon.Diff
 import Retcon.Document
+import Retcon.Error
 import Retcon.Handler
 import Retcon.Monad
 import Retcon.Options
@@ -61,6 +62,7 @@ data RetconAPIError
     | TimeoutError
     | DecodeError
     | InvalidNumberOfMessageParts
+    | UnknownKeyError -- ^ Notification contained an unknown key.
   deriving (Show, Eq, Typeable)
 
 instance Exception RetconAPIError
@@ -69,11 +71,13 @@ instance Enum RetconAPIError where
     fromEnum TimeoutError = 0
     fromEnum InvalidNumberOfMessageParts = 1
     fromEnum DecodeError = 2
+    fromEnum UnknownKeyError = 3
     fromEnum UnknownServerError = maxBound
 
     toEnum 0 = TimeoutError
     toEnum 1 = InvalidNumberOfMessageParts
     toEnum 2 = DecodeError
+    toEnum 3 = UnknownKeyError
     toEnum _ = UnknownServerError
 
 -- | An opaque reference to a Diff, used to uniquely reference the conflicted
@@ -350,6 +354,10 @@ runRetconMonadInServer act = do
     result <- liftIO . runRetconMonad state $ act
 
     case result of
+        Left (RetconUnknown key) -> do
+            logErrorN . fromString $
+                "Client notified an unknown key: " <> key
+            throwError UnknownKeyError
         Left e -> do
             logErrorN . fromString $
                 "Error running retcon action in server: " <> show e
@@ -364,7 +372,13 @@ notify (RequestChange (ChangeNotification n d i)) = do
     logInfoN . fromString $
         "Processing change notification: " <> show (n,d,i)
 
-    runRetconMonadInServer $ addWork (WorkNotify (n,d,i))
+    runRetconMonadInServer $ do
+        -- Check that the notification details are valid and, if so, add to the
+        -- work queue.
+        entities <- map dropEntityState <$> getRetconState
+        case someForeignKey entities (n,d,i) of
+            Just _  -> addWork (WorkNotify (n,d,i))
+            Nothing -> throwError (RetconUnknown $ show (n,d,i))
 
     return ResponseChange
 
@@ -423,41 +437,36 @@ apiServer
     :: RetconConfig SomeEntity RWToken
     -> ServerConfig
     -> IO ()
-apiServer retcon_cfg server_cfg = do
-    -- TODO: We should probably do logging here just as in retcon proper.
-    putStrLn . fromString $
+apiServer retcon_cfg server_cfg = runLogging (retcon_cfg ^. cfgLogging) $ do
+    logInfoN . fromString $
         "Running server on " <> server_cfg ^. cfgConnectionString
 
     -- Start the API server thread.
-    server_state <- initialiseRetconState retcon_cfg ()
-    server_thread <- async $ serverThread server_state
-    putStrLn . fromString $
-        "Started API server in: " <> show (asyncThreadId server_thread)
+    server_state <- liftIO $ initialiseRetconState retcon_cfg ()
+    server_thread <- liftIO . async $ serverThread server_state
+    logDebugN . fromString $
+        "Started API server thread: " <> show (asyncThreadId server_thread)
 
     -- Start the processing thread.
-    retcon_state <- initialiseRetconState retcon_cfg ()
-    retcon_thread <- async $ retconThread retcon_state
-    putStrLn . fromString $
-        "Started processing in: " <> show (asyncThreadId retcon_thread)
+    retcon_state <- liftIO $ initialiseRetconState retcon_cfg ()
+    retcon_thread <- liftIO . async $ retconThread retcon_state
+    logDebugN . fromString $
+        "Started processing thread: " <> show (asyncThreadId retcon_thread)
 
     -- Wait for completion.
     let procs = [server_thread, retcon_thread]
-    (done, _) <- waitAnyCancel procs
+    (done, _) <- liftIO . waitAnyCancel $ procs
 
     -- Clean up.
-    void $ both finaliseRetconState (server_state, retcon_state)
+    liftIO . void $ both finaliseRetconState (server_state, retcon_state)
 
-    putStrLn $ if done == server_thread
-        then "Server shutdown!"
-        else "Retcon go boom!"
+    logInfoN . fromString $
+        "Shutdown due to termination of thread: " <> show (asyncThreadId done)
   where
-    serverThread state = do
-        putStrLn "Starting server thread"
+    serverThread state =
         runRetconServer server_cfg state protocol
-    retconThread state = do
-        putStrLn "Starting retcon thread"
+    retconThread state =
         void $ runRetconMonad state (forever $ processWork processWorkItem)
-        error "Unpossible in retcon processing thread!"
 
 -- | Inspect a work item and perform whatever task is required.
 processWorkItem
