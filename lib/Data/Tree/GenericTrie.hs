@@ -17,6 +17,7 @@
 {-# LANGUAGE DeriveFunctor         #-}
 {-# LANGUAGE DeriveTraversable     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE OverloadedLists       #-}
 {-# LANGUAGE TypeFamilies          #-}
 
@@ -30,15 +31,16 @@ import qualified Data.Map as M
 import Data.Maybe
 import Data.Monoid
 import GHC.Exts (IsList (..))
-import Prelude hiding (concatMap, foldl, foldr)
+import Prelude hiding (concatMap, foldl, foldr, lookup)
 
 -- | A tree similar to 'Data.Tree' except it uses a 'Map' of children
 -- instead a list.
 data Tree key value
-    = Node { nodeValue    :: Maybe value
-           , nodeChildren :: Map key (Tree key value)
+    = Node { _nodeValue    :: Maybe value
+           , _nodeChildren :: Map key (Tree key value)
            }
   deriving (Eq, Read, Show, Functor, Traversable, Foldable)
+makeLenses ''Tree
 
 instance Monoid (Tree a b) where
     mempty = Node Nothing M.empty
@@ -81,6 +83,15 @@ instance (Ord k) => IsList (Tree k v) where
 
   toList t = t ^@.. itraversed
 
+-- Ixed instance
+type instance Index (Tree key value) = [key]
+
+type instance IxValue (Tree k a) = a
+instance Ord key => Ixed (Tree key value) where
+  ix k f m = case lookup k m of
+       Just v  -> f v <&> \v' -> insert k v' m
+       Nothing -> pure m
+
 emptyNode :: Tree k v -> Bool
 emptyNode (Node l kids) = isNothing l && M.null kids
 
@@ -95,13 +106,45 @@ filterTree p = rewrite f
 
 -- | Prune a Tree, removing empty nodes.
 pruneTree :: Tree k v -> Tree k v
-pruneTree = filterTree (not . emptyNode)
+pruneTree = pruneTree1 . (nodeChildren %~ M.filter (not . emptyNode . pruneTree))
+
+-- | Prune a Tree, removing empty nodes.
+pruneTree1 :: Tree k v -> Tree k v
+pruneTree1 = nodeChildren %~ M.filter (not . emptyNode)
 
 -- | Follow a path and return the value, if any, at the end.
-navigate :: (Ord k)
-         => [k]
-         -> Tree k v
-         -> Maybe v
-navigate []     (Node v _kids) = v
-navigate (n:ns) (Node _ kids ) = M.lookup n kids >>= navigate ns
+lookup
+    :: Ord k
+    => [k]
+    -> Tree k v
+    -> Maybe v
+lookup []     (Node v _kids) = v
+lookup (n:ns) (Node _ kids ) = M.lookup n kids >>= lookup ns
 
+insert
+    :: Ord k
+    => [k]
+    -> v
+    -> Tree k v
+    -> Tree k v
+insert [] v (Node _ kids) =
+    Node (Just v) kids
+insert (n:ns) v node =
+    node & nodeChildren . at n . anon mempty emptyNode %~ insert ns v
+
+
+delete
+    :: Ord k
+    => [k]
+    -> Tree k v
+    -> Tree k v
+delete [] = pruneTree1 . (nodeValue .~ Nothing)
+delete (k:ks) =
+     pruneTree1 . (nodeChildren . at k . traversed %~ delete ks)
+
+
+instance Ord k => At (Tree k a) where
+    at k f m = f mv <&> \r -> case r of
+        Nothing -> maybe m (const (delete k m)) mv
+        Just v' -> insert k v' m
+      where mv = lookup k m

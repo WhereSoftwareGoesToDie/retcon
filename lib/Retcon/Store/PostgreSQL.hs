@@ -18,7 +18,7 @@
 --
 -- Retcon maintains quite a lot of operational data. This implements the
 -- operational data storage interface using a PostgreSQL database.
-module Retcon.Store.PostgreSQL (PGStorage(..), prepareConfig) where
+module Retcon.Store.PostgreSQL (PGStorage(..), prepareConfig, cleanupConfig) where
 
 import Control.Applicative
 import Control.Lens
@@ -98,8 +98,9 @@ instance RetconStore PGStorage where
     storeRecordForeignKey (PGStore conn _) ik fk = do
         let (entity, source, fid) = foreignKeyValue fk
         let (_, iid) = internalKeyValue ik
-        let values = (entity, iid, source, fid)
-        let sql = "INSERT INTO retcon_fk (entity, id, source, fk) VALUES (?, ?, ?, ?)"
+        let values = (entity, iid, source, entity, iid, source, fid)
+        -- TODO: This should be a real transaction or UPSERT or something.
+        let sql = "DELETE FROM retcon_fk WHERE entity = ? AND id = ? AND source = ?; INSERT INTO retcon_fk (entity, id, source, fk) VALUES (?, ?, ?, ?)"
         void $ execute conn sql values
 
     storeDeleteForeignKey (PGStore conn _) fk = do
@@ -158,7 +159,7 @@ instance RetconStore PGStorage where
         let ops = map (toJSON) . concatOf (traversed . to void . diffChanges) $ ds
 
         -- Record the merged diff in the database.
-        [Only did] <- query conn diffQ (entity, key, null ops, encode . void $ d)
+        [Only did] <- query conn diffQ (entity, key, not . null $ ops, encode . void $ d)
 
         -- Record conflicts in the database.
         void . executeMany conn opsQ . map (did,) $ ops
@@ -289,11 +290,12 @@ instance RetconStore PGStorage where
 -- | Load the parameters from the path specified in the options.
 prepareConfig
     :: (RetconOptions, [Text])
-    -> [entity]
-    -> IO (RetconConfig entity RWToken)
+    -> [SomeEntity]
+    -> IO (RetconConfig SomeEntity RWToken)
 prepareConfig (opt, event) entities = do
     params <- maybe (return mempty) readParams $ opt ^. optParams
     store :: PGStorage <- storeInitialise opt
+    -- entities' <- initialiseEntities params entities
     return $ RetconConfig
         (opt ^. optVerbose)
         (opt ^. optLogging)
@@ -311,3 +313,10 @@ prepareConfig (opt, event) entities = do
         case results of
             P.Success results' -> return $ convertConfig results'
             P.Failure failure -> error $ show failure
+
+cleanupConfig
+    :: RetconConfig SomeEntity RWToken
+    -> IO ()
+cleanupConfig cfg = do
+    -- void $ finaliseEntities (cfg ^. cfgParams) $ cfg ^. cfgEntities
+    void $ closeToken (cfg ^. cfgDB)
