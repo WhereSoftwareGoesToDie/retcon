@@ -114,7 +114,7 @@ lookup
     => [k]
     -> Tree k v
     -> Maybe v
-lookup []     (Node v kids) = v
+lookup []     (Node v _kids) = v
 lookup (n:ns) (Node _ kids ) = M.lookup n kids >>= lookup ns
 
 insert
@@ -134,10 +134,12 @@ delete
     => [k]
     -> Tree k v
     -> Tree k v
-delete [final] (Tree v kids) =
-    kids & at final %~ (\x ->
-        case x of
-            Just terminal_t ->
-                if M.null (terminal_t ^. nodeChildren)
-                    then Nothing
-                    else Just (terminal_t & nodeValue .~ Nothing))
+delete [] t = t & nodeValue .~ Nothing
+delete (k:ks) t =
+    t & nodeChildren . at k %~ (>>= (return . delete ks))
+
+instance Ord k => At (Tree k a) where
+    at k f m = f mv <&> \r -> case r of
+        Nothing -> maybe m (const (delete k m)) mv
+        Just v' -> insert k v' m
+      where mv = lookup k m
