@@ -60,10 +60,13 @@ module Retcon.Core
     InitialisedEntity(..),
     InitialisedSource(..),
 
+    dropEntityState,
+
     -- * Keys
     InternalKey(..),
     SomeInternalKey(..),
     ForeignKey(..),
+    SomeForeignKey(..),
 
     EntityName,
     SourceName,
@@ -77,6 +80,7 @@ module Retcon.Core
     someInternalKey,
     encodeForeignKey,
     foreignKeyValue,
+    someForeignKey,
 
     WorkItem(..),
 
@@ -401,6 +405,16 @@ data InitialisedEntity = forall e. (RetconEntity e) =>
                       , entityState :: [InitialisedSource e]
                       }
 
+-- | Convert an 'InitialisedEntity' value into a 'SomeEntity' value by
+-- discarding the state.
+--
+-- This is a "cast" and not a finaliser; it should be used only to avoid
+-- writing two versions of a function like `massageLookupDiff` below.
+dropEntityState
+    :: InitialisedEntity
+    -> SomeEntity
+dropEntityState (InitialisedEntity p _) = SomeEntity p
+
 -- | Wrap an arbitrary 'RetconDataSource' for some entity 'e', together with
 -- it's initialised state.
 data InitialisedSource e = forall s. RetconDataSource e s =>
@@ -433,6 +447,10 @@ newtype RetconDataSource entity source => ForeignKey entity source =
 
 instance (RetconDataSource entity source) => Show (ForeignKey entity source) where
     show = show . foreignKeyValue
+
+-- | An existential wrapper around a 'ForeignKey'.
+data SomeForeignKey = forall entity source. RetconDataSource entity source =>
+    SomeForeignKey (ForeignKey entity source)
 
 -- Aliases for clarity, all of these are value level fragments identifying
 -- Internal and Foreign Keys.
@@ -497,6 +515,13 @@ encodeForeignKey :: forall entity source. (RetconDataSource entity source)
                  => ForeignKey entity source
                  -> String
 encodeForeignKey = show . foreignKeyValue
+
+someForeignKey
+    :: [SomeEntity]
+    -> ForeignKeyIdentifier
+    -> Maybe SomeForeignKey
+someForeignKey entities (en, sn, key) =
+    Nothing
 
 -- | A storage backend for retcon operational data
 --
@@ -1039,7 +1064,7 @@ massageLookupDiff
     -> RetconMonad InitialisedEntity s l
        (Maybe (SomeInternalKey, Diff (), [Diff ()]))
 massageLookupDiff did result = do
-    entities <- map dropState <$> getRetconState
+    entities <- map dropEntityState <$> getRetconState
     case result of
         Nothing -> return Nothing
         Just (ik', dif, conf) ->
@@ -1050,6 +1075,3 @@ massageLookupDiff did result = do
                         "Unable to construct InternalKey for diff: "
                         <> show did
                     return Nothing
-  where
-    dropState :: InitialisedEntity -> SomeEntity
-    dropState (InitialisedEntity p _) = SomeEntity p

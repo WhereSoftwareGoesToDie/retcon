@@ -51,6 +51,7 @@ import System.ZMQ4.Monadic hiding (async)
 import Retcon.Core
 import Retcon.Diff
 import Retcon.Document
+import Retcon.Error
 import Retcon.Handler
 import Retcon.Monad
 import Retcon.Options
@@ -61,6 +62,7 @@ data RetconAPIError
     | TimeoutError
     | DecodeError
     | InvalidNumberOfMessageParts
+    | UnknownKeyError -- ^ Notification contained an unknown key.
   deriving (Show, Eq, Typeable)
 
 instance Exception RetconAPIError
@@ -69,11 +71,13 @@ instance Enum RetconAPIError where
     fromEnum TimeoutError = 0
     fromEnum InvalidNumberOfMessageParts = 1
     fromEnum DecodeError = 2
+    fromEnum UnknownKeyError = 3
     fromEnum UnknownServerError = maxBound
 
     toEnum 0 = TimeoutError
     toEnum 1 = InvalidNumberOfMessageParts
     toEnum 2 = DecodeError
+    toEnum 3 = UnknownKeyError
     toEnum _ = UnknownServerError
 
 -- | An opaque reference to a Diff, used to uniquely reference the conflicted
@@ -350,6 +354,10 @@ runRetconMonadInServer act = do
     result <- liftIO . runRetconMonad state $ act
 
     case result of
+        Left (RetconUnknown key) -> do
+            logErrorN . fromString $
+                "Client notified an unknown key: " <> key
+            throwError UnknownKeyError
         Left e -> do
             logErrorN . fromString $
                 "Error running retcon action in server: " <> show e
@@ -364,7 +372,13 @@ notify (RequestChange (ChangeNotification n d i)) = do
     logInfoN . fromString $
         "Processing change notification: " <> show (n,d,i)
 
-    runRetconMonadInServer $ addWork (WorkNotify (n,d,i))
+    runRetconMonadInServer $ do
+        -- Check that the notification details are valid and, if so, add to the
+        -- work queue.
+        entities <- map dropEntityState <$> getRetconState
+        case someForeignKey entities (n,d,i) of
+            Just _  -> addWork (WorkNotify (n,d,i))
+            Nothing -> throwError (RetconUnknown $ show (n,d,i))
 
     return ResponseChange
 
