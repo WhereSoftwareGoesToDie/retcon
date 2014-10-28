@@ -134,9 +134,10 @@ delete
     => [k]
     -> Tree k v
     -> Tree k v
-delete [] t = t & nodeValue .~ Nothing
-delete (k:ks) t =
-    t & nodeChildren . at k %~ (>>= (return . delete ks))
+delete [] = nodeValue .~ Nothing
+delete (k:ks) =
+    pruneTree . (nodeChildren . at k . traversed %~ delete ks)
+
 
 instance Ord k => At (Tree k a) where
     at k f m = f mv <&> \r -> case r of
