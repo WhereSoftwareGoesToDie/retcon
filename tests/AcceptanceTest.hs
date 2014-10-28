@@ -35,6 +35,7 @@ import DBHelpers
 import Retcon.Core
 import Retcon.DataSource.JsonDirectory
 import Retcon.DataSource.PostgreSQL
+import Retcon.Diff
 import Retcon.Document
 import Retcon.Handler
 import Retcon.Monad
@@ -129,8 +130,11 @@ suite conn fp =
         -- One change is chosen and this preference is propogated
         -- upstream.
         it "comparing and resolving diff works" . withTestState conn $ \lk uk -> do
-            let document1 = (hubert & _Wrapped . at (["address"]) ?~ "123 Unicorn Avenue")
-                document2 = (hubert & _Wrapped . at (["address"]) ?~ "987 Pink Elephant Street")
+            let document1 = hubert & _Wrapped . at ["name"] ?~ "H. Cumberdale"
+                                   & _Wrapped . at ["address"] ?~ "123 Unicorn Avenue"
+                doc2_name = "Hubert C."
+                document2 = hubert & _Wrapped . at ["name"] ?~ doc2_name
+                                   & _Wrapped . at ["address"] ?~ "987 Pink Elephant Street"
 
             -- Do the modification upstream
             setJSONDir fp document1 (Just uk)
@@ -145,17 +149,37 @@ suite conn fp =
             -- TODO: Don't wait here, check retcon somehow.
             threadDelay 100000
 
-            -- Get a list of conflicts. There should be exatly one.
+            -- Get a list of conflicts. There should be exactly one.
             conflicts <- runRetconZMQ conn getConflicted >>= either throwIO return
             length conflicts `shouldBe` 1
 
             -- Resolve conflict by chosing the local change
-            let [(_,_,did,(change_id,change):_)] = conflicts
+            let ops =
+                  [(d,c_id,c) | (_,_,d,changes) <- conflicts
+                              , (c_id,c@(InsertOp () ["name"] name)) <- changes
+                              , name == doc2_name]
+            length ops `shouldBe` 1
+            let [(did,change_id,change)] = ops
             (runRetconZMQ conn $ enqueueResolveDiff did [change_id])
                 >>= either throwIO return
-            print change
+            let document1' = document1 & _Wrapped . at ["name"] ?~ "Hubert C."
+                document2' = document2
 
-            pendingWith "resolve conflict"
+            -- Send notification to retcon
+            (runRetconZMQ conn $ enqueueChangeNotification $
+                ChangeNotification "acceptance-user" "upstream" (unForeignKey uk))
+
+            -- TODO: Don't wait here, check retcon somehow.
+            threadDelay 100000
+
+            -- Get a list of conflicts. There should be exactly one.
+            conflicts <- runRetconZMQ conn getConflicted >>= either throwIO return
+            length conflicts `shouldBe` 1
+
+            doc1 <- getJSONDir fp uk
+            doc1 `shouldBe` document1'
+            doc2 <- getJSONDir fp lk
+            doc2 `shouldBe` document2'
 
 
 
