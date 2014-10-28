@@ -86,7 +86,7 @@ suite conn fp =
     describe "Retcon" $ do
         -- | A modification is made upstream, Retcon is notified and it makes
         -- the appropriate change locally
-{-        it "upstream change propogates locally" . withTestState conn $ \lk uk -> do
+        it "upstream change propogates locally" . withTestState conn $ \lk uk -> do
             let document = (hubert & _Wrapped . at (["address"]) ?~ "123 Unicorn Avenue")
 
             -- Do the modification upstream
@@ -120,7 +120,7 @@ suite conn fp =
 
             -- Read the documents out from Retcon and compare to the initial document
             getJSONDir fp lk `shouldThrow` anyIOException
--}
+
         -- | A record is modified both upstream and downstream in an
         -- incompatible way. Retcon is notified of the upstream and downstream
         -- change (two notifications in total) and correctly indicates a conflict
@@ -141,8 +141,6 @@ suite conn fp =
             -- Send notification to retcon
             (runRetconZMQ conn $ enqueueChangeNotification $
                 ChangeNotification "acceptance-user" "upstream" (unForeignKey uk))
-            (runRetconZMQ conn $ enqueueChangeNotification $
-                ChangeNotification "acceptance-user" "upstream" (unForeignKey lk))
 
             -- TODO: Don't wait here, check retcon somehow.
             threadDelay 100000
@@ -150,14 +148,15 @@ suite conn fp =
             -- Get a list of conflicts. There should be exatly one.
             conflicts <- runRetconZMQ conn getConflicted >>= either throwIO return
             length conflicts `shouldBe` 1
-            
+
             -- Resolve conflict by chosing the local change
             let [(_,_,did,(change_id,change):_)] = conflicts
             (runRetconZMQ conn $ enqueueResolveDiff did [change_id])
                 >>= either throwIO return
             print change
 
-            
+            pendingWith "resolve conflict"
+
 
 
 hubert :: Document
@@ -178,7 +177,7 @@ withTestState conn f = bracket setup teardown (uncurry f . fst)
 
         -- Prepare the retcon and server configurations.
         let server_cfg = ServerConfig conn
-        let opts = RetconOptions False LogStderr (pgConnStr db) Nothing
+        let opts = RetconOptions True LogStderr (pgConnStr db) Nothing
 
         -- Spawn the server, giving it an initial database so that it's happy.
         resetTestDBWithFixture db "retcon.sql"
@@ -202,15 +201,16 @@ withTestState conn f = bracket setup teardown (uncurry f . fst)
             MaybeT (lookupInternalKey local_fk) >>= MaybeT . lookupForeignKey
 
         case result of
-            Right (Just upstream_fk) -> 
-                return ((local_fk, upstream_fk), server)
+            Right (Just upstream_fk) ->
+                return ((local_fk, upstream_fk), (server, retcon_cfg))
             Left e ->
                 throwIO e
             _ ->
                 error "Expected to get FK"
 
-    teardown (_, server) = do
+    teardown (_, (server, retcon_cfg)) = do
         cancel server
+        cleanupConfig retcon_cfg
         -- Clear all the JSON blobs out
         (</> "acceptance-user") <$> testJSONFilePath >>= removeDirectoryRecursive
 

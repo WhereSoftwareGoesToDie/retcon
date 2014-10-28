@@ -134,6 +134,9 @@ test-suite             acceptance-test
   main-is:             AcceptanceTest.hs
   build-depends:       base
                      , retcon
+                     , async
+                     , bytestring
+                     , process
                      , text
                      , containers
                      , unordered-containers

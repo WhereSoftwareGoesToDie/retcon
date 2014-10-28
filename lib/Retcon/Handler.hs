@@ -88,7 +88,7 @@ dispatch (entity_str, source_str, key) = do
                 show (entity_str, source_str, key)
   where
     anyM :: Monad m => [a] -> (a -> m Bool) -> m Bool
-    anyM xs f = foldM (\b x -> if b then return True else liftM (&& b) (f x)) False xs
+    anyM xs f = foldM (\b x -> if b then return True else liftM (|| b) (f x)) False xs
 
 -- * Operations
 
@@ -151,13 +151,13 @@ determineOperation state fk = do
     ik' <- lookupInternalKey fk
 
     whenVerbose . $logDebug . fromString $
-        "Looking for " <> show fk <> "; found " <> show ik'
+        "Looking for internal key for: " <> show fk <> "; found " <> show ik'
 
     -- Fetch the corresponding Document.
     doc' <- runRetconAction state $ getDocument fk
 
     whenVerbose . $logDebug . fromString $
-        "Looking for " <> show fk <> "; found document: " <> show doc'
+        "Looking for document for: " <> show fk <> "; found " <> show doc'
 
     -- Determine the RetconOperation to be performed.
     let operation = case (ik', doc') of
@@ -167,7 +167,7 @@ determineOperation state fk = do
             (Just ik, Right _) -> RetconUpdate ik
 
     whenVerbose . logInfoN . fromString $
-        "DETERMING: " <> show fk <> " operation: " <> show operation
+        "DETERMINED: " <> show fk <> " operation: " <> show operation
 
     return operation
 
@@ -216,7 +216,7 @@ create state fk = do
             setDocuments ik . map (const doc) $ entitySources (Proxy :: Proxy entity)
 
     -- Record any errors in the log.
-    let (_succeeded, failed) = partitionEithers results
+    let (failed, _success) = partitionEithers results
     unless (null failed) $
         $logError . fromString $
             "ERROR creating " <> show ik <> " from " <> show fk <> ". " <>
@@ -271,6 +271,9 @@ update ik = do
     -- Build the diff from non-missing documents.
     let diffs = map (diff initial) valid
     let (merged, fragments) = mergeDiffs ignoreConflicts diffs
+
+    whenVerbose . $logInfo . fromString $
+        "Conflict detected merging: " <> show ik
 
     -- Replace any missing 'Document's with the intial document.
     let docs' = map (either (const initial) id) docs

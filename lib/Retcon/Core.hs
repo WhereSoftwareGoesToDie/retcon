@@ -180,6 +180,7 @@ finaliseRetconState
     -> IO (RetconMonadState SomeEntity s l)
 finaliseRetconState (RetconMonadState cfg l) = do
     let params = cfg ^. cfgParams
+    putStrLn "finalising state"
     entities <- finaliseEntities params $ cfg ^. cfgEntities
     return $ RetconMonadState (cfg & cfgEntities .~ entities) l
 
@@ -795,6 +796,11 @@ class StoreToken s where
     -- the document 'storeClone' for more details.
     cloneToken :: s -> IO s
 
+    -- | Close the underlying store token.
+    --
+    -- This token must no longer be used.
+    closeToken :: s -> IO ()
+
 -- | Storage tokens which support reading operations.
 class StoreToken s => ReadableToken s where
     -- | Find the 'InternalKey' associated with a 'ForeignKey'.
@@ -926,6 +932,8 @@ instance StoreToken ROToken where
 
     cloneToken (ROToken s) = ROToken <$> storeClone s
 
+    closeToken (ROToken s) = storeFinalise s
+
 instance ReadableToken ROToken where
     lookupInternalKey fk = do
         ROToken store <- getRetconStore
@@ -963,6 +971,9 @@ instance StoreToken RWToken where
     restrictToken (RWToken st) = ROToken st
 
     cloneToken (RWToken s) = RWToken <$> storeClone s
+
+    closeToken (RWToken s) = storeFinalise s
+
 
 instance ReadableToken RWToken where
     lookupInternalKey fk = do
@@ -1063,16 +1074,20 @@ instance WritableToken RWToken where
       where
         logException :: SomeException -> RetconMonad e s l ()
         logException e =
-            logErrorN . fromString $ "Error processing work: " <> show e
+            case fromException e :: Maybe AsyncException of
+                Just e' -> LE.throw e'
+                Nothing -> logErrorN . fromString $ "Error processing work: " <> show e
 
         -- | Print an exception.
         --
         -- TODO replace this with logException above.
         printException :: SomeException -> IO (Maybe a)
-        printException e = do
-            putStrLn . fromString $
-                "Error getting work: " <> show e
-            return Nothing
+        printException e = case fromException e :: Maybe AsyncException of
+                Just e' -> LE.throw e'
+                Nothing -> do
+                  putStrLn . fromString $
+                       "Error getting work: " <> show e <> ". PS: I'm not dying!"
+                  return Nothing
 
         -- | Get a work item from the work queue.
         --

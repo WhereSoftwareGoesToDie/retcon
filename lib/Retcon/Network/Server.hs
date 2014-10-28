@@ -39,7 +39,7 @@ import qualified Data.ByteString as BS
 import Data.ByteString.Lazy (fromStrict, toStrict)
 import qualified Data.ByteString.Lazy as LBS
 import Data.Either
-import Data.List.NonEmpty hiding (filter, map)
+import Data.List.NonEmpty hiding (filter, map, length)
 import Data.Maybe
 import Data.Monoid
 import Data.String
@@ -450,10 +450,17 @@ apiServer retcon_cfg server_cfg = runLogging (retcon_cfg ^. cfgLogging) $ do
   where
     newState =
         initialiseRetconState retcon_cfg ()
-    serverThread state =
-        runRetconServer server_cfg state protocol
-    retconThread state =
+    serverThread state = do
+        putStrLn . fromString $
+          "Starting server, handling " <> (show . length $ state ^. retconConfig . cfgEntities) <> " entities"
+        void $ runRetconServer server_cfg state protocol
+        putStrLn  . fromString $
+          "Done server"
+    retconThread state = do
+        putStrLn . fromString $
+          "Starting worker, handling " <> (show . length $ state ^. retconConfig . cfgEntities) <> " entities"
         void $ runRetconMonad state (forever $ processWork processWorkItem)
+        putStrLn "Done worker"
 
 -- | Inspect a work item and perform whatever task is required.
 processWorkItem
