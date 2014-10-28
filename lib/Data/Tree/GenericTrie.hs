@@ -106,7 +106,11 @@ filterTree p = rewrite f
 
 -- | Prune a Tree, removing empty nodes.
 pruneTree :: Tree k v -> Tree k v
-pruneTree = filterTree (not . emptyNode)
+pruneTree = pruneTree1 . (nodeChildren %~ M.filter (not . emptyNode . pruneTree))
+
+-- | Prune a Tree, removing empty nodes.
+pruneTree1 :: Tree k v -> Tree k v
+pruneTree1 = nodeChildren %~ M.filter (not . emptyNode)
 
 -- | Follow a path and return the value, if any, at the end.
 lookup
@@ -134,9 +138,9 @@ delete
     => [k]
     -> Tree k v
     -> Tree k v
-delete [] = nodeValue .~ Nothing
+delete [] = pruneTree1 . (nodeValue .~ Nothing)
 delete (k:ks) =
-    pruneTree . (nodeChildren . at k . traversed %~ delete ks)
+     pruneTree1 . (nodeChildren . at k . traversed %~ delete ks)
 
 
 instance Ord k => At (Tree k a) where
