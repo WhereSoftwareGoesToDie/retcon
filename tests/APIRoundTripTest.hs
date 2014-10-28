@@ -7,15 +7,22 @@
 -- the 3-clause BSD licence.
 --
 
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE TypeFamilies          #-}
 
 -- | Test the API round-trip.
 module Main where
 
 import Control.Concurrent.Async
 import Data.ByteString ()
+import Data.Proxy
+import GHC.TypeLits ()
 import Test.Hspec
 
+import Retcon.Core
 import Retcon.Network.Client
 import Retcon.Network.Server
 import Retcon.Options
@@ -33,10 +40,20 @@ suite conn = describe "Retcon API" $ do
         result <- runRetconZMQ conn $ enqueueResolveDiff diff_id ops
         result `shouldBe` Right ()
 
-    it "replies to bad notify requests with error" $ do
-        let note = ChangeNotification "TestEntity" "TestSource" "item1"
+    it "replies to 'bad entity' notify requests with error" $ do
+        let note = ChangeNotification "BadEntity" "BadSource" "item1"
         result <- runRetconZMQ conn $ enqueueChangeNotification note
         result `shouldBe` Left UnknownKeyError
+
+    it "replies to 'bad source' notify requests with error" $ do
+        let note = ChangeNotification "TestEntity" "BadSource" "item1"
+        result <- runRetconZMQ conn $ enqueueChangeNotification note
+        result `shouldBe` Left UnknownKeyError
+
+    it "replies to good notify requests with success" $ do
+        let note = ChangeNotification "TestEntity" "TestSource" "item1"
+        result <- runRetconZMQ conn $ enqueueChangeNotification note
+        result `shouldBe` Right ()
 
     it "replies to invalid requests" $
         -- Right result <- runRetconZMQ conn $ performRequest InvalidHeader
@@ -47,7 +64,7 @@ main :: IO ()
 main = do
     let conn = "tcp://127.0.0.1:1234"
     let db = "dbname=retcon_test"
-    let entities = []
+    let entities = [SomeEntity (Proxy :: Proxy "TestEntity")]
 
     -- Prepare the retcon and server configurations.
     let serverConfig = ServerConfig conn
@@ -62,3 +79,21 @@ main = do
 
     -- Shut the server down.
     cancel server
+
+-- * Retcon entity
+
+instance RetconEntity "TestEntity" where
+    entitySources _ = [ SomeDataSource (Proxy :: Proxy "TestSource") ]
+
+instance RetconDataSource "TestEntity" "TestSource" where
+    data DataSourceState "TestEntity" "TestSource" = TestSourceState
+
+    initialiseState = return TestSourceState
+
+    finaliseState _ = return ()
+
+    setDocument document fk = return undefined
+
+    getDocument fk = return undefined
+
+    deleteDocument fk = return ()
