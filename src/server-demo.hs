@@ -12,10 +12,9 @@ entities :: [SomeEntity]
 entities = []
 
 apiParser
-    :: RetconOptions
-    -> Parser (RetconOptions, ServerConfig)
-apiParser defaults =
-    (,) <$> optionsParser defaults
+    :: Parser (RetconOptions, ServerConfig)
+apiParser =
+    (,) <$> optionsParser
         <*> serverParser
 
 main :: IO ()

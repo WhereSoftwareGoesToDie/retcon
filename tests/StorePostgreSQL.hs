@@ -19,7 +19,6 @@ module Main where
 import Control.Applicative
 import Control.Exception
 import Control.Lens.Operators
-import Control.Monad
 import Data.Aeson
 import qualified Data.ByteString.Char8 as BS
 import Data.Maybe
@@ -47,7 +46,7 @@ runAction :: PGStorage
 runAction store =
     let cfg = RetconConfig
                 (options ^. optVerbose)
-                (options ^. optLogging)
+                (fromMaybe LogNone $ options ^. optLogging)
                 (token store)
                 mempty
                 []

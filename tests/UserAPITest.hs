@@ -12,6 +12,7 @@ import Test.Hspec
 
 import Control.Applicative
 import Control.Lens.Operators
+import Data.Maybe
 import Data.Monoid
 import Data.Proxy
 import System.Directory
@@ -74,7 +75,7 @@ run l a = do
     let store' = restrictToken . token $ store
     let cfg = RetconConfig
                 (opt ^. optVerbose)
-                (opt ^. optLogging)
+                (fromMaybe LogNone $ opt ^. optLogging)
                 store'
                 mempty
                 mempty

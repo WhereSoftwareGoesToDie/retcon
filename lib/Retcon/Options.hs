@@ -12,9 +12,12 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
 {-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE TupleSections     #-}
 
 module Retcon.Options where
 
+import Control.Lens(to)
+import Control.Lens.Operators
 import Control.Lens.TH
 import Control.Monad hiding (sequence)
 import Data.ByteString (ByteString)
@@ -48,7 +51,7 @@ instance Show Logging where
 -- | Options to control the operation of retcon.
 data RetconOptions = RetconOptions
     { _optVerbose :: Bool
-    , _optLogging :: Logging
+    , _optLogging :: Maybe Logging
     , _optDB      :: BS.ByteString
     , _optParams  :: Maybe FilePath
     }
@@ -57,7 +60,18 @@ makeLenses ''RetconOptions
 
 -- | Default options which probably won't let you do much of anything.
 defaultOptions :: RetconOptions
-defaultOptions = RetconOptions False LogNone "" Nothing
+defaultOptions = RetconOptions False Nothing "" Nothing
+
+-- | To combine multiple RectonOptions. This is left-preserving.
+instance Monoid RetconOptions where
+    mempty = defaultOptions
+    opt1 `mappend` opt2 =
+        opt1 & optVerbose %~ (|| (opt2 ^. optVerbose))
+             & optLogging %~ (`mplus` (opt2 ^. optLogging))
+             & optDB %~ (if opt1 ^. optDB . to BS.null
+                         then id
+                         else const $ opt2 ^. optDB)
+             & optParams %~ (`mplus` (opt2 ^. optParams))
 
 -- * Configuration
 
@@ -65,25 +79,33 @@ defaultOptions = RetconOptions False LogNone "" Nothing
 parseArgsWithConfig :: FilePath -> IO (RetconOptions, [Text])
 parseArgsWithConfig = parseOptionsWithDefault opts
   where
-    opts defaults = (,) <$> optionsParser defaults
-                        <*> eventParser
+    opts = (,) <$> optionsParser
+               <*> eventParser
 
 -- | Run an options parser which takes its default arguments from a file.
 parseOptionsWithDefault
-    :: (RetconOptions -> O.Parser p)
+    :: O.Parser (RetconOptions,a)
     -> FilePath
-    -> IO p
-parseOptionsWithDefault p = parseFile >=> execParser . helpful p
+    -> IO (RetconOptions,a)
+parseOptionsWithDefault p fp = do
+    (fp',(retcon_cfg,x)) <- execParser . helpful $ (,) <$> parseConfig <*> p
+    let fp'' = fromMaybe fp fp'
+    (,x) <$> (mappend retcon_cfg <$> parseFile fp'')
   where
-    helpful parser opt = info (helper <*> parser opt) fullDesc
+    helpful parser = info (helper <*> parser) fullDesc
+    parseConfig :: O.Parser (Maybe FilePath)
+    parseConfig = O.option (Just <$> readerAsk) $
+           long "config"
+        <> metavar "CONFIG"
+        <> help "Retcon config file"
+        <> showDefault
 
 -- * Options parsers
 
 -- | Applicative parser for 'RetconOptions', including entity details.
 optionsParser
-    :: RetconOptions
-    -> O.Parser RetconOptions
-optionsParser RetconOptions{..} =
+    :: O.Parser RetconOptions
+optionsParser =
     RetconOptions <$> parseVerbose
                   <*> parseLogging
                   <*> parseDB
@@ -99,16 +121,15 @@ optionsParser RetconOptions{..} =
            long "db"
         <> short 'd'
         <> metavar "DATABASE"
-        <> O.value _optDB
+        <> O.value (mempty ^. optDB)
         <> showDefault
         <> help "PostgreSQL connection string"
-    parseLogging :: O.Parser Logging
-    parseLogging = O.option (readerAsk >>= readLog) $
+    parseLogging :: O.Parser (Maybe Logging)
+    parseLogging = O.option (readLog <$> readerAsk) $
            long "log"
         <> short 'l'
         <> metavar "stderr|stdout|none"
         <> help "Log messages to an output"
-        <> O.value _optLogging
         <> showDefault
     parseParams :: O.Parser (Maybe FilePath)
     parseParams = O.option (Just <$> readerAsk) $
@@ -150,7 +171,7 @@ parseFile path = do
   where
     mergeConfig ls RetconOptions{..} = fromJust $
         RetconOptions <$> pure _optVerbose
-                      <*> (lookup "logging" ls >>= readLog) `mplus` pure _optLogging
+                      <*> (readLog <$> lookup "logging" ls) `mplus` pure _optLogging
                       <*> liftM BS.pack (lookup "database" ls) `mplus` pure _optDB
                       <*> (Just <$> lookup "parameters" ls) `mplus` pure _optParams
 

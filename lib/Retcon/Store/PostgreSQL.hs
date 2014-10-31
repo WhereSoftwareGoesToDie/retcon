@@ -298,7 +298,7 @@ prepareConfig (opt, event) entities = do
     -- entities' <- initialiseEntities params entities
     return $ RetconConfig
         (opt ^. optVerbose)
-        (opt ^. optLogging)
+        (fromMaybe LogNone $ opt ^. optLogging)
         (token store)
         params
         event
