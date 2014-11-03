@@ -299,6 +299,7 @@ test-suite configuration-test
                      , transformers
                      , trifecta
                      , retcon
+                     , directory
 
 test-suite store-postgresql-test
   type:                exitcode-stdio-1.0

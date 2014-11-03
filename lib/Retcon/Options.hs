@@ -69,8 +69,8 @@ instance Monoid RetconOptions where
         opt1 & optVerbose %~ (|| (opt2 ^. optVerbose))
              & optLogging %~ (`mplus` (opt2 ^. optLogging))
              & optDB %~ (if opt1 ^. optDB . to BS.null
-                         then id
-                         else const $ opt2 ^. optDB)
+                         then const $ opt2 ^. optDB
+                         else id)
              & optParams %~ (`mplus` (opt2 ^. optParams))
 
 -- * Configuration
@@ -89,15 +89,15 @@ parseOptionsWithDefault
     -> IO (RetconOptions,a)
 parseOptionsWithDefault p fp = do
     (fp',(retcon_cfg,x)) <- execParser . helpful $ (,) <$> parseConfig <*> p
-    let fp'' = fromMaybe fp fp'
-    (,x) <$> (mappend retcon_cfg <$> parseFile fp'')
+    (,x) <$> (mappend retcon_cfg <$> parseFile fp')
   where
     helpful parser = info (helper <*> parser) fullDesc
-    parseConfig :: O.Parser (Maybe FilePath)
-    parseConfig = O.option (Just <$> readerAsk) $
+    parseConfig :: O.Parser FilePath
+    parseConfig = O.option readerAsk $
            long "config"
         <> metavar "CONFIG"
         <> help "Retcon config file"
+        <> O.value fp
         <> showDefault
 
 -- * Options parsers
@@ -130,12 +130,14 @@ optionsParser =
         <> short 'l'
         <> metavar "stderr|stdout|none"
         <> help "Log messages to an output"
+        <> O.value (mempty ^. optLogging)
         <> showDefault
     parseParams :: O.Parser (Maybe FilePath)
     parseParams = O.option (Just <$> readerAsk) $
            long "parameters"
         <> metavar "FILE"
         <> help "Data source parameters"
+        <> O.value (mempty ^. optParams)
         <> showDefault
 
 -- | Parse a description of a retcon event.

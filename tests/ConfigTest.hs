@@ -20,14 +20,20 @@ import Control.Monad
 import Control.Monad.Reader
 import qualified Data.Map.Strict as M
 import Data.Proxy
+import System.Directory
+import System.Environment
 import Test.Hspec
 import Text.Trifecta
 
 import Retcon.Core
+import Retcon.Options
 import Utility.Configuration
 
 testfile :: FilePath
 testfile = "tests/data/parameters.conf"
+
+testconfig :: FilePath
+testconfig = "tests/data/retcon.conf"
 
 explodeAfterLookup = do
     p <- ask
@@ -64,6 +70,22 @@ finalCfg = [SomeEntity (Proxy :: Proxy "finaltest")]
 
 configurationSuite :: Spec
 configurationSuite = do
+    describe "Retcon configuration" $ do
+        let config = RetconOptions False (Just LogStdout) "dbname='retcon'" (Just testfile)
+            testParser = (,) <$> optionsParser <*> pure ()
+        it "should load from a default 'retcon.conf'" $ do
+            parseOptionsWithDefault testParser testconfig `shouldReturn` (config,())
+        it "should load from a 'retcon.conf' specified on the command line" $ do
+            withArgs ["--config=" ++ testconfig] $ do
+                parseOptionsWithDefault testParser undefined `shouldReturn` (config,())
+        it "command line parameters should take precedence" $ do
+            withArgs [ "--verbose"
+                     , "--db=dbname='testdb'"
+                     , "--log=none"
+                     , "--parameters=foo"
+                     ] $ do
+                let config' = RetconOptions True (Just LogNone) "dbname='testdb'" (Just "foo")
+                parseOptionsWithDefault testParser testconfig `shouldReturn` (config',())
     describe "Configuration loading" $ do
         it "should parse data" $ do
             params <- parseFromFile configParser testfile
