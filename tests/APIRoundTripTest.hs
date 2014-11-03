@@ -23,10 +23,10 @@ import GHC.TypeLits ()
 import Test.Hspec
 
 import Retcon.Core
+import Retcon.DataSource.PostgreSQL
 import Retcon.Network.Client
 import Retcon.Network.Server
 import Retcon.Options
-import Retcon.DataSource.PostgreSQL
 import Retcon.Store.PostgreSQL
 
 suite :: String -> Spec

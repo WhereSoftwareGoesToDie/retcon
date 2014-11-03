@@ -16,7 +16,7 @@
 
 module Retcon.Options where
 
-import Control.Lens(to)
+import Control.Lens (to)
 import Control.Lens.Operators
 import Control.Lens.TH
 import Control.Monad hiding (sequence)
