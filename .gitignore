@@ -10,3 +10,4 @@ cabal.config
 tags
 # Generated files in tests
 /tests/test-results/
+/tests/data/json/acceptance-user/
