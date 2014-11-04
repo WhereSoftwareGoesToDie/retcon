@@ -179,7 +179,7 @@ instance RetconDataSource "exception" "exception" where
     deleteDocument = error "deleteDocument exception"
 
 testOpts = defaultOptions & optDB .~ testConnection
-                          & optLogging .~ LogNone
+                          & optLogging .~ Nothing
                           & optVerbose .~ True
 
 
@@ -398,7 +398,7 @@ dispatchSuite :: Spec
 dispatchSuite = do
 
     let opts = defaultOptions & optDB .~ testConnection
-                              & optLogging .~ LogNone
+                              & optLogging .~ Nothing
                               & optVerbose .~ True
 
     describe "Dispatching changes" $ do
@@ -706,7 +706,7 @@ runRetconHandler :: (RetconStore s) => RetconOptions -> [InitialisedEntity] -> s
 runRetconHandler opt state store a =
     let cfg = RetconConfig
                 (opt ^. optVerbose)
-                (opt ^. optLogging)
+                (fromMaybe LogNone $ opt ^. optLogging)
                 (token store)
                 mempty
                 []

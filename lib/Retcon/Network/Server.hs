@@ -39,7 +39,7 @@ import qualified Data.ByteString as BS
 import Data.ByteString.Lazy (fromStrict, toStrict)
 import qualified Data.ByteString.Lazy as LBS
 import Data.Either
-import Data.List.NonEmpty hiding (filter, map, length)
+import Data.List.NonEmpty hiding (filter, length, map)
 import Data.Maybe
 import Data.Monoid
 import Data.String

@@ -22,8 +22,8 @@ import Control.Applicative
 import Control.Concurrent
 import Control.Concurrent.Async
 import Control.Exception
-import Control.Monad.Trans.Maybe
 import Control.Lens
+import Control.Monad.Trans.Maybe
 import Data.ByteString ()
 import Data.Proxy
 import GHC.Exts (IsList (..))
@@ -201,7 +201,7 @@ withTestState conn f = bracket setup teardown (uncurry f . fst)
 
         -- Prepare the retcon and server configurations.
         let server_cfg = ServerConfig conn
-        let opts = RetconOptions True LogStderr (pgConnStr db) Nothing
+        let opts = RetconOptions True (Just LogStderr) (pgConnStr db) Nothing
 
         -- Spawn the server, giving it an initial database so that it's happy.
         resetTestDBWithFixture db "retcon.sql"

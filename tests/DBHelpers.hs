@@ -13,7 +13,6 @@ import Data.List
 import Data.Monoid
 import Retcon.DataSource.PostgreSQL
 import System.Exit
-import System.FilePath.Posix
 import System.Process
 
 -- This is not a safe function and could be exploited for command execution.

@@ -21,6 +21,7 @@ module Main where
 import Control.Exception
 import Control.Lens.Operators
 import Control.Monad.IO.Class
+import Data.Maybe
 import Data.Monoid
 import Data.Proxy
 import DBHelpers
@@ -165,7 +166,7 @@ run l a = do
     let store' = restrictToken . token $ store
     let cfg = RetconConfig
                 (opt ^. optVerbose)
-                (opt ^. optLogging)
+                (fromMaybe LogNone $ opt ^. optLogging)
                 store'
                 mempty
                 []

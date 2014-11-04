@@ -23,6 +23,7 @@ import GHC.TypeLits ()
 import Test.Hspec
 
 import Retcon.Core
+import Retcon.DataSource.PostgreSQL
 import Retcon.Network.Client
 import Retcon.Network.Server
 import Retcon.Options
@@ -63,12 +64,12 @@ suite conn = describe "Retcon API" $ do
 main :: IO ()
 main = do
     let conn = "tcp://127.0.0.1:1234"
-    let db = "dbname=retcon_test"
+    let db = DBName "retcon_test"
     let entities = [SomeEntity (Proxy :: Proxy "TestEntity")]
 
     -- Prepare the retcon and server configurations.
     let serverConfig = ServerConfig conn
-    let retconOpt = RetconOptions False LogStderr db Nothing
+    let retconOpt = RetconOptions False (Just LogStderr) (pgConnStr db) Nothing
     retconConfig <- prepareConfig (retconOpt, []) entities
 
     -- Spawn the server.
@@ -92,8 +93,10 @@ instance RetconDataSource "TestEntity" "TestSource" where
 
     finaliseState _ = return ()
 
-    setDocument document fk = return undefined
+    setDocument document fk =
+        error "Cannot set document"
 
-    getDocument fk = return undefined
+    getDocument fk =
+        error "Cannot get document"
 
     deleteDocument fk = return ()
