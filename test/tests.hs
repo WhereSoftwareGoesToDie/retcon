@@ -1,6 +1,6 @@
 module Main where
 
-import Synchronise
+import           Synchronise
 
 main :: IO ()
 main = do

@@ -1,6 +1,6 @@
 module Main where
 
-import Criterion.Main
+import           Criterion.Main
 
 -- The function we're benchmarking.
 fib m | m < 0     = error "negative!"
