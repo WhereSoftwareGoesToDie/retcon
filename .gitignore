@@ -1,1 +1,3 @@
 /dist/
+# Ignore the checked-out aeson-schema repo
+/aeson-schema/

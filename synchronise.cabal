@@ -22,6 +22,7 @@ library
   exposed-modules:     Synchronise
   build-depends:       base >=4.7 && <4.8
                      , aeson
+                     , aeson-schema
                      , text
                      , process
 
