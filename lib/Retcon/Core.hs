@@ -40,6 +40,7 @@ module Retcon.Core
     -- * Data sources
     Initialiser(..),
     runInitialiser,
+    DataSourceInit,
 
     RetconDataSource(..),
 
