@@ -25,12 +25,12 @@ module Data.Tree.GenericTrie where
 
 import Control.Applicative
 import Control.Lens
-import Data.Foldable
+import Data.Foldable hiding (toList)
 import Data.Map (Map)
 import qualified Data.Map as M
 import Data.Maybe
 import Data.Monoid
-import GHC.Exts (IsList (..))
+import GHC.Exts as L (IsList (..))
 import Prelude hiding (concatMap, foldl, foldr, lookup)
 
 -- | A tree similar to 'Data.Tree' except it uses a 'Map' of children
@@ -42,9 +42,9 @@ data Tree key value
   deriving (Eq, Read, Show, Functor, Traversable, Foldable)
 makeLenses ''Tree
 
-instance Monoid (Tree a b) where
+instance Ord a => Monoid (Tree a b) where
     mempty = Node Nothing M.empty
-    mappend = error "Monoid(Tree a b): union not implemented"
+    t1 `mappend` t2 = fromList $ L.toList t1 <> L.toList t2
 
 instance FunctorWithIndex [i] (Tree i)
 instance FoldableWithIndex [i] (Tree i)
