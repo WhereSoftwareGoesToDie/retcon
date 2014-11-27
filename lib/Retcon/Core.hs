@@ -181,7 +181,6 @@ finaliseRetconState
     -> IO (RetconMonadState SomeEntity s l)
 finaliseRetconState (RetconMonadState cfg l) = do
     let params = cfg ^. cfgParams
-    putStrLn "finalising state"
     entities <- finaliseEntities params $ cfg ^. cfgEntities
     return $ RetconMonadState (cfg & cfgEntities .~ entities) l
 
