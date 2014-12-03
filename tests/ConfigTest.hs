@@ -96,6 +96,7 @@ configurationSuite = do
                 , ("finaltest", "finalsource", "server", "db1.example.com")
                 , ("finaltest", "finalsource", "password", "databass")
                 , ("finaltest", "finalsource", "final", "final object")
+                , ("europe", "song", "final-countdown", "true")
                 ]
 
         it "should transform parsed data" $ do
@@ -110,6 +111,9 @@ configurationSuite = do
                     [ ("server", "db1.example.com")
                     , ("password", "databass")
                     , ("final", "final object")
+                    ])
+                , (("europe", "song"), M.fromList
+                    [ ("final-countdown", "true")
                     ])
                 ])
 

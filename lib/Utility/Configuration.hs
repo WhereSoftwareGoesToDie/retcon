@@ -32,7 +32,7 @@ configParser = some item
         <*> (spaces *> word <* spaces <* char '.')
         <*> (spaces *> word <* spaces <* char '=')
         <*> (spaces *> stringLiteral)
-    word = T.pack <$> some alphaNum
+    word = T.pack <$> some (alphaNum <|> oneOf "-_")
 
 -- | Convert parsed configuration into a nested map.
 convertConfig :: [(Text, Text, Text, Text)] -> ParamMap
