@@ -52,7 +52,7 @@ library
                      , lens
                      , lifted-base
                      , mime-mail
-                     , monad-control >= 0.3
+                     , monad-control == 0.3.*
                      , monad-logger
                      , binary
                      , mtl
