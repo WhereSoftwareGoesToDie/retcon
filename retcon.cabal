@@ -213,7 +213,7 @@ test-suite             policy-test
   build-depends:       base
                      , bytestring
                      , containers
-                     , hspec
+                     , hspec == 1.*
                      , retcon
                      , text
                      , unordered-containers
@@ -231,7 +231,7 @@ test-suite             userapi-test
                      , containers
                      , directory
                      , filepath
-                     , hspec
+                     , hspec == 1.*
                      , lens
                      , retcon
                      , text
