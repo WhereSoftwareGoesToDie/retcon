@@ -100,14 +100,14 @@ dispatch (entity_str, source_str, key) = do
 -- TODO: Add fk, ik, and doc to constructors so that we don't need to re-query
 -- them when executing the operation.
 data RetconOperation entity source
-    = RetconCreate (ForeignKey entity source) -- ^ Create a new document.
+    = RetconCreate (ForeignKey entity source) Document -- ^ Create a new document.
     | RetconDelete (InternalKey entity)       -- ^ Delete an existing document.
     | RetconUpdate (InternalKey entity)       -- ^ Update an existing document.
     | RetconProblem (ForeignKey entity source) RetconError -- ^ Record an error.
   deriving (Show)
 
 instance Eq (RetconOperation entity source) where
-    (RetconCreate fk1) == (RetconCreate fk2) = fk1 == fk2
+    (RetconCreate fk1 doc1) == (RetconCreate fk2 doc2) = fk1 == fk2
     (RetconDelete ik1) == (RetconDelete ik2) = ik1 == ik2
     (RetconUpdate ik1) == (RetconUpdate ik2) = ik1 == ik2
     (RetconProblem fk1 _) == (RetconProblem fk2 _) = fk1 == fk2
@@ -162,9 +162,9 @@ determineOperation state fk = do
     -- Determine the RetconOperation to be performed.
     let operation = case (ik', doc') of
             (Nothing, Left  _) -> RetconProblem fk (RetconSourceError "Unknown key, no document")
-            (Nothing, Right _) -> RetconCreate fk
+            (Nothing, Right doc) -> RetconCreate fk doc
             (Just ik, Left  _) -> RetconDelete ik
-            (Just ik, Right _) -> RetconUpdate ik
+            (Just ik, Right doc) -> RetconUpdate ik
 
     whenVerbose . logInfoN . fromString $
         "DETERMINED: " <> show fk <> " operation: " <> show operation
@@ -179,7 +179,7 @@ runOperation
     -> RetconHandler store ()
 runOperation state event =
     case event of
-        RetconCreate  fk -> create state fk
+        RetconCreate  fk doc -> create state fk doc
         RetconDelete  ik -> delete ik
         RetconUpdate  ik -> update ik
         RetconProblem fk err -> reportError fk err
@@ -194,8 +194,9 @@ create
        (ReadableToken store, WritableToken store, RetconDataSource entity source)
     => DataSourceState entity source
     -> ForeignKey entity source
+    -> Document
     -> RetconHandler store ()
-create state fk = do
+create state fk doc = do
     logInfoN . fromString $
         "CREATE: " <> show fk
 
@@ -203,20 +204,16 @@ create state fk = do
     ik <- createInternalKey
     recordForeignKey ik fk
 
-    -- Use the new Document as the initial document.
-    doc' <- runRetconAction state $ getDocument fk
-
-    results <- case doc' of
-        Left _ -> do
-            deleteState ik
-            throwError (RetconSourceError "Cannot create document which doesn't exist")
-        Right doc -> do
-            recordInitialDocument ik doc
-            -- TODO: This should probably be using the InitialisedEntity list?
-            setDocuments ik . map (const doc) $ entitySources (Proxy :: Proxy entity)
+    results <- do
+        recordInitialDocument ik doc
+        -- TODO: This should probably be using the InitialisedEntity list?
+        setDocuments ik . map (const doc) $ entitySources (Proxy :: Proxy entity)
 
     -- Record any errors in the log.
-    let (failed, _success) = partitionEithers results
+    let (failed, success) = partitionEithers results
+    logInfoN . fromString $
+        "Create succeeded in " <> show (length success) <> " cases, failed in "
+        <> show (length failed) <> ". " <> show (failed, success)
     unless (null failed) $
         $logError . fromString $
             "ERROR creating " <> show ik <> " from " <> show fk <> ". " <>
