@@ -1,0 +1,13 @@
+version: 0.1
+schema: example-schema.json
+sources:
+  accounting:
+    create: "curl -X POST -d @- https://accounts.example.com/v1/customer"
+    read:   "curl -X GET https://accounts.example.com/v1/customer/%fk"
+    update: "curl -X POST -d @- https://accounts.example.com/v1/customer/%fk"
+    delete: "curl -X DELETE https://accounts.example.com/v1/customer/%fk"
+  authorisation:
+    create: "curl -X POST -d @- https://openid.example.com/v1/customer"
+    read:   "curl -X GET https://openid.example.com/v1/customer/%fk"
+    update: "curl -X POST -d @- https://openid.example.com/v1/customer/%fk"
+    delete: "curl -X DELETE https://openid.example.com/v1/customer/%fk"
