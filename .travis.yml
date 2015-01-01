@@ -1,0 +1,8 @@
+language: haskell
+ghc: 7.8
+before_install:
+  - sudo apt-get install -qq libblas-dev liblapack-dev
+notifications:
+  email:
+    on_success: change
+    on_failure: change
