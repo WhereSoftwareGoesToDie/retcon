@@ -306,7 +306,7 @@ postgresqlSuite = around prepareDatabase $
             result3 <- runAction store (deleteInitialDocument ik2)
                 >>= either throwIO return
 
-            result3 `shouldBe` 0
+            result3 `shouldBe` 1
 
             -- Check it.
             count3 <- countStore store
