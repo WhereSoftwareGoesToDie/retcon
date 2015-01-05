@@ -43,11 +43,8 @@ run Options{..} = do
         Notify{..} -> enqueueChangeNotification $
             ChangeNotification entity source key
     case val of
-        Left  e -> do
-            print e
-            exitFailure
-        Right _ -> do
-            exitSuccess
+        Left  e -> print e >> exitFailure
+        Right _ -> exitSuccess
 
 main :: IO ()
 main = execParser opts >>= run

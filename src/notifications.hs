@@ -110,6 +110,6 @@ process
     -> [NotificationRule]
     -> [Notification]
     -> IO ()
-process tpl rules res = do
-    forM_ rules $ \rule -> do
-        mapM_ renderSendMail $ map (prepareMessage tpl rule) res
+process tpl rules res =
+    forM_ rules $ \rule ->
+        mapM_ (renderSendMail . prepareMessage tpl rule) res

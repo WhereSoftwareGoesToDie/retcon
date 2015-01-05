@@ -13,6 +13,8 @@
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE TypeFamilies          #-}
 
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+
 -- | Test the API round-trip.
 module Main where
 
@@ -93,10 +95,10 @@ instance RetconDataSource "TestEntity" "TestSource" where
 
     finaliseState _ = return ()
 
-    setDocument document fk =
+    setDocument _document _fk =
         error "Cannot set document"
 
-    getDocument fk =
+    getDocument _fk =
         error "Cannot get document"
 
-    deleteDocument fk = return ()
+    deleteDocument _fk = return ()
