@@ -14,6 +14,8 @@
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeFamilies          #-}
 
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+
 module Main where
 
 import Control.Applicative
@@ -135,10 +137,10 @@ postgresqlSuite = around prepareDatabase $
             --(void $ onepluszero conn) `shouldThrow` isDisconnected
 
         it "should allocate and delete internal keys" $ do
-            store@(PGStore conn _) <- storeInitialise options
+            store@(PGStore _ _) <- storeInitialise options
 
             -- Check it's empty, so our counts will be correct.
-            initial@(iks, fks, docs, diffs) <- countStore store
+            initial <- countStore store
             initial `shouldBe` (0,0,0,0)
 
             initialDumps <- dumpStore store
@@ -186,7 +188,7 @@ postgresqlSuite = around prepareDatabase $
             storeFinalise store
 
         it "should associate foreign and internal keys" $ do
-            store@(PGStore conn _) <- storeInitialise options
+            store@(PGStore _ _) <- storeInitialise options
 
             let (fk1 :: ForeignKey "tests" "test") = ForeignKey "test1"
             let (fk2 :: ForeignKey "tests" "test") = ForeignKey "test2"
@@ -220,12 +222,14 @@ postgresqlSuite = around prepareDatabase $
                 ("tests", 2, "test", "test2"), ("tests", 3, "more", "more3"), ("tests", 3, "test", "test1")],
                 [], [], [])
 
-            runAction store (deleteForeignKey fk5)
+            result2 <- runAction store (deleteForeignKey fk5)
                 >>= either throwIO return
 
+            result2 `shouldBe` 1
+
             -- Check there are as many things in the database as we expect.
-            counts <- countStore store
-            counts `shouldBe` (3, 5, 0, 0)
+            counts2 <- countStore store
+            counts2 `shouldBe` (3, 5, 0, 0)
 
             contents2 <- dumpStore store
             contents2 `shouldBe` (
@@ -234,15 +238,15 @@ postgresqlSuite = around prepareDatabase $
                 ("tests", 2, "test", "test2"), ("tests", 3, "more", "more3"), ("tests", 3, "test", "test1")],
                 [], [], [])
 
-            result <- runAction store $
+            result3 <- runAction store $
                 case ik1 of
                     Left  _ -> error "Was not able to create ik1."
                     Right k -> deleteInternalKey k
 
             -- Check there are as many things in the database as we expect.
-            either throwIO (`shouldBe` 3) result
-            counts <- countStore store
-            counts `shouldBe` (2, 3, 0, 0)
+            either throwIO (`shouldBe` 3) result3
+            counts3 <- countStore store
+            counts3 `shouldBe` (2, 3, 0, 0)
 
             contents3 <- dumpStore store
             contents3 `shouldBe` (
@@ -253,21 +257,21 @@ postgresqlSuite = around prepareDatabase $
             storeFinalise store
 
         it "should record initial documents" $ do
-            store@(PGStore conn _) <- storeInitialise options
+            store@(PGStore _ _) <- storeInitialise options
 
             let doc1 = fromJust $ mkNode (Just "Document One")
             let doc2 = fromJust $ mkNode (Just "Document Two")
             let doc3 = fromJust $ mkNode (Just "Document Three")
             let doc4 = fromJust $ mkNode (Just "Document Four")
 
-            Right (ik1, ik2, ik3, ik4) <- runAction store $ do
+            Right (ik1, ik2, ik3, _ik4) <- runAction store $ do
                 (ik1 :: InternalKey "tests") <- createInternalKey
                 (ik2 :: InternalKey "testers") <- createInternalKey
                 (ik3 :: InternalKey "tests") <- createInternalKey
                 (ik4 :: InternalKey "tests") <- createInternalKey
                 return (ik1, ik2, ik3, ik4)
 
-            (runAction store $ do
+            runAction store (do
                 recordInitialDocument ik1 doc1
                 recordInitialDocument ik2 doc2
                 recordInitialDocument ik3 doc3) >>= either throwIO return
@@ -288,26 +292,28 @@ postgresqlSuite = around prepareDatabase $
                 >>= either throwIO return
 
             -- Check it.
-            count <- countStore store
-            count `shouldBe` (4, 0, 3, 0)
+            count2 <- countStore store
+            count2 `shouldBe` (4, 0, 3, 0)
 
-            contents <- dumpStore store
-            contents `shouldBe` (
+            contents2 <- dumpStore store
+            contents2 `shouldBe` (
                 [("testers", 2), ("tests", 1), ("tests", 3), ("tests", 4)],
                 [],
                 [("testers", 2, toJSON doc2), ("tests", 1, toJSON doc1),
                 ("tests", 3, toJSON doc4)],
                 [], [])
 
-            result <- runAction store (deleteInitialDocument ik2)
+            result3 <- runAction store (deleteInitialDocument ik2)
                 >>= either throwIO return
 
-            -- Check it.
-            count <- countStore store
-            count `shouldBe` (4, 0, 2, 0)
+            result3 `shouldBe` 0
 
-            contents <- dumpStore store
-            contents `shouldBe` (
+            -- Check it.
+            count3 <- countStore store
+            count3 `shouldBe` (4, 0, 2, 0)
+
+            contents3 <- dumpStore store
+            contents3 `shouldBe` (
                 [("testers", 2), ("tests", 1), ("tests", 3), ("tests", 4)],
                 [],
                 [("tests", 1, toJSON doc1), ("tests", 3, toJSON doc4)],
@@ -316,7 +322,7 @@ postgresqlSuite = around prepareDatabase $
             storeFinalise store
 
         it "should record diffs" $ do
-            store@(PGStore conn _) <- storeInitialise options
+            store@(PGStore _ _) <- storeInitialise options
 
             -- TODO Put some actual diffs in here.
             let a1 = mempty
@@ -330,7 +336,7 @@ postgresqlSuite = around prepareDatabase $
             let ds3 = (a3, l3)
 
             -- Insert some initial documents.
-            Right (ik1, ik2, ik3, ik4) <- runAction store $ do
+            Right (ik1, ik2, ik3, _ik4) <- runAction store $ do
                 (ik1 :: InternalKey "tests") <- createInternalKey
                 (ik2 :: InternalKey "testers") <- createInternalKey
                 (ik3 :: InternalKey "tests") <- createInternalKey
@@ -361,19 +367,19 @@ postgresqlSuite = around prepareDatabase $
                 conflicts
                 )
 
-            result <- runAction store $
+            result2 <- runAction store $
                 deleteDiffs ik2
+            either throwIO (`shouldBe` 1) result2 -- deletes a successful and unsuccessful diff
 
-            either throwIO (`shouldBe` 1) result -- deletes a successful and unsuccessful diff
-            count <- countStore store
-            count `shouldBe` (4, 0, 0, 2)
+            count2 <- countStore store
+            count2 `shouldBe` (4, 0, 0, 2)
 
-            contents <- dumpStore store
-            contents `shouldBe` (
+            contents2 <- dumpStore store
+            contents2 `shouldBe` (
                 [("testers", 2), ("tests", 1), ("tests", 3), ("tests", 4)],
                 [], [],
                 [("tests", 1, 1, toJSON a2), ("tests", 3, 3, toJSON a3)],
-                concat [expectedL1, expectedL3]
+                expectedL1 ++ expectedL3
                 )
 
             storeFinalise store

@@ -11,11 +11,13 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Main where
 
 import Control.Applicative
+import Control.Monad
 import Data.Binary
 import Retcon.Diff
 import Retcon.Document
@@ -42,7 +44,7 @@ instance Arbitrary (Diff ()) where
     arbitrary = sized $ \n -> do
         l <- arbitrary
         childs <- choose (0,n)
-        ops <- sequence $ replicate childs $ arbitrary
+        ops <- replicateM childs arbitrary
         return $ Diff l ops
 
 instance Arbitrary (DiffOp ()) where
@@ -76,7 +78,7 @@ main :: IO ()
 main = hspec suite
 
 suite :: Spec
-suite = do
+suite =
     describe "Wire format identity tests" $ do
         prop "RequestConflicted" (wireId :: RequestConflicted -> Bool)
         prop "ResponseConflicted" (wireId :: ResponseConflicted -> Bool)

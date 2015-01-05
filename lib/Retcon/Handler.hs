@@ -21,7 +21,7 @@ module Retcon.Handler where
 
 import Control.Applicative
 import Control.Exception.Enclosed (tryAny)
-import Control.Monad.Error.Class
+import Control.Monad.Error.Class ()
 import Control.Monad.Logger
 import Control.Monad.Reader
 import Data.Bifunctor
@@ -107,7 +107,7 @@ data RetconOperation entity source
   deriving (Show)
 
 instance Eq (RetconOperation entity source) where
-    (RetconCreate fk1 doc1) == (RetconCreate fk2 doc2) = fk1 == fk2
+    (RetconCreate fk1 _doc1) == (RetconCreate fk2 _doc2) = fk1 == fk2
     (RetconDelete ik1) == (RetconDelete ik2) = ik1 == ik2
     (RetconUpdate ik1) == (RetconUpdate ik2) = ik1 == ik2
     (RetconProblem fk1 _) == (RetconProblem fk2 _) = fk1 == fk2
@@ -164,7 +164,7 @@ determineOperation state fk = do
             (Nothing, Left  _) -> RetconProblem fk (RetconSourceError "Unknown key, no document")
             (Nothing, Right doc) -> RetconCreate fk doc
             (Just ik, Left  _) -> RetconDelete ik
-            (Just ik, Right doc) -> RetconUpdate ik
+            (Just ik, Right _doc) -> RetconUpdate ik
 
     whenVerbose . logInfoN . fromString $
         "DETERMINED: " <> show fk <> " operation: " <> show operation
@@ -196,7 +196,7 @@ create
     -> ForeignKey entity source
     -> Document
     -> RetconHandler store ()
-create state fk doc = do
+create _state fk doc = do
     logInfoN . fromString $
         "CREATE: " <> show fk
 

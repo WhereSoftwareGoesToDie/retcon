@@ -37,7 +37,6 @@ import Retcon.DataSource.JsonDirectory
 import Retcon.DataSource.PostgreSQL
 import Retcon.Diff
 import Retcon.Document
-import Retcon.Handler
 import Retcon.Monad
 import Retcon.Network.Client
 import Retcon.Network.Server
@@ -88,13 +87,13 @@ suite conn fp =
         -- | A modification is made upstream, Retcon is notified and it makes
         -- the appropriate change locally
         it "upstream change propogates locally" . withTestState conn $ \lk uk -> do
-            let document = (hubert & _Wrapped . at (["address"]) ?~ "123 Unicorn Avenue")
+            let document = hubert & _Wrapped . at ["address"] ?~ "123 Unicorn Avenue"
 
             -- Do the modification upstream
-            setJSONDir fp document (Just uk)
+            _ <- setJSONDir fp document (Just uk)
 
             -- Send notification to retcon
-            (runRetconZMQ conn $ enqueueChangeNotification $
+            runRetconZMQ conn (enqueueChangeNotification $
                 ChangeNotification "acceptance-user" "upstream" (unForeignKey uk))
                 >>= either throwIO return
 
@@ -112,7 +111,7 @@ suite conn fp =
             deleteJSONDir fp uk
 
             -- Send notification to retcon
-            (runRetconZMQ conn $ enqueueChangeNotification $
+            runRetconZMQ conn (enqueueChangeNotification $
                 ChangeNotification "acceptance-user" "upstream" (unForeignKey uk))
                 >>= either throwIO return
 
@@ -137,13 +136,13 @@ suite conn fp =
                                    & _Wrapped . at ["address"] ?~ "987 Pink Elephant Street"
 
             -- Do the modification upstream
-            setJSONDir fp document1 (Just uk)
+            _ <- setJSONDir fp document1 (Just uk)
 
             -- Do the modification locally
-            setJSONDir fp document2 (Just lk)
+            _ <- setJSONDir fp document2 (Just lk)
 
             -- Send notification to retcon
-            (runRetconZMQ conn $ enqueueChangeNotification $
+            _ <- runRetconZMQ conn (enqueueChangeNotification $
                 ChangeNotification "acceptance-user" "upstream" (unForeignKey uk))
 
             -- TODO: Don't wait here, check retcon somehow.
@@ -159,29 +158,27 @@ suite conn fp =
                               , (c_id,c@(InsertOp () ["name"] name)) <- changes
                               , name == doc2_name]
             length ops `shouldBe` 1
-            let [(did,change_id,change)] = ops
-            (runRetconZMQ conn $ enqueueResolveDiff did [change_id])
+            let [(did, change_id, _change)] = ops
+            runRetconZMQ conn (enqueueResolveDiff did [change_id])
                 >>= either throwIO return
             let document1' = document1 & _Wrapped . at ["name"] ?~ "Hubert C."
                 document2' = document2
 
             -- Send notification to retcon
-            (runRetconZMQ conn $ enqueueChangeNotification $
+            _ <- runRetconZMQ conn (enqueueChangeNotification $
                 ChangeNotification "acceptance-user" "upstream" (unForeignKey uk))
 
             -- TODO: Don't wait here, check retcon somehow.
             threadDelay 100000
 
             -- Get a list of conflicts. There should be exactly one.
-            conflicts <- runRetconZMQ conn getConflicted >>= either throwIO return
-            length conflicts `shouldBe` 1
+            conflicts2 <- runRetconZMQ conn getConflicted >>= either throwIO return
+            length conflicts2 `shouldBe` 1
 
             doc1 <- getJSONDir fp uk
             doc1 `shouldBe` document1'
             doc2 <- getJSONDir fp lk
             doc2 `shouldBe` document2'
-
-
 
 hubert :: Document
 hubert =
@@ -214,7 +211,7 @@ withTestState conn f = bracket setup teardown (uncurry f . fst)
         let (entity,source,key) = foreignKeyValue local_fk
 
         -- Signal retcon to propogate this upstream
-        (runRetconZMQ conn $ enqueueChangeNotification $
+        runRetconZMQ conn (enqueueChangeNotification $
             ChangeNotification entity source key)
             >>= either throwIO return
 

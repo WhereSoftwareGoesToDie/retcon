@@ -20,6 +20,7 @@
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TupleSections              #-}
+
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 -- | Server component for the retcon network API.
@@ -44,7 +45,7 @@ import Data.Maybe
 import Data.Monoid
 import Data.String
 import Data.Typeable
-import Options.Applicative
+import Options.Applicative hiding (action)
 import System.ZMQ4.Monadic hiding (async)
 
 import Retcon.Core
@@ -254,10 +255,10 @@ runRetconServer
     -> State
     -> (forall z. RetconServer z a)
     -> IO ()
-runRetconServer cfg state act = runZMQ $ runStdoutLoggingT $ do
+runRetconServer cfg state action = runZMQ $ runStdoutLoggingT $ do
     sock <- lift . socket $ Rep
     lift . bind sock $ cfg ^. cfgConnectionString
-    void $ flip runReaderT state . flip runReaderT sock . runExceptT . unRetconServer $ act
+    void $ flip runReaderT state . flip runReaderT sock . runExceptT . unRetconServer $ action
 
 -- * Monads with ZMQ
 
@@ -275,7 +276,7 @@ decodeStrict
     -> m a
 decodeStrict bs =
     case decodeOrFail . fromStrict $ bs of
-        Left e ->
+        Left _ ->
             -- TODO: Log this error somehow.
             throwError DecodeError
         Right (_, _, x) -> return x
@@ -297,8 +298,8 @@ protocol = loop
         -- Decode and process the message.
         (status, resp) <- case cmd of
             [hdr, req] -> catchAndInject $
-                          join $ dispatch <$> (toEnum <$> decodeStrict hdr)
-                                          <*> pure (fromStrict req)
+                          join $ dispatchMessage <$> (toEnum <$> decodeStrict hdr)
+                                                 <*> pure (fromStrict req)
             _          -> throwError InvalidNumberOfMessageParts
         -- Encode and send the response.
         liftZMQ . sendMulti sock . fromList $ [encodeStrict status, resp]
@@ -306,16 +307,16 @@ protocol = loop
         loop
 
     -- Decode a request and call the appropriate handler.
-    dispatch
+    dispatchMessage
         :: SomeHeader
         -> LBS.ByteString
         -> RetconServer z (Bool, BS.ByteString)
-    dispatch (SomeHeader hdr) body =
+    dispatchMessage (SomeHeader hdr) body =
         (True,) <$> case hdr of
             HeaderConflicted -> encodeStrict <$> listConflicts (decode body)
-            HeaderResolve -> encodeStrict <$> resolveConflict (decode body)
-            HeaderChange -> encodeStrict <$> notify (decode body)
-            InvalidHeader -> return . encodeStrict $ InvalidResponse
+            HeaderResolve    -> encodeStrict <$> resolveConflict (decode body)
+            HeaderChange     -> encodeStrict <$> notify (decode body)
+            InvalidHeader    -> encodeStrict <$> return InvalidResponse
 
     -- Catch exceptions and inject them into the monad as errors.
     --
@@ -324,7 +325,7 @@ protocol = loop
     catchAndInject
         :: RetconServer z (Bool, BS.ByteString)
         -> RetconServer z (Bool, BS.ByteString)
-    catchAndInject act = catchError (catch act injectSomeException) reportAPIError
+    catchAndInject action = catchError (catch action injectSomeException) reportAPIError
       where
         injectSomeException
             :: (MonadLogger m, MonadError RetconAPIError m)
@@ -348,9 +349,9 @@ protocol = loop
 runRetconMonadInServer
     :: RetconMonad InitialisedEntity RWToken () r
     -> RetconServer z r
-runRetconMonadInServer act = do
+runRetconMonadInServer action = do
     state <- askState
-    result <- liftIO . runRetconMonad state $ act
+    result <- liftIO . runRetconMonad state $ action
 
     case result of
         Left (RetconUnknown key) -> do
