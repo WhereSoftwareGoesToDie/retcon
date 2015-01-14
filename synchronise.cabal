@@ -25,11 +25,21 @@ library
                      , Synchronise.Identifier
   build-depends:       base >=4.7 && <4.8
                      , aeson
-                     , aeson-schema
                      , mtl
                      , process
                      , text
                      , transformers
+
+executable jsondiff
+  default-language:    Haskell2010
+  hs-source-dirs:      src
+  main-is:             Diff.hs
+  build-depends:
+      base
+    , aeson
+    , bytestring
+    , text
+    , unordered-containers
 
 executable synchronised
   default-language:    Haskell2010
