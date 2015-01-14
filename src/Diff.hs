@@ -11,6 +11,7 @@ import qualified Data.HashMap.Strict as HM
 import Data.Maybe
 import Data.Monoid
 import Data.Text (Text)
+import qualified Data.Vector as V
 import System.Environment
 
 type Path = [Step]
@@ -57,23 +58,18 @@ diffJson = worker []
 
     worker :: Path -> Value -> Value -> Diff
     worker p v1 v2 = case (v1, v2) of
-        (String s1, String s2) -> check (s1 == s2) $ ch p v1 v2
-        (_,         String s2) -> del p v1 <> ins p v2
-
-        (Number n1, Number n2) -> if n1 == n2 then mempty else ch p v1 v2
-        (_,         Number n2) -> del p v1 <> ins p v2
-
-        (Bool b1,   Bool b2)   -> if b1 == b2 then mempty else ch p v1 v2
-        (_,         Bool b2)   -> del p v1 <> ins p v2
-
+        -- For atomic values of the same type, emit changes if they differ.
         (Null,      Null)      -> mempty
-        (_,         Null)      -> del p v1 <> ins p v2
+        (Bool b1,   Bool b2)   -> check (b1 == b2) $ ch p v1 v2
+        (Number n1, Number n2) -> check (n1 == n2) $ ch p v1 v2
+        (String s1, String s2) -> check (s1 == s2) $ ch p v1 v2
 
-        (Array a1,  Array a2)  -> if a1 == a2 then mempty else workArray p a1 a2
-        (_,         Array a2)  -> del p v1 <> ins p v2
+        -- For structured values of the same type, walk them.
+        (Array a1,  Array a2)  -> check (a1 == a2) $ workArray p a1 a2
+        (Object o1, Object o2) -> check (o1 == o2) $ workObject p o1 o2
 
-        (Object o1, Object o2) -> if o1 == o2 then mempty else workObject p o1 o2
-        (_,         Object o2) -> del p v1 <> ins p v2
+        -- For values of different types, delete v1 and insert v2.
+        _                      -> del p v1 <> ins p v2
 
     -- Walk the keys in two objects, producing a 'Diff'.
     workObject :: Path -> Object -> Object -> Diff
