@@ -7,7 +7,8 @@
 -- the 3-clause BSD licence.
 --
 
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards   #-}
 
 module Main where
 
@@ -52,7 +53,8 @@ withConfiguration fn opt =
         cfg <- load [Required optConfiguration] >>= (runExceptT . parseConfiguration)
 
         case cfg of
-            Left e -> T.putStrLn e >> exitFailure
+            Left e -> T.putStrLn ("Could not load configuration: " <> e) >>
+                      exitFailure
             Right c -> return c
     unconfigure _ = return ()
 

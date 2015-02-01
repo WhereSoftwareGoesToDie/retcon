@@ -12,10 +12,8 @@
 -- | Description: Unique identifiers for internal an external use.
 module Synchronise.Identifier (
     -- * Configuration names
-    EntityName,
-    unwrapEntityName,
-    SourceName,
-    unwrapSourceName,
+    EntityName(..),
+    SourceName(..),
     -- * Unique identifiers
     ForeignKey(..),
     InternalKey(..),

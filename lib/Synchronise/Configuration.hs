@@ -8,6 +8,7 @@
 --
 
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TupleSections     #-}
 
 -- | Description: Configuration for the system.
 module Synchronise.Configuration where
@@ -44,7 +45,7 @@ data DataSource = DataSource
     , commandUpdate     :: Command    -- ^ Command template: update object.
     , commandDelete     :: Command    -- ^ Command template: delete object.
     }
-  deriving (Eq, Show)
+  deriving (Eq, Ord, Show)
 
 instance Synchronisable DataSource where
     getEntityName = sourceEntity
@@ -53,15 +54,21 @@ instance Synchronisable DataSource where
 data Entity = Entity
     { entityName        :: EntityName
     , entityDescription :: Maybe Text
-    , entitySchmea      :: Maybe FilePath
-    , entitySources     :: [SourceName]
+    , entitySchema      :: Maybe FilePath
+    , entityPolicy      :: Maybe FilePath
+    , entitySources     :: Map SourceName DataSource
     }
   deriving (Eq, Ord, Show)
 
--- | Configuration
+-- | Construct an 'Entity' with only a name.
+emptyEntity
+    :: Text
+    -> Entity
+emptyEntity name = Entity (EntityName name) mempty mempty mempty mempty
+
+-- | Configuration of entities and data sources.
 data Configuration = Configuration
     { configEntities :: Map EntityName Entity
-    , configSources  :: Map (EntityName, SourceName) DataSource
     }
   deriving (Eq, Show)
 
@@ -70,27 +77,45 @@ type Parser a = Config -> ExceptT Text IO a
 -- | Parse a configurator 'Config' value into a 'Configuration'.
 parseConfiguration
     :: Parser Configuration
-parseConfiguration cfg = Configuration
-    <$> entities cfg
-    <*> sources cfg
+parseConfiguration cfg = Configuration <$> entities cfg
   where
     entities :: Parser (Map EntityName Entity)
     entities _ = do
         enabled <- liftIO $ C.lookup cfg "entities.enabled"
-        liftIO . print $ (enabled :: Maybe [Text])
-        lol <- case enabled of
+        ents <- case enabled of
             Nothing -> throwError "No entities enabled in configuration."
             Just [] -> throwError "No entities enabled in configuration."
             Just es -> mapM (`parseEntity` cfg) . fmap ("entities." <>) $ es
-        liftIO . print $ lol
-        return M.empty
-    sources :: Parser (Map (EntityName, SourceName) DataSource)
-    sources _ = return M.empty
+        return . M.fromList . fmap (\e -> (entityName e, e)) $ ents
 
+-- | Parse an
 parseEntity
-    :: Text -> Parser Entity
-parseEntity _ _ = throwError "No"
+    :: Text
+    -> Parser Entity
+parseEntity name cfg = Entity
+    <$> parseName cfg
+    <*> parseDescription cfg
+    <*> parsePath "schema" cfg
+    <*> parsePath "merge-policy" cfg
+    <*> parseSources cfg
+  where
+    parseName :: Parser EntityName
+    parseName _ = return "LOL"
+    parseDescription :: Parser (Maybe Text)
+    parseDescription _ = liftIO $ C.lookup cfg (name <> ".description")
+    parsePath n _ = liftIO $ C.lookup cfg (name <> "." <> n)
+    parseSources :: Parser (Map SourceName DataSource)
+    parseSources _ = do
+        enabled <- liftIO $ C.lookup cfg (name <> ".enabled")
+        sources <- case enabled of
+            Nothing -> throwError $ "No sources enabled in " <> name
+            Just [] -> throwError $ "No sources enabled in " <> name
+            Just ss -> mapM (`parseDataSource` cfg) . fmap (name,) $ ss
+        return . M.fromList $ sources
 
+-- | Parse a data source from a configuration.
 parseDataSource
-    :: Text -> Parser DataSource
-parseDataSource _ _ = throwError "No"
+    :: (Text, Text)
+    -> Parser (SourceName, DataSource)
+parseDataSource (_entity_name, _source_name) _cfg =
+    throwError "Data source parsing not implemented"
