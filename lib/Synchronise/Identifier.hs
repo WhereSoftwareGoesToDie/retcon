@@ -1,7 +1,5 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 --
--- Copyright © 2013-2014 Anchor Systems, Pty Ltd and Others
+-- Copyright © 2014-2015 Anchor Systems, Pty Ltd and Others
 --
 -- The code in this file, and the program it is a part of, is
 -- made available to you by its authors as open source software:
@@ -9,11 +7,15 @@
 -- the 3-clause BSD licence.
 --
 
+{-# LANGUAGE OverloadedStrings #-}
+
 -- | Description: Unique identifiers for internal an external use.
 module Synchronise.Identifier (
     -- * Configuration names
     EntityName,
+    unwrapEntityName,
     SourceName,
+    unwrapSourceName,
     -- * Unique identifiers
     ForeignKey(..),
     InternalKey(..),

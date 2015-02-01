@@ -1,14 +1,14 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE OverloadedStrings          #-}
-
 --
--- Copyright © 2013-2014 Anchor Systems, Pty Ltd and Others
+-- Copyright © 2014-2015 Anchor Systems, Pty Ltd and Others
 --
 -- The code in this file, and the program it is a part of, is
 -- made available to you by its authors as open source software:
 -- you can redistribute it and/or modify it under the terms of
 -- the 3-clause BSD licence.
 --
+
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedStrings          #-}
 
 -- | Description: Define and operate on data sources.
 --
@@ -30,36 +30,15 @@ import Control.Monad
 import Control.Monad.Error.Class
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Except
-import Data.String
+import Data.String ()
 import Data.Text (Text)
 import qualified Data.Text as T
 import System.IO
 import System.Process
 
+import Synchronise.Configuration
 import Synchronise.Document
 import Synchronise.Identifier
-
--- | Command template.
-newtype Command = Command { unCommand :: Text }
-  deriving (Eq, Show, Ord)
-
-instance IsString Command where
-    fromString = Command . T.pack
-
--- | Record describing an external data source and how we interact with it.
-data DataSource = DataSource
-    { entityName    :: EntityName -- ^ Unique name for entity.
-    , sourceName    :: SourceName -- ^ Unique name for this data source.
-    , commandCreate :: Command    -- ^ Command template: create object.
-    , commandRead   :: Command    -- ^ Command template: read object.
-    , commandUpdate :: Command    -- ^ Command template: update object.
-    , commandDelete :: Command    -- ^ Command template: delete object.
-    }
-  deriving (Eq, Show)
-
-instance Synchronisable DataSource where
-    getEntityName = entityName
-    getSourceName = sourceName
 
 newtype DSMonad a = DSMonad { unDSMonad :: ExceptT Text IO a }
   deriving (Applicative, Functor, Monad, MonadIO, MonadError Text)
