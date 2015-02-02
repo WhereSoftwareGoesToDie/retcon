@@ -85,28 +85,30 @@ parseConfiguration cfg = Configuration <$> entities cfg
         ents <- case enabled of
             Nothing -> throwError "No entities enabled in configuration."
             Just [] -> throwError "No entities enabled in configuration."
-            Just es -> mapM (`parseEntity` cfg) . fmap ("entities." <>) $ es
+            Just es -> mapM (`parseEntity` cfg) es
         return . M.fromList . fmap (\e -> (entityName e, e)) $ ents
 
 -- | Parse an
 parseEntity
     :: Text
     -> Parser Entity
-parseEntity name cfg = Entity
-    <$> parseName cfg
-    <*> parseDescription cfg
-    <*> parsePath "schema" cfg
-    <*> parsePath "merge-policy" cfg
-    <*> parseSources cfg
+parseEntity name cfg' = do
+    let cfg = C.subconfig ("entities." <> name) cfg'
+    Entity
+        <$> parseName cfg
+        <*> parseDescription cfg
+        <*> parsePath "schema" cfg
+        <*> parsePath "merge-policy" cfg
+        <*> parseSources cfg
   where
     parseName :: Parser EntityName
     parseName _ = return "LOL"
     parseDescription :: Parser (Maybe Text)
-    parseDescription _ = liftIO $ C.lookup cfg (name <> ".description")
-    parsePath n _ = liftIO $ C.lookup cfg (name <> "." <> n)
+    parseDescription cfg = liftIO $ C.lookup cfg (name <> ".description")
+    parsePath n cfg = liftIO $ C.lookup cfg (name <> "." <> n)
     parseSources :: Parser (Map SourceName DataSource)
-    parseSources _ = do
-        enabled <- liftIO $ C.lookup cfg (name <> ".enabled")
+    parseSources cfg = do
+        enabled <- liftIO $ C.lookup cfg "enabled"
         sources <- case enabled of
             Nothing -> throwError $ "No sources enabled in " <> name
             Just [] -> throwError $ "No sources enabled in " <> name
@@ -117,5 +119,24 @@ parseEntity name cfg = Entity
 parseDataSource
     :: (Text, Text)
     -> Parser (SourceName, DataSource)
-parseDataSource (_entity_name, _source_name) _cfg =
-    throwError "Data source parsing not implemented"
+parseDataSource (entity_name, source_name) cfg' = do
+    let name = source_name
+    let cfg = C.subconfig name cfg'
+
+    let en = EntityName entity_name
+    let sn = SourceName source_name
+    desc <- liftIO $ C.lookup cfg "description"
+
+    c_cmd <- get_cmd cfg "create"
+    r_cmd <- get_cmd cfg "read"
+    u_cmd <- get_cmd cfg "update"
+    d_cmd <- get_cmd cfg "delete"
+
+    return (sn, DataSource en sn desc c_cmd r_cmd u_cmd d_cmd)
+  where
+    get_cmd cfg name = do
+        cmd <- liftIO $ C.lookup cfg name
+        case cmd of
+            Nothing -> throwError $ "No " <> name <> " command for " <>
+                entity_name <> "." <> source_name
+            Just c -> return $ Command c
