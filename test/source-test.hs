@@ -28,6 +28,6 @@ source = DataSource
 main :: IO ()
 main = do
     let fk = ForeignKey "entity" "source" "123"
-    doc <- runDSMonad $ get source fk
+    doc <- runDSMonad $ readDocument source fk
     print . toJSON $ doc
     putStrLn "LOL"

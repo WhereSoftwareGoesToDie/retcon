@@ -70,7 +70,7 @@ data ForeignKey = ForeignKey
     , fkSource :: SourceName
     , fkKey    :: Text
     }
-  deriving (Eq)
+  deriving (Eq, Show)
 
 instance Synchronisable ForeignKey where
     getEntityName = fkEntity

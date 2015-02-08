@@ -20,9 +20,10 @@ module Synchronise.DataSource (
     DSMonad,
     runDSMonad,
     -- * Operations
-    get,
-    set,
-    delete,
+    createDocument,
+    readDocument,
+    updateDocument,
+    deleteDocument,
 ) where
 
 import Control.Applicative
@@ -67,16 +68,36 @@ checkCompatibility
 checkCompatibility a b =
     unless (compatibleSource a b) $ throwError "Incompatible data sources!"
 
+-- | Access a 'DataSource' and create a new 'Document' returning the
+-- 'ForeignKey' which, in that source, identifies the document.
+--
+-- It is an error if the 'DataSource' and 'Document' supplied do not agree on
+-- the entity and source names.
+createDocument
+    :: DataSource
+    -> Document
+    -> DSMonad ForeignKey
+createDocument src fk = do
+    -- 1. Check source and key are compatible.
+    checkCompatibility src fk
+    -- 2. Spawn process.
+    -- 3. Write input.
+    -- 4. Check return code, raising error if required.
+    -- 5. Read handles
+    -- 6. Close handles.
+    -- 7. Parse response.
+    error "DataSource.createDocument is not implemented"
+
 -- | Access a 'DataSource' and retrieve the 'Document' identified, in that source,
 -- by the given 'ForeignKey'.
 --
 -- It is an error if the 'DataSource' and 'ForeignKey' supplied do not agree on
 -- the entity and source names.
-get
+readDocument
     :: DataSource
     -> ForeignKey
     -> DSMonad Document
-get src fk = do
+readDocument src fk = do
     -- 1. Check source and key are compatible.
     checkCompatibility src fk
     -- 2. Spawn process.
@@ -90,7 +111,7 @@ get src fk = do
     -- 5. Close handles.
     liftIO $ hClose hout
     -- 6. Parse input and return value.
-    error "DataSource.get is not implemented"
+    error "DataSource.readDocument is not implemented"
 
 -- | Access a 'DataSource' and save the 'Document' under the specified
 -- 'ForeignKey', returning the 'ForeignKey' to use for the updated document in
@@ -100,35 +121,39 @@ get src fk = do
 --
 -- It is an error if the 'DataSource' and 'ForeignKey' supplied do not agree on
 -- the entity and source names.
-set
+updateDocument
     :: DataSource
-    -> Maybe ForeignKey -- ^ Key to update.
+    -> ForeignKey
     -> Document
     -> DSMonad ForeignKey -- ^ New (or old) key for this document.
-set _ _ _ =
-    -- 1. Check source and key are compatible.
+updateDocument src fk doc = do
+    -- 1. Check source, key, and document are compatible.
+    checkCompatibility src fk
+    checkCompatibility src doc
+
     -- 2. Spawn process.
     -- 3. Write input.
     -- 4. Read output.
     -- 5. Check return code, raising error if required.
     -- 6. Close handles.
     -- 7. Parse input and return value.
-    error "DataSource.set is not implemented"
+    error "DataSource.updateDcoument is not implemented"
 
 -- | Access a 'DataSource' and delete the 'Document' identified in that source
 -- by the given 'ForeignKey'.
 --
 -- It is an error if the 'DataSource' and 'ForeignKey' do not agree on the
 -- entity and source names.
-delete
+deleteDocument
     :: DataSource
     -> ForeignKey
-    -> IO ()
-delete _ _ =
+    -> DSMonad ()
+deleteDocument src fk = do
     -- 1. Check source and key are compatible.
+    checkCompatibility src fk
     -- 2. Spawn process.
     -- 3. Read output
     -- 4. Check return code, raising error if required.
     -- 5. Close handles.
     -- 6. Parse output and return value.
-    error "DataSource.delete is not implemented"
+    error "DataSource.deleteDocument is not implemented"

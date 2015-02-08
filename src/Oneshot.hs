@@ -24,11 +24,20 @@ import System.FilePath
 
 import qualified Paths_synchronise as Paths
 import Synchronise hiding (Parser)
-import Synchronise.Program.Daemon
+import Synchronise.Program.Once
+
+-- | A request to be processed.
+data Request
+    = Create
+    | Read   { commandKey :: ForeignKey }
+    | Update { commandKey :: ForeignKey }
+    | Delete { commandKey :: ForeignKey }
+  deriving (Eq, Show)
 
 -- | Command line options for the server.
 data Options = Options
     { optConfiguration :: FilePath
+    , optCommand :: Request
     }
   deriving (Show, Eq)
 
@@ -42,6 +51,15 @@ optionsParser etc = Options
         <> value (etc </> "synchronised" </> "synchronised.conf")
         <> showDefault
         )
+    <*> requestParser
+
+-- | Parse a 'Request' from command line options.
+--
+-- The syntax is <command> <entity> <source> <fk>
+--
+-- read customer accounts 23
+requestParser :: Parser Request
+requestParser = pure undefined
 
 -- | Initialise the runtime 'Configuration' based on command line 'Options'.
 withConfiguration
@@ -62,7 +80,7 @@ withConfiguration fn opt =
 
 -- | Run the synchronised process.
 run :: Configuration -> IO ()
-run = synchronise
+run = synchroniseOnce
 
 main :: IO ()
 main = do

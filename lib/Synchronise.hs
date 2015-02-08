@@ -9,14 +9,20 @@
 
 -- | Re-export the public API to /Synchronise/.
 module Synchronise (
+    -- * Configuration
+    module Synchronise.Configuration,
     -- * Identifiers
     module Synchronise.Identifier,
+    -- * Diffs
+    module Synchronise.Diff,
     -- * Documents
     module Synchronise.Document,
     -- * Data sources
     module Synchronise.DataSource,
 ) where
 
+import Synchronise.Configuration
 import Synchronise.DataSource
+import Synchronise.Diff
 import Synchronise.Document
 import Synchronise.Identifier
