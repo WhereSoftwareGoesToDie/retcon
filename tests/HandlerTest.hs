@@ -206,11 +206,13 @@ operationSuite = do
                 let source = Proxy :: Proxy "dispatch1"
                 let Just st@(Dispatch1 ref) = accessState state entity source
 
-                (fk', _) <- newTestDocument "dispatch1-" Nothing ref
+                (fk', doc') <- newTestDocument "dispatch1-" Nothing ref
                 let fk = ForeignKey (T.unpack fk') :: ForeignKey "dispatchtest" "dispatch1"
+                let Success doc = fromJSON doc'
+
                 Right op <- run opts state $ determineOperation st fk
 
-                op `shouldBe` RetconCreate fk
+                op `shouldBe` RetconCreate fk doc
 
         it "should result in an error when new key is seen, but no document." $
             withConfiguration testOpts $ \(state, store, opts) -> do
@@ -285,12 +287,13 @@ operationSuite = do
                 let source = Proxy :: Proxy "dispatch1"
                 let Just st@(Dispatch1 ref) = accessState state entity source
 
-                (fk', _) <- newTestDocument "dispatch1-" Nothing ref
+                (fk', doc') <- newTestDocument "dispatch1-" Nothing ref
+                let Success doc = fromJSON doc'
 
                 result <- testHandler state store $ do
                     let fk = ForeignKey (T.unpack fk')
 
-                    let op = RetconCreate fk :: RetconOperation "dispatchtest" "dispatch1"
+                    let op = RetconCreate fk doc :: RetconOperation "dispatchtest" "dispatch1"
 
                     runOperation st op
                 either throwIO return result
