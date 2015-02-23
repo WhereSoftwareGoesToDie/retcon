@@ -18,6 +18,7 @@ import Control.Monad.Trans.Except
 import Data.Configurator
 import Data.Monoid
 import qualified Data.Text.IO as T
+import Data.Version
 import Options.Applicative
 import System.Exit
 import System.FilePath
@@ -72,4 +73,6 @@ main = do
     opts etc = info (helper <*> optionsParser etc)
         (  fullDesc
         <> progDesc "Synchronise JSON data between multiple data sources."
+        <> header ("synchronised " <> showVersion version <>
+                " - data synchronisation daemon")
         )

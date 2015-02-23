@@ -19,6 +19,8 @@ module Synchronise (
     module Synchronise.Document,
     -- * Data sources
     module Synchronise.DataSource,
+
+    S.version,
 ) where
 
 import Synchronise.Configuration
@@ -26,3 +28,5 @@ import Synchronise.DataSource
 import Synchronise.Diff
 import Synchronise.Document
 import Synchronise.Identifier
+
+import Paths_synchronise as S
