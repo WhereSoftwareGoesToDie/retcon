@@ -102,7 +102,7 @@ parseEntity name cfg' = do
         <*> parseSources cfg
   where
     parseName :: Parser EntityName
-    parseName _ = return "LOL"
+    parseName _ = EntityName <$> pure name
     parseDescription :: Parser (Maybe Text)
     parseDescription cfg = liftIO $ C.lookup cfg (name <> ".description")
     parsePath n cfg = liftIO $ C.lookup cfg (name <> "." <> n)
@@ -140,3 +140,17 @@ parseDataSource (entity_name, source_name) cfg' = do
             Nothing -> throwError $ "No " <> name <> " command for " <>
                 entity_name <> "." <> source_name
             Just c -> return $ Command c
+
+-- | Get a 'DataSource' from a 'Configuration'.
+getDataSource
+    :: Configuration
+    -> EntityName
+    -> SourceName
+    -> Either String DataSource
+getDataSource (Configuration es) en sn =
+    case M.lookup en es of
+        Nothing -> Left $ "No configuration for entity: " <> show en
+        Just ss -> case M.lookup sn (entitySources ss) of
+            Nothing -> Left $ "No configuration for entity and data source: "
+                    <> show en <> "/" <> show sn
+            Just ds -> Right ds

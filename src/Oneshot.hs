@@ -17,6 +17,7 @@ import Control.Exception
 import Control.Monad.Trans.Except
 import Data.Configurator
 import Data.Monoid
+import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import Options.Applicative
 import System.Exit
@@ -26,18 +27,10 @@ import qualified Paths_synchronise as Paths
 import Synchronise hiding (Parser)
 import Synchronise.Program.Once
 
--- | A request to be processed.
-data Request
-    = Create
-    | Read   { commandKey :: ForeignKey }
-    | Update { commandKey :: ForeignKey }
-    | Delete { commandKey :: ForeignKey }
-  deriving (Eq, Show)
-
 -- | Command line options for the server.
 data Options = Options
     { optConfiguration :: FilePath
-    , optCommand :: Request
+    , optCommand       :: Request
     }
   deriving (Show, Eq)
 
@@ -59,15 +52,31 @@ optionsParser etc = Options
 --
 -- read customer accounts 23
 requestParser :: Parser Request
-requestParser = pure undefined
+requestParser = subparser
+    (  command "create" (info cP (progDesc "Execute creation command"))
+    <> command "read"   (info rP (progDesc "Execute read command"))
+    <> command "update" (info uP (progDesc "Execute update command"))
+    <> command "delete" (info dP (progDesc "Execute delete command"))
+    )
+  where
+    cP = Create <$> fkP
+    rP = Read <$> fkP
+    uP = Update <$> fkP
+    dP = Delete <$> fkP
+
+    fkP :: Parser ForeignKey
+    fkP = ForeignKey
+        <$> argument (EntityName . T.pack <$> str) (metavar "ENTITY")
+        <*> argument (SourceName . T.pack <$> str) (metavar "SOURCE")
+        <*> argument (T.pack <$> str) (metavar "KEY")
 
 -- | Initialise the runtime 'Configuration' based on command line 'Options'.
 withConfiguration
-    :: (Configuration -> IO a)
+    :: (Request -> Configuration -> IO a)
     -> Options
     -> IO a
 withConfiguration fn opt =
-    bracket (configure opt) unconfigure fn
+    bracket (configure opt) unconfigure (fn $ optCommand opt)
   where
     configure Options{..} = do
         cfg <- load [Required optConfiguration] >>= (runExceptT . parseConfiguration)
@@ -79,7 +88,7 @@ withConfiguration fn opt =
     unconfigure _ = return ()
 
 -- | Run the synchronised process.
-run :: Configuration -> IO ()
+run :: Request -> Configuration -> IO ()
 run = synchroniseOnce
 
 main :: IO ()

@@ -25,6 +25,7 @@ data Document = Document
     , documentSource  :: SourceName -- ^ System of origin.
     , documentContent :: Value      -- ^ Document content.
     }
+  deriving (Show)
 
 instance ToJSON Document where
     toJSON = documentContent
