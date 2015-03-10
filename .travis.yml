@@ -1,6 +1,21 @@
 language: haskell
 ghc: 7.8
+addons:
+  postgresql: "9.3"
 notifications:
   email:
     on_success: change
     on_failure: change
+before_install:
+  - sudo apt-get remove libzmq1
+  - wget http://download.zeromq.org/zeromq-4.0.4.tar.gz
+  - tar -xf zeromq-4.0.4.tar.gz
+  - cd zeromq-4.0.4
+  - ./configure
+  - make
+  - sudo make install
+  - sudo su -c "echo '/usr/local/lib' > /etc/ld.so.conf.d/local.conf"
+  - sudo ldconfig
+  - cd ..
+  - git clone https://github.com/anchor/aeson-diff.git aeson-diff/
+  - cabal install aeson-diff
