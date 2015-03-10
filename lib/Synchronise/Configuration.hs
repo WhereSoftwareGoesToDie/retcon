@@ -152,5 +152,7 @@ getDataSource (Configuration es) en sn =
         Nothing -> Left $ "No configuration for entity: " <> show en
         Just ss -> case M.lookup sn (entitySources ss) of
             Nothing -> Left $ "No configuration for entity and data source: "
-                    <> show en <> "/" <> show sn
+                <> n
             Just ds -> Right ds
+  where
+    n = T.unpack $ unwrapEntityName en <> "/" <> unwrapSourceName sn

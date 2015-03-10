@@ -7,29 +7,72 @@
 -- the 3-clause BSD licence.
 --
 
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell   #-}
+
 -- | Description: Represent and operate on synchronised documents.
 --
 -- A 'Document' is, essentially, a JSON 'Value' together with some metadata
 -- describing its type, system of origin, etc.
 module Synchronise.Document (
     Document(..),
+    documentEntity,
+    documentSource,
+    documentContent,
+
+    calculateInitialDocument,
 ) where
 
+import Control.Lens
+import Control.Monad
 import Data.Aeson
+import Data.List
+import Data.Monoid
 
 import Synchronise.Identifier
 
 -- | A JSON 'Value' from a particular 'Entity'.
 data Document = Document
-    { documentEntity  :: EntityName -- ^ Type of data.
-    , documentSource  :: SourceName -- ^ System of origin.
-    , documentContent :: Value      -- ^ Document content.
+    { _documentEntity  :: EntityName -- ^ Type of data.
+    , _documentSource  :: SourceName -- ^ System of origin.
+    , _documentContent :: Value      -- ^ Document content.
     }
   deriving (Show)
 
+makeLenses ''Document
+
 instance ToJSON Document where
-    toJSON = documentContent
+    toJSON = _documentContent
 
 instance Synchronisable Document where
-    getEntityName = documentEntity
-    getSourceName = documentSource
+    getEntityName = _documentEntity
+    getSourceName = _documentSource
+
+-- | Construct an initial 'Document' for use in identifying and processing
+-- changes.
+--
+-- Reports an error when some or all documents have conflicting entities or
+-- sources.
+calculateInitialDocument
+    :: [Document]
+    -> Either String Document
+calculateInitialDocument docs = do
+    entity <- determineEntity docs
+    checkSources docs
+    case docs of
+        []  -> bail "No documents provided."
+        [d] -> Right $ d & documentEntity .~ entity
+                         & documentSource .~ "<initial>"
+        _   -> bail "Too many documents provided."
+  where
+    bail m = Left $ "Cannot calculate initial document: " <> m
+    determineEntity ds = case nub . fmap (view documentEntity) $ ds of
+        [] -> bail "No documents"
+        [e] -> Right e
+        l -> bail $ "Types do not match (" <> show l <> ")"
+    -- Check that the documents all come from different sources
+    checkSources ds =
+        let all_sources = fmap (view documentSource) ds
+            uniq_sources = group . sort $ all_sources
+        in when (any (\x -> length x > 1) uniq_sources) $
+            bail "Multiple documents from same data source."

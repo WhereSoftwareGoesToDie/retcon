@@ -12,6 +12,7 @@
 -- | Description: Diff and patch /Synchronise/ documents.
 module Synchronise.Diff where
 
+import Control.Lens
 import Data.Aeson.Diff as D
 import Data.Monoid
 
@@ -40,8 +41,8 @@ diff
     -> Document
     -> LabelledPatch l
 diff MergePolicy{..} d1 d2 =
-    let j1 = documentContent d1
-        j2 = documentContent d2
+    let j1 = d1 ^. documentContent
+        j2 = d2 ^. documentContent
         l = extractLabel d2
         d = D.diff j1 j2
     in LabelledPatch l d

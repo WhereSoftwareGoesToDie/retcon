@@ -35,7 +35,7 @@ synchroniseOnce
     -> IO ()
 synchroniseOnce req cfg = do
     let rk = commandKey req
-    ds <- either report return $ getDataSource cfg (fkEntity rk) (fkSource rk)
+    ds <- either error return $ getDataSource cfg (fkEntity rk) (fkSource rk)
 
     case req of
         Create fk -> inputDocument fk >>= exec . createDocument ds
@@ -43,8 +43,6 @@ synchroniseOnce req cfg = do
         Update fk -> inputDocument rk >>= exec . updateDocument ds fk
         Delete fk -> exec $ deleteDocument ds fk
   where
-    report e = do
-        error $ e <> "\n" <> show cfg
     exec :: Show a => DSMonad a -> IO ()
     exec a = do
         res <- runDSMonad a

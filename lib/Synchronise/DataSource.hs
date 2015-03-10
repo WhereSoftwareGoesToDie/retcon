@@ -31,9 +31,14 @@ import Control.Monad
 import Control.Monad.Error.Class
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Except
+import Data.Aeson
+import qualified Data.ByteString.Char8 as BS
+import qualified Data.ByteString.Lazy.Char8 as BSL
+import Data.Monoid
 import Data.String ()
 import Data.Text (Text)
 import qualified Data.Text as T
+import System.Exit
 import System.IO
 import System.Process
 
@@ -105,13 +110,17 @@ readDocument src fk = do
     let process = (shell cmd) { std_out = CreatePipe }
     (Nothing, Just hout, Nothing, hproc) <- liftIO $ createProcess process
     -- 3. Read output.
+    output <- liftIO $ BS.hGetContents hout
     -- 4. Check return code, raising error if required.
     exit <- liftIO $ waitForProcess hproc
-    liftIO $ print exit
     -- 5. Close handles.
     liftIO $ hClose hout
     -- 6. Parse input and return value.
-    error "DataSource.readDocument is not implemented"
+    case exit of
+        ExitFailure c -> error $ "DataSource.readDocument failed with " <> show c
+        ExitSuccess -> case eitherDecode' . BSL.fromStrict $ output of
+            Left e -> error $ "DataSource.readDocument:" <> e
+            Right j -> return $ Document (fkEntity fk) (fkSource fk) j
 
 -- | Access a 'DataSource' and save the 'Document' under the specified
 -- 'ForeignKey', returning the 'ForeignKey' to use for the updated document in

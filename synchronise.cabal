@@ -38,8 +38,11 @@ library
       base >=4.7 && <4.8
     , aeson
     , aeson-diff
+    , async
+    , bytestring
     , configurator
     , containers
+    , lens
     , mtl
     , process
     , text
@@ -84,6 +87,7 @@ test-suite test-synchronise
   build-depends:
       base
     , synchronise
+    , hspec
 
 test-suite source-test
   type:                exitcode-stdio-1.0
@@ -93,4 +97,5 @@ test-suite source-test
   build-depends:
       base
     , aeson
+    , hspec
     , synchronise

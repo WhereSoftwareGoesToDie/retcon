@@ -10,6 +10,7 @@
 module Main where
 
 import System.Exit
+import Test.Hspec
 
 main :: IO ()
 main = exitSuccess
