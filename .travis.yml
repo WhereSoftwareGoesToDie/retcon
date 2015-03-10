@@ -18,4 +18,4 @@ before_install:
   - sudo ldconfig
   - cd ..
   - git clone https://github.com/anchor/aeson-diff.git aeson-diff/
-  - cabal install aeson-diff
+  - cabal install ./aeson-diff/
