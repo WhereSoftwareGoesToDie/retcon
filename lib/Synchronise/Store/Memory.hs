@@ -1,5 +1,6 @@
 
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE RankNTypes      #-}
 
 module Synchronise.Store.Memory where
@@ -34,133 +35,105 @@ data MemStore = MemStore
     }
 makeLenses ''MemStore
 
+emptyMem = MemStore 0 mempty mempty mempty mempty 
+
 -- | "Open the module" with the in-memory store type.
 --
-memoryStore :: Store Mem
-memoryStore = Store
-  -- yes it needs to be this terrible because we're not an actual module
-  _initBackend 
-  _closeBackend 
-  _cloneStore 
-  _createInternalKey
-  _lookupInternalKey
-  _deleteInternalKey
-  _recordForeignKey
-  _lookupForeignKey 
-  _deleteForeignKey
-  _deleteForeignKeysWithInternal
-  _recordInitialDocument
-  _lookupInitialDocument
-  _deleteInitialDocument
-  _recordDiffs
-  undefined -- NOT DEFINED IN RETCON
-  _lookupDiffIDs
-  undefined -- NOT DEFINED IN RETCON
-  _lookupDiff
-  undefined -- NOT DEFINED
-  _deleteDiff
-  undefined -- NOT DEFINED
-  _addWork
-  _getWork
-  _completeWork
+instance Store (IORef MemStore) where
+  initBackend   = newIORef emptyMem
+
+  closeBackend  = flip writeIORef emptyMem
+
+  cloneStore    = return
+
+  createInternalKey ref entity =
+    atomicModifyIORef' ref $ \st ->
+      (memNextKey +~ 1 $ st, InternalKey entity (st ^. memNextKey))
+
+  lookupInternalKey ref fk = do
+    st <- readIORef ref
+    return $ st ^? memFtoI . ix fk . to (InternalKey (fkEntity fk)) 
+
+  deleteInternalKey ref ik =
+    atomicModifyIORef' ref $ \st ->
+        (st & memItoF . at ik .~ Nothing, 0)
+
+  recordForeignKey ref ik fk =
+    let source_name = fkSource fk
+        foreign_id  = fkID     fk
+        internal_id = ikID     ik
+    in  atomicModifyIORef' ref $ \st ->
+          ( st & memItoF . at ik . non mempty . at source_name ?~ foreign_id
+               & memFtoI . at fk ?~ internal_id
+          , ())
+
+  lookupForeignKey ref source_name ik = do
+      let entity_name = ikEntity ik
+      st <- readIORef ref
+      -- Construct a new ForeignKey if it exists in the memItoF map
+      return $ st ^? memItoF . ix ik . ix source_name . to (ForeignKey entity_name source_name)
+
+  deleteForeignKey ref fk = do
+    maybe_ik <- lookupInternalKey ref fk
+    atomicModifyIORef' ref $ \st ->
+        -- Go through the internal to foreign map removing all foreign ids
+        -- that match this value under the associated internal key.
+        ( st & maybe id (\iki -> memItoF . ix iki %~ M.filter (/= fkID fk)) maybe_ik
+        -- Also, delete the foreign in the foreign to internal map.
+             & memFtoI . at fk .~ Nothing
+        , 0)
+
+  deleteForeignKeysWithInternal ref ik _ = do
+      let entity_name = ikEntity ik
+      atomicModifyIORef' ref $ \st ->
+          -- List of the foreign key identifiers associated with the internal
+          -- key
+          let fkis = map (uncurry (ForeignKey entity_name)) $
+                      st ^.. memItoF . at ik . _Just . itraversed . withIndex in
+          -- Now delete the foreign keys from the foreign to internal map
+          ( st & memFtoI %~ (\ftoi -> foldr M.delete ftoi fkis)
+          , ())
+      -- Now remove the internal key.
+      deleteInternalKey ref ik
 
 
-  where emptyMem = MemStore 0 mempty mempty mempty mempty 
+  recordInitialDocument ref ik doc =
+      atomicModifyIORef' ref $ \st ->
+          (st & memInits . at ik ?~ doc, ())
 
-        _initBackend   = newIORef emptyMem
+  lookupInitialDocument ref ik =
+      (^. memInits . at ik) <$> readIORef ref
 
-        _closeBackend  = flip writeIORef emptyMem
+  deleteInitialDocument ref ik =
+    atomicModifyIORef' ref $ \st ->
+      (st & memInits . at ik .~ Nothing, 0)
 
-        _cloneStore ref = return ( memoryStore { initBackend = return ref} )
+  recordDiffs ref ik new =
+      let relabeled = bimap void (map void) new in
+      atomicModifyIORef' ref $ \st ->
+          -- Slow due to list traversal
+          (st & memDiffs . at ik . non mempty <%~ (++[relabeled]))
+          ^. swapped & _2 %~ length
 
-        _createInternalKey ref entity =
-          atomicModifyIORef' ref $ \st ->
-            (memNextKey +~ 1 $ st, InternalKey entity (st ^. memNextKey))
+  -- TODO Implement
+  lookupDiff ref _ =
+    let get st = (st, Nothing)
+    in  atomicModifyIORef' ref get
 
-        _lookupInternalKey ref fk = do
-          st <- readIORef ref
-          return $ st ^? memFtoI . ix fk . to (InternalKey (fkEntity fk)) 
+  -- TODO Implement
+  lookupDiffIDs ref _ =
+    let get st = (st, [])
+    in  atomicModifyIORef' ref get
 
-        _deleteInternalKey ref ik =
-          atomicModifyIORef' ref $ \st ->
-              (st & memItoF . at ik .~ Nothing, 0)
+  -- TODO: Implement
+  deleteDiff ref _ =
+    let del st = (st, 0)
+    in  atomicModifyIORef' ref del
 
-        _recordForeignKey ref ik fk =
-          let source_name = fkSource fk
-              foreign_id  = fkID     fk
-              internal_id = ikID     ik
-          in  atomicModifyIORef' ref $ \st ->
-                ( st & memItoF . at ik . non mempty . at source_name ?~ foreign_id
-                     & memFtoI . at fk ?~ internal_id
-                , ())
+  deleteDiffsWithKey ref ik =
+      atomicModifyIORef' ref $ \st ->
+          (st & memDiffs . at ik .~ Nothing, 0)
 
-        _lookupForeignKey ref source_name ik = do
-            let entity_name = ikEntity ik
-            st <- readIORef ref
-            -- Construct a new ForeignKey if it exists in the memItoF map
-            return $ st ^? memItoF . ix ik . ix source_name . to (ForeignKey entity_name source_name)
-
-        _deleteForeignKey ref fk = do
-          maybe_ik <- _lookupInternalKey ref fk
-          atomicModifyIORef' ref $ \st ->
-              -- Go through the internal to foreign map removing all foreign ids
-              -- that match this value under the associated internal key.
-              ( st & maybe id (\iki -> memItoF . ix iki %~ M.filter (/= fkID fk)) maybe_ik
-              -- Also, delete the foreign in the foreign to internal map.
-                   & memFtoI . at fk .~ Nothing
-              , 0)
-
-        _deleteForeignKeysWithInternal ref ik _ = do
-            let entity_name = ikEntity ik
-            atomicModifyIORef' ref $ \st ->
-                -- List of the foreign key identifiers associated with the internal
-                -- key
-                let fkis = map (uncurry (ForeignKey entity_name)) $
-                            st ^.. memItoF . at ik . _Just . itraversed . withIndex in
-                -- Now delete the foreign keys from the foreign to internal map
-                ( st & memFtoI %~ (\ftoi -> foldr M.delete ftoi fkis)
-                , ())
-            -- Now remove the internal key.
-            _deleteInternalKey ref ik
-
-
-        _recordInitialDocument ref ik doc =
-            atomicModifyIORef' ref $ \st ->
-                (st & memInits . at ik ?~ doc, ())
-
-        _lookupInitialDocument ref ik =
-            (^. memInits . at ik) <$> readIORef ref
-
-        _deleteInitialDocument ref ik =
-          atomicModifyIORef' ref $ \st ->
-            (st & memInits . at ik .~ Nothing, 0)
-
-        _recordDiffs ref ik new =
-            let relabeled = bimap void (map void) new in
-            atomicModifyIORef' ref $ \st ->
-                -- Slow due to list traversal
-                (st & memDiffs . at ik . non mempty <%~ (++[relabeled]))
-                ^. swapped & _2 %~ length
-
-        -- TODO Implement
-        _lookupDiff ref _ =
-          let get st = (st, Nothing)
-          in  atomicModifyIORef' ref get
-
-        -- TODO Implement
-        _lookupDiffIDs ref _ =
-          let get st = (st, [])
-          in  atomicModifyIORef' ref get
-
-        -- TODO: Implement
-        _deleteDiff ref _ =
-          let del st = (st, 0)
-          in  atomicModifyIORef' ref del
-
-        _deleteDiffsWithKey ref ik =
-            atomicModifyIORef' ref $ \st ->
-                (st & memDiffs . at ik .~ Nothing, 0)
-
-        _addWork      = const $ const $ return ()
-        _getWork      = const $ return Nothing
-        _completeWork = const $ const $ return ()
+  addWork      = const $ const $ return ()
+  getWork      = const $ return Nothing
+  completeWork = const $ const $ return ()
