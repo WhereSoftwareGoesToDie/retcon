@@ -47,6 +47,7 @@ library
     , lens
     , mtl
     , process
+    , regex-compat
     , text
     , transformers >= 0.3
     , transformers-compat >= 0.4
@@ -105,4 +106,5 @@ test-suite source-test
       base
     , aeson
     , hspec
+    , HUnit
     , synchronise

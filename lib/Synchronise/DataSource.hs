@@ -9,6 +9,7 @@
 
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RecordWildCards          #-}
 
 -- | Description: Define and operate on data sources.
 --
@@ -34,10 +35,13 @@ import Control.Monad.Trans.Except
 import Data.Aeson
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as BSL
+import Data.Char
 import Data.Monoid
 import Data.String ()
 import Data.Text (Text)
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
+import Text.Regex
 import System.Exit
 import System.IO
 import System.Process
@@ -46,11 +50,25 @@ import Synchronise.Configuration
 import Synchronise.Document
 import Synchronise.Identifier
 
-newtype DSMonad a = DSMonad { unDSMonad :: ExceptT Text IO a }
-  deriving (Applicative, Functor, Monad, MonadIO, MonadError Text)
+data DataSourceError
+    = DecodeError String
+    | ForeignError Int Text
+    | IncompatibleDataSource
+  deriving (Eq, Show)
 
-runDSMonad :: DSMonad a -> IO (Either Text a)
+newtype DSMonad a = DSMonad { unDSMonad :: ExceptT DataSourceError IO a }
+  deriving (Applicative, Functor, Monad, MonadIO, MonadError DataSourceError)
+
+runDSMonad :: DSMonad a -> IO (Either DataSourceError a)
 runDSMonad = runExceptT . unDSMonad
+
+-- | Replace a named hole in a string.
+subNamedHole
+    :: String    -- ^ hole name
+    -> String    -- ^ Input string
+    -> String    -- ^ Replacement text
+    -> String    -- ^ Output string
+subNamedHole name = subRegex $ mkRegex $ "\\$\\{" <> name <> "\\}"
 
 -- | Prepare a 'Command' by interpolating
 prepareCommand
@@ -61,7 +79,9 @@ prepareCommand
 prepareCommand _ds fk cmd =
     case fk of
         Nothing -> T.unpack . unCommand $ cmd
-        Just _fk -> T.unpack . unCommand $ cmd
+        Just ForeignKey{..} ->
+            let cmd' = T.unpack . unCommand $ cmd
+            in subNamedHole "fk" cmd' (T.unpack fkKey)
 
 -- | Check that a 'DataSource' and a 'ForeignKey' are compatible, otherwise
 -- raise an error in the monad.
@@ -71,7 +91,7 @@ checkCompatibility
     -> b
     -> DSMonad ()
 checkCompatibility a b =
-    unless (compatibleSource a b) $ throwError "Incompatible data sources!"
+    unless (compatibleSource a b) $ throwError IncompatibleDataSource
 
 -- | Access a 'DataSource' and create a new 'Document' returning the
 -- 'ForeignKey' which, in that source, identifies the document.
@@ -82,16 +102,27 @@ createDocument
     :: DataSource
     -> Document
     -> DSMonad ForeignKey
-createDocument src fk = do
+createDocument src doc = do
     -- 1. Check source and key are compatible.
-    checkCompatibility src fk
+    checkCompatibility src doc
     -- 2. Spawn process.
+    let cmd = prepareCommand src Nothing . commandCreate $ src
+    let process = (shell cmd) { std_out = CreatePipe, std_in = CreatePipe }
+    (Just hin, Just hout, Nothing, hproc) <- liftIO $ createProcess process
     -- 3. Write input.
-    -- 4. Check return code, raising error if required.
-    -- 5. Read handles
+    liftIO . BSL.hPutStrLn hin . encode . _documentContent $ doc
+    liftIO $ hClose hin
+    -- 4. Read handles
+    output <- T.filter (not. isSpace) . T.decodeUtf8 <$> (liftIO . BS.hGetContents $ hout)
+    -- 5. Check return code, raising error if required.
+    exit <- liftIO $ waitForProcess hproc
+    case exit of
+        ExitFailure c -> throwError $ ForeignError c output
+        ExitSuccess -> return ()
     -- 6. Close handles.
+    liftIO $ hClose hout
     -- 7. Parse response.
-    error "DataSource.createDocument is not implemented"
+    return $ ForeignKey "entity" "source" output
 
 -- | Access a 'DataSource' and retrieve the 'Document' identified, in that source,
 -- by the given 'ForeignKey'.
@@ -113,20 +144,19 @@ readDocument src fk = do
     output <- liftIO $ BS.hGetContents hout
     -- 4. Check return code, raising error if required.
     exit <- liftIO $ waitForProcess hproc
+    case exit of
+        ExitFailure c -> throwError $ ForeignError c (T.decodeUtf8 output)
+        ExitSuccess -> return ()
     -- 5. Close handles.
     liftIO $ hClose hout
     -- 6. Parse input and return value.
-    case exit of
-        ExitFailure c -> error $ "DataSource.readDocument failed with " <> show c
-        ExitSuccess -> case eitherDecode' . BSL.fromStrict $ output of
-            Left e -> error $ "DataSource.readDocument:" <> e
-            Right j -> return $ Document (fkEntity fk) (fkSource fk) j
+    case eitherDecode' . BSL.fromStrict $ output of
+        Left e -> throwError $ DecodeError e
+        Right j -> return $ Document (fkEntity fk) (fkSource fk) j
 
 -- | Access a 'DataSource' and save the 'Document' under the specified
 -- 'ForeignKey', returning the 'ForeignKey' to use for the updated document in
 -- future.
---
--- If no 'ForeignKey' is supplied, this is, a create operation.
 --
 -- It is an error if the 'DataSource' and 'ForeignKey' supplied do not agree on
 -- the entity and source names.
@@ -139,14 +169,25 @@ updateDocument src fk doc = do
     -- 1. Check source, key, and document are compatible.
     checkCompatibility src fk
     checkCompatibility src doc
-
     -- 2. Spawn process.
+    let cmd = prepareCommand src (Just fk) . commandUpdate $ src
+    liftIO . print $ cmd
+    let process = (shell cmd) { std_out = CreatePipe, std_in = CreatePipe }
+    (Just hin, Just hout, Nothing, hproc) <- liftIO $ createProcess process
     -- 3. Write input.
-    -- 4. Read output.
+    liftIO . BSL.hPutStrLn hin . encode . _documentContent $ doc
+    liftIO $ hClose hin
+    -- 4. Read handles
+    output <- T.filter (not. isSpace) . T.decodeUtf8 <$> (liftIO . BS.hGetContents $ hout)
     -- 5. Check return code, raising error if required.
+    exit <- liftIO $ waitForProcess hproc
+    case exit of
+        ExitFailure c -> throwError $ ForeignError c output
+        ExitSuccess -> return ()
     -- 6. Close handles.
-    -- 7. Parse input and return value.
-    error "DataSource.updateDcoument is not implemented"
+    liftIO $ hClose hout
+    -- 7. Parse response.
+    return $ ForeignKey "entity" "source" output
 
 -- | Access a 'DataSource' and delete the 'Document' identified in that source
 -- by the given 'ForeignKey'.
@@ -161,8 +202,15 @@ deleteDocument src fk = do
     -- 1. Check source and key are compatible.
     checkCompatibility src fk
     -- 2. Spawn process.
+    let cmd = prepareCommand src (Just fk) . commandDelete $ src
+    let process = (shell cmd) { std_out = CreatePipe }
+    (Nothing, Just hout, Nothing, hproc) <- liftIO $ createProcess process
     -- 3. Read output
+    output <- liftIO $ BS.hGetContents hout
     -- 4. Check return code, raising error if required.
+    exit <- liftIO $ waitForProcess hproc
+    case exit of
+        ExitFailure c -> throwError $ ForeignError c (T.decodeUtf8 output)
+        ExitSuccess -> return ()
     -- 5. Close handles.
-    -- 6. Parse output and return value.
-    error "DataSource.deleteDocument is not implemented"
+    liftIO $ hClose hout
