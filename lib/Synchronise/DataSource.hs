@@ -46,10 +46,16 @@ import Synchronise.Configuration
 import Synchronise.Document
 import Synchronise.Identifier
 
-newtype DSMonad a = DSMonad { unDSMonad :: ExceptT Text IO a }
-  deriving (Applicative, Functor, Monad, MonadIO, MonadError Text)
+data DataSourceError
+    = DecodeError String
+    | ForeignError Int
+    | IncompatibleDataSource
+  deriving (Eq, Show)
 
-runDSMonad :: DSMonad a -> IO (Either Text a)
+newtype DSMonad a = DSMonad { unDSMonad :: ExceptT DataSourceError IO a }
+  deriving (Applicative, Functor, Monad, MonadIO, MonadError DataSourceError)
+
+runDSMonad :: DSMonad a -> IO (Either DataSourceError a)
 runDSMonad = runExceptT . unDSMonad
 
 -- | Prepare a 'Command' by interpolating
@@ -71,7 +77,7 @@ checkCompatibility
     -> b
     -> DSMonad ()
 checkCompatibility a b =
-    unless (compatibleSource a b) $ throwError "Incompatible data sources!"
+    unless (compatibleSource a b) $ throwError IncompatibleDataSource
 
 -- | Access a 'DataSource' and create a new 'Document' returning the
 -- 'ForeignKey' which, in that source, identifies the document.
@@ -82,16 +88,28 @@ createDocument
     :: DataSource
     -> Document
     -> DSMonad ForeignKey
-createDocument src fk = do
+createDocument src doc = do
     -- 1. Check source and key are compatible.
-    checkCompatibility src fk
+    checkCompatibility src doc
     -- 2. Spawn process.
+    let cmd = prepareCommand src Nothing . commandCreate $ src
+    liftIO $ BS.hPutStrLn stderr $ BS.pack cmd
+    let process = (shell cmd) { std_out = CreatePipe, std_in = CreatePipe }
+    (Just hin, Just hout, Nothing, hproc) <- liftIO $ createProcess process
     -- 3. Write input.
-    -- 4. Check return code, raising error if required.
-    -- 5. Read handles
+    liftIO . BSL.hPutStrLn hin . encode . _documentContent $ doc
+    liftIO $ hClose hin
+    -- 4. Read handles
+    output <- liftIO $ BS.hGetContents hout
+    -- 5. Check return code, raising error if required.
+    exit <- liftIO $ waitForProcess hproc
+    case exit of
+        ExitFailure c -> throwError $ ForeignError c
+        ExitSuccess -> return ()
     -- 6. Close handles.
+    liftIO $ hClose hout
     -- 7. Parse response.
-    error "DataSource.createDocument is not implemented"
+    return $ ForeignKey "entity" "source" "key"
 
 -- | Access a 'DataSource' and retrieve the 'Document' identified, in that source,
 -- by the given 'ForeignKey'.
@@ -113,14 +131,15 @@ readDocument src fk = do
     output <- liftIO $ BS.hGetContents hout
     -- 4. Check return code, raising error if required.
     exit <- liftIO $ waitForProcess hproc
+    case exit of
+        ExitFailure c -> throwError $ ForeignError c
+        ExitSuccess -> return ()
     -- 5. Close handles.
     liftIO $ hClose hout
     -- 6. Parse input and return value.
-    case exit of
-        ExitFailure c -> error $ "DataSource.readDocument failed with " <> show c
-        ExitSuccess -> case eitherDecode' . BSL.fromStrict $ output of
-            Left e -> error $ "DataSource.readDocument:" <> e
-            Right j -> return $ Document (fkEntity fk) (fkSource fk) j
+    case eitherDecode' . BSL.fromStrict $ output of
+        Left e -> throwError $ DecodeError e
+        Right j -> return $ Document (fkEntity fk) (fkSource fk) j
 
 -- | Access a 'DataSource' and save the 'Document' under the specified
 -- 'ForeignKey', returning the 'ForeignKey' to use for the updated document in

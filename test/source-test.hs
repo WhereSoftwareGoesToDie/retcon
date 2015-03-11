@@ -21,10 +21,10 @@ source = DataSource
     { sourceEntity = "entity"
     , sourceName = "source"
     , sourceDescription = Nothing
-    , commandCreate = "cat > entity/source/%fk.json"
-    , commandRead = "cat entity/source/%fk.json"
-    , commandUpdate = "cat > entity/source/%fk.json"
-    , commandDelete = "rm entity/source/%fk.json"
+    , commandCreate = "mkdir -p entity/source && cat > entity/source/%fk.json"
+    , commandRead = "mkdir -p entity/source && cat entity/source/%fk.json"
+    , commandUpdate = "mkdir -p entity/source && cat > entity/source/%fk.json"
+    , commandDelete = "mkdir -p entity/source && rm entity/source/%fk.json"
     }
 
 suite :: Spec
