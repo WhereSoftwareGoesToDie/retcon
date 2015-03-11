@@ -37,6 +37,7 @@ import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as BSL
 import Data.Monoid
 import Data.String ()
+import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import Text.Regex
@@ -50,7 +51,7 @@ import Synchronise.Identifier
 
 data DataSourceError
     = DecodeError String
-    | ForeignError Int
+    | ForeignError Int Text
     | IncompatibleDataSource
   deriving (Eq, Show)
 
@@ -112,16 +113,16 @@ createDocument src doc = do
     liftIO . BSL.hPutStrLn hin . encode . _documentContent $ doc
     liftIO $ hClose hin
     -- 4. Read handles
-    output <- liftIO $ BS.hGetContents hout
+    output <- T.decodeUtf8 <$> (liftIO . BS.hGetContents $ hout)
     -- 5. Check return code, raising error if required.
     exit <- liftIO $ waitForProcess hproc
     case exit of
-        ExitFailure c -> throwError $ ForeignError c
+        ExitFailure c -> throwError $ ForeignError c output
         ExitSuccess -> return ()
     -- 6. Close handles.
     liftIO $ hClose hout
     -- 7. Parse response.
-    return $ ForeignKey "entity" "source" (T.decodeUtf8 output)
+    return $ ForeignKey "entity" "source" output
 
 -- | Access a 'DataSource' and retrieve the 'Document' identified, in that source,
 -- by the given 'ForeignKey'.
@@ -144,7 +145,7 @@ readDocument src fk = do
     -- 4. Check return code, raising error if required.
     exit <- liftIO $ waitForProcess hproc
     case exit of
-        ExitFailure c -> throwError $ ForeignError c
+        ExitFailure c -> throwError $ ForeignError c (T.decodeUtf8 output)
         ExitSuccess -> return ()
     -- 5. Close handles.
     liftIO $ hClose hout
@@ -189,8 +190,15 @@ deleteDocument src fk = do
     -- 1. Check source and key are compatible.
     checkCompatibility src fk
     -- 2. Spawn process.
+    let cmd = prepareCommand src (Just fk) . commandDelete $ src
+    let process = (shell cmd) { std_out = CreatePipe }
+    (Nothing, Just hout, Nothing, hproc) <- liftIO $ createProcess process
     -- 3. Read output
+    output <- liftIO $ BS.hGetContents hout
     -- 4. Check return code, raising error if required.
+    exit <- liftIO $ waitForProcess hproc
+    case exit of
+        ExitFailure c -> throwError $ ForeignError c (T.decodeUtf8 output)
+        ExitSuccess -> return ()
     -- 5. Close handles.
-    -- 6. Parse output and return value.
-    error "DataSource.deleteDocument is not implemented"
+    liftIO $ hClose hout
