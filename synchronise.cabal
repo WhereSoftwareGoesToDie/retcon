@@ -46,7 +46,8 @@ library
     , mtl
     , process
     , text
-    , transformers >= 0.4
+    , transformers >= 0.3
+    , transformers-compat >= 0.4
 
 executable synchronise
   default-language:    Haskell2010
@@ -63,6 +64,7 @@ executable synchronise
     , synchronise
     , text
     , transformers
+    , transformers-compat
 
 executable synchronised
   default-language:    Haskell2010
@@ -78,6 +80,7 @@ executable synchronised
     , synchronise
     , text
     , transformers
+    , transformers-compat
 
 test-suite test-synchronise
   type:                exitcode-stdio-1.0
