@@ -18,6 +18,13 @@ import Data.Monoid
 
 import Synchronise.Document
 
+
+data LabelledOp label = LabelledOp
+  { opLabel :: label
+  , op      :: D.Operation }
+
+--------------------------------------------------------------------------------
+
 -- | A 'D.Diff' with metadata.
 data LabelledPatch l = LabelledPatch
     { diffLabel :: l
