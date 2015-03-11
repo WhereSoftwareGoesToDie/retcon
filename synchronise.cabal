@@ -30,7 +30,8 @@ library
     Synchronise.Diff
     Synchronise.Document
     Synchronise.Identifier
-    Synchronise.Store
+    Synchronise.Store.Base
+    Synchronise.Store.Memory
     Synchronise.Program.Daemon
     Synchronise.Program.Once
   other-modules:
