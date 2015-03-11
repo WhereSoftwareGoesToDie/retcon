@@ -25,7 +25,7 @@ source = DataSource
     , sourceDescription = Nothing
     , commandCreate = "bash -c 'mkdir -p entity/source ; FOREIGN_KEY=$(mktemp -u -p \"entity/source\" -t XXXXXXXX.json) ; cat > $FOREIGN_KEY ; echo $FOREIGN_KEY;'"
     , commandRead = "mkdir -p entity/source && cat ${fk}"
-    , commandUpdate = "mkdir -p entity/source && cat > ${fk}"
+    , commandUpdate = "bash -c 'mkdir -p entity/source ; rm -f ${fk} ; FOREIGN_KEY=$(mktemp -u -p \"entity/source\" -t XXXXXXXX.json) ; cat > $FOREIGN_KEY ; echo $FOREIGN_KEY;'"
     , commandDelete = "mkdir -p entity/source && rm ${fk}"
     }
 
@@ -74,6 +74,41 @@ suite = do
             case res2 of
                 Left _ -> return ()
                 Right _ -> assertFailure "delete not successful"
+        it "can create and delete (multiple times)" $ do
+            let docs = [Document "entity" "source" (object ["num" .= n]) | n <- [1..10::Int]]
+            fks' <- mapM (runDSMonad . createDocument source ) docs
+            fks <- forM fks' $ \fk' -> case fk' of
+                Left err -> assertFailure (show err) >>= undefined
+                Right fk -> return fk
+            forM_ fks $ \fk -> do
+                res1 <- runDSMonad $ readDocument source fk
+                case res1 of
+                    Left err -> assertFailure (show err)
+                    Right _ -> return ()
+                runDSMonad (deleteDocument source fk) `shouldReturn` Right ()
+                res2 <- runDSMonad $ readDocument source fk
+                case res2 of
+                    Left _ -> return ()
+                    Right _ -> assertFailure "delete not successful"
+        it "can create and update" $ do
+            let doc1 = Document "entity" "source" (object ["foo" .= ("bar" :: String)])
+            fk1' <- runDSMonad $ createDocument source doc1
+            fk1 <- case fk1' of
+                Left err -> assertFailure (show err) >>= undefined
+                Right fk -> return fk
+            let doc2 = Document "entity" "source" (object ["foo" .= ("bar" :: String)])
+            fk2' <- runDSMonad $ updateDocument source fk1 doc2
+            fk2 <- case fk2' of
+                Left err -> assertFailure (show err) >>= undefined
+                Right fk -> return fk
+            res1 <- runDSMonad $ readDocument source fk1
+            case res1 of
+                Left _ -> return ()
+                Right _ -> assertBool "The old key should no longer be active" (fk1 /= fk2)
+            res2 <- runDSMonad $ readDocument source fk2
+            case res2 of
+                Left err -> assertFailure (show err)
+                Right doc' -> assertBool "Read returned different object than Created" (doc2 == doc')
 
 main :: IO ()
 main = hspec suite

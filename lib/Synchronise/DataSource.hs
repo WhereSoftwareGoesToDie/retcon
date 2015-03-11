@@ -35,6 +35,7 @@ import Control.Monad.Trans.Except
 import Data.Aeson
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as BSL
+import Data.Char
 import Data.Monoid
 import Data.String ()
 import Data.Text (Text)
@@ -106,14 +107,13 @@ createDocument src doc = do
     checkCompatibility src doc
     -- 2. Spawn process.
     let cmd = prepareCommand src Nothing . commandCreate $ src
-    liftIO $ BS.hPutStrLn stderr $ BS.pack cmd
     let process = (shell cmd) { std_out = CreatePipe, std_in = CreatePipe }
     (Just hin, Just hout, Nothing, hproc) <- liftIO $ createProcess process
     -- 3. Write input.
     liftIO . BSL.hPutStrLn hin . encode . _documentContent $ doc
     liftIO $ hClose hin
     -- 4. Read handles
-    output <- T.decodeUtf8 <$> (liftIO . BS.hGetContents $ hout)
+    output <- T.filter (not. isSpace) . T.decodeUtf8 <$> (liftIO . BS.hGetContents $ hout)
     -- 5. Check return code, raising error if required.
     exit <- liftIO $ waitForProcess hproc
     case exit of
@@ -170,12 +170,24 @@ updateDocument src fk doc = do
     checkCompatibility src fk
     checkCompatibility src doc
     -- 2. Spawn process.
+    let cmd = prepareCommand src (Just fk) . commandUpdate $ src
+    liftIO . print $ cmd
+    let process = (shell cmd) { std_out = CreatePipe, std_in = CreatePipe }
+    (Just hin, Just hout, Nothing, hproc) <- liftIO $ createProcess process
     -- 3. Write input.
-    -- 4. Read output.
+    liftIO . BSL.hPutStrLn hin . encode . _documentContent $ doc
+    liftIO $ hClose hin
+    -- 4. Read handles
+    output <- T.filter (not. isSpace) . T.decodeUtf8 <$> (liftIO . BS.hGetContents $ hout)
     -- 5. Check return code, raising error if required.
+    exit <- liftIO $ waitForProcess hproc
+    case exit of
+        ExitFailure c -> throwError $ ForeignError c output
+        ExitSuccess -> return ()
     -- 6. Close handles.
-    -- 7. Parse input and return value.
-    error "DataSource.updateDcoument is not implemented"
+    liftIO $ hClose hout
+    -- 7. Parse response.
+    return $ ForeignKey "entity" "source" output
 
 -- | Access a 'DataSource' and delete the 'Document' identified in that source
 -- by the given 'ForeignKey'.
