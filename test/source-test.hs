@@ -96,7 +96,7 @@ suite = do
             fk1 <- case fk1' of
                 Left err -> assertFailure (show err) >>= undefined
                 Right fk -> return fk
-            let doc2 = Document "entity" "source" (object ["foo" .= ("bar" :: String)])
+            let doc2 = Document "entity" "source" (object ["foo" .= ("baz" :: String)])
             fk2' <- runDSMonad $ updateDocument source fk1 doc2
             fk2 <- case fk2' of
                 Left err -> assertFailure (show err) >>= undefined
@@ -109,6 +109,21 @@ suite = do
             case res2 of
                 Left err -> assertFailure (show err)
                 Right doc' -> assertBool "Read returned different object than Created" (doc2 == doc')
+        it "can create and update (multiple times)" $ do
+            let docs1 = [Document "entity" "source" (object ["num" .= n]) | n <- [1..10::Int]]
+            fks1' <- mapM (runDSMonad . createDocument source ) docs1
+            fks1 <- forM fks1' $ \fk' -> case fk' of
+                Left err -> assertFailure (show err) >>= undefined
+                Right fk -> return fk
+            let docs2 = [Document "entity" "source" (object ["num" .= n]) | n <- [(101::Int)..]]
+            fks2' <- mapM (runDSMonad . uncurry (updateDocument source)) (zip fks1 docs2)
+            fks2 <- forM fks2' $ \fk' -> case fk' of
+                Left err -> assertFailure (show err) >>= undefined
+                Right fk -> return fk
+            ress <- mapM (runDSMonad . readDocument source) fks2
+            forM_ (zip ress docs2) $ \res -> case res of
+                (Left err, _) -> assertFailure (show err)
+                (Right doc', doc) -> assertBool "Read returned different object than Created" (doc == doc')
 
 main :: IO ()
 main = hspec suite
