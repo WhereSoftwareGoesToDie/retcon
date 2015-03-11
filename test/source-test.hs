@@ -11,6 +11,8 @@
 module Main where
 
 import Data.Aeson
+import Test.Hspec
+import Test.HUnit
 
 import Synchronise
 
@@ -25,9 +27,19 @@ source = DataSource
     , commandDelete = "rm entity/source/%fk.json"
     }
 
+suite :: Spec
+suite = do
+    describe "DataSource" $ do
+        it "can create and read out again" $ do
+            let doc = Document "entity" "source" (object ["foo" .= ("bar" :: String)])
+            fk' <- runDSMonad $ createDocument source doc
+            fk <- case fk' of
+                Left err -> assertFailure (show err) >>= undefined
+                Right fk -> return fk
+            res <- runDSMonad $ readDocument source fk
+            case res of
+                Left err -> assertFailure (show err)
+                Right doc' -> assertBool "Read returned different object than Created" (doc == doc')
+
 main :: IO ()
-main = do
-    let fk = ForeignKey "entity" "source" "123"
-    doc <- runDSMonad $ readDocument source fk
-    print . toJSON $ doc
-    putStrLn "LOL"
+main = hspec suite
