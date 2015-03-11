@@ -23,10 +23,10 @@ source = DataSource
     { sourceEntity = "entity"
     , sourceName = "source"
     , sourceDescription = Nothing
-    , commandCreate = "mkdir -p entity/source && cat > entity/source/%fk.json"
-    , commandRead = "mkdir -p entity/source && cat entity/source/%fk.json"
-    , commandUpdate = "mkdir -p entity/source && cat > entity/source/%fk.json"
-    , commandDelete = "mkdir -p entity/source && rm entity/source/%fk.json"
+    , commandCreate = "bash -c 'mkdir -p entity/source ; FOREIGN_KEY=$(mktemp -u -p \"entity/source\" -t XXXXXXXX.json) ; cat > $FOREIGN_KEY ; echo $FOREIGN_KEY;'"
+    , commandRead = "mkdir -p entity/source && cat ${fk}"
+    , commandUpdate = "mkdir -p entity/source && cat > ${fk}"
+    , commandDelete = "mkdir -p entity/source && rm ${fk}"
     }
 
 allDifferent :: (Eq a, Show a) => [a] -> Assertion

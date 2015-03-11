@@ -9,6 +9,7 @@
 
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RecordWildCards          #-}
 
 -- | Description: Define and operate on data sources.
 --
@@ -36,8 +37,9 @@ import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as BSL
 import Data.Monoid
 import Data.String ()
-import Data.Text (Text)
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
+import Text.Regex
 import System.Exit
 import System.IO
 import System.Process
@@ -58,6 +60,14 @@ newtype DSMonad a = DSMonad { unDSMonad :: ExceptT DataSourceError IO a }
 runDSMonad :: DSMonad a -> IO (Either DataSourceError a)
 runDSMonad = runExceptT . unDSMonad
 
+-- | Replace a named hole in a string.
+subNamedHole
+    :: String    -- ^ hole name
+    -> String    -- ^ Input string
+    -> String    -- ^ Replacement text
+    -> String    -- ^ Output string
+subNamedHole name = subRegex $ mkRegex $ "\\$\\{" <> name <> "\\}"
+
 -- | Prepare a 'Command' by interpolating
 prepareCommand
     :: DataSource
@@ -67,7 +77,9 @@ prepareCommand
 prepareCommand _ds fk cmd =
     case fk of
         Nothing -> T.unpack . unCommand $ cmd
-        Just _fk -> T.unpack . unCommand $ cmd
+        Just ForeignKey{..} ->
+            let cmd' = T.unpack . unCommand $ cmd
+            in subNamedHole "fk" cmd' (T.unpack fkKey)
 
 -- | Check that a 'DataSource' and a 'ForeignKey' are compatible, otherwise
 -- raise an error in the monad.
@@ -109,7 +121,7 @@ createDocument src doc = do
     -- 6. Close handles.
     liftIO $ hClose hout
     -- 7. Parse response.
-    return $ ForeignKey "entity" "source" "key"
+    return $ ForeignKey "entity" "source" (T.decodeUtf8 output)
 
 -- | Access a 'DataSource' and retrieve the 'Document' identified, in that source,
 -- by the given 'ForeignKey'.

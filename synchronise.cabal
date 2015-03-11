@@ -45,6 +45,7 @@ library
     , lens
     , mtl
     , process
+    , regex-compat
     , text
     , transformers >= 0.3
     , transformers-compat >= 0.4
