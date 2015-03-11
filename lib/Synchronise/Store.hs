@@ -1,17 +1,38 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE RankNTypes      #-}
 
+
 module Synchronise.Store where
 
+import Control.Applicative
 import Control.Lens
 import Data.ByteString (ByteString)
+import Data.IORef
+import Data.Map (Map)
+import qualified Data.Map as M
+import qualified Control.Exception as E
+import Data.Monoid
+import Control.Monad
+import Data.Text (Text)
+
 
 import Synchronise.Diff
 import Synchronise.Document
+import Synchronise.DataSource
 import Synchronise.Identifier
+
+
+-- TODO
+data WorkItem
+data WorkItemID
+data Diff
+
 
 type DiffID  = Int
 type OpID    = Int
+
+type InternalID = Int
+type ForeignID  = Text
 
 data ConflictResp = ConflictResp
   { _conflictRawDoc  :: ByteString
@@ -40,13 +61,10 @@ makeLenses ''OpResp
 --
 data Store store = Store
   { -- | Initialise a handle to the storage backend.
-    initBackend  :: store -> IO ()
+    initBackend  :: IO store
 
     -- | Finalise a handle to the storage backend.
   , closeBackend :: store -> IO ()
-
-    -- | Brackets an action with init/finalise store.
-  , withStore    :: store -> IO a -> IO a
 
     -- | clone a store handle for concurrent operations. the new handle must be
     -- safe to use concurrently with the original handle.
@@ -55,15 +73,15 @@ data Store store = Store
     --
     -- this may be a no-op for backends which are already thread-safe (e.g.
     -- in-memory iorefs).
-  , cloneStore   :: store -> IO (StoreOp store)
+  , cloneStore   :: store -> IO (Store store)
 
     -- Operations on interal keys
 
     -- | Allocate and return a new 'InternalKey'.
-  , createInternalKey :: store -> IO InternalKey
+  , createInternalKey :: store -> EntityName -> IO InternalKey
 
     -- | Find the 'InternalKey' associated with a 'ForeignKey'.
-  , lookupInternalKey :: store -> ForeignKey  -> IO (Maybe InternalKey)
+  , lookupInternalKey :: store -> ForeignKey -> IO (Maybe InternalKey)
 
     -- | Delete an 'InternalKey' and any associated resources.
   , deleteInternalKey :: store -> InternalKey -> IO Int
@@ -75,26 +93,26 @@ data Store store = Store
   , recordForeignKey :: store -> InternalKey -> ForeignKey -> IO ()
 
     -- | Find the 'ForeignKey' corresponding to an 'InternalKey'
-  , lookupForeignKey :: store -> InternalKey -> IO (Maybe ForeignKey)
+  , lookupForeignKey :: store -> SourceName -> InternalKey -> IO (Maybe ForeignKey)
 
     -- | Delete a 'ForeignKey'.
   , deleteForeignKey :: store -> ForeignKey  -> IO Int
 
     -- | Delete all 'ForeignKey's associated with an 'InternalKey'.
-  , deleteForeignKeyWithInternal
-      :: store -> InternalKey -> IO Int
+  , deleteForeignKeysWithInternal
+      :: store -> InternalKey -> SourceName -> IO Int
 
 
     -- Operations on initial documents
 
     -- | Record the initial 'Document' associated with an 'InternalKey'.
-  , recordDocument :: store -> InternalKey -> Document -> IO ()
+  , recordInitialDocument :: store -> InternalKey -> Document -> IO ()
 
     -- | Lookup the initial 'Document', if any, associated with an 'InternalKey'.
-  , lookupDocument :: store -> InternalKey -> IO (Maybe Document)
+  , lookupInitialDocument :: store -> InternalKey -> IO (Maybe Document)
 
     -- | Delete the initial 'Document', if any, associated with an 'InternalKey'.
-  , deleteDocument :: store -> InternalKey -> IO Int
+  , deleteInitialDocument :: store -> InternalKey -> IO Int
 
 
     -- Operations on patches
@@ -104,8 +122,7 @@ data Store store = Store
   , recordDiffs
       :: forall label. store
       -> InternalKey
-      -> LabelledPatch label
-      -> [LabelledPatch label]
+      -> (LabelledPatch label, [LabelledPatch label])
       -> IO DiffID 
 
     -- | Record that the conflicts in a 'Diff' are resolved.
@@ -128,19 +145,6 @@ data Store store = Store
 
     -- | Delete the 'Diff's associated with an 'InternalKey'.
   , deleteDiffsWithKey  :: store -> InternalKey -> IO Int
-
-
-    -- Operations on notifications
-
-    -- | Record a 'Notification' associated with a given 'InternalKey'
-    -- and 'Diff' ID.
-  , recordNotification :: store -> InternalKey -> DiffID -> IO ()
-
-    -- | Fetch and delete 'Notification's from the store.
-  , fetchNotifications
-        :: store
-        -> Int                      -- ^ Maximum number to return.
-        -> IO (Int, [Notification]) -- ^ Number of leftover notifcations in the store and fetched notifications
 
 
     -- Operation on store work queue
@@ -166,139 +170,141 @@ type Mem = IORef MemStore
 
 data MemStore = MemStore
     { _memNextKey :: Int
-    , _memItoF    :: Map InternalKeyIdentifier (Map SourceName ForeignID)
-    , _memFtoI    :: Map ForeignKeyIdentifier InternalID
-    , _memInits   :: Map InternalKeyIdentifier Document
-    , _memDiffs   :: Map InternalKeyIdentifier [(Diff (), [Diff ()])]
-    , _memNotes   :: [Notification]
+    , _memItoF    :: Map InternalKey (Map SourceName ForeignID)
+    , _memFtoI    :: Map ForeignKey InternalID
+    , _memInits   :: Map InternalKey Document
+    , _memDiffs   :: Map InternalKey [(LabelledPatch (), [LabelledPatch ()])]
     }
-  deriving (Show)
-makeLenses ''Mem
-
+makeLenses ''MemStore
 
 -- | "Open the module" with the in-memory store type.
 --
 memoryStore :: Store Mem
 memoryStore = Store
-  { initBackend   = Mem <$> newIORef emptyMem
+  _initBackend 
+  _closeBackend 
+  _cloneStore 
+  _createInternalKey
+  _lookupInternalKey
+  _deleteInternalKey
+  _recordForeignKey
+  _lookupForeignKey 
+  _deleteForeignKey
+  _deleteForeignKeysWithInternal
+  _recordInitialDocument
+  _lookupInitialDocument
+  _deleteInitialDocument
+  _recordDiffs
+  _resolveDiffs
+  _lookupDiffIDs
+  undefined --_lookupConflicts
+  _lookupDiff
+  undefined --_lookupDiffConflicts
+  _deleteDiff
+  undefined --_deleteDiffsWithKey
+  _addWork
+  _getWork
+  _completeWork
 
-  , storeFinalise = flip writeIORef emptyMem
+  where emptyMem = MemStore 0 mempty mempty mempty mempty 
 
-  , cloneStore    = return
+        _initBackend   = newIORef emptyMem
 
-  , createInternalKey = \ref ->
-      atomicModifyIORef' ref $ \st ->
-        (memNextKey +~ 1 $ st, InternalKey $ st ^. memNextKey)
+        _closeBackend  = flip writeIORef emptyMem
 
-  , lookupInternalKey = \ref ik -> do
-      st <- readIORef ref
-      return $ st ^? memFtoI . ix (foreignKeyValue fk) . to InternalKey
+        _cloneStore ref = return ( memoryStore { initBackend = return ref} )
 
-  , deleteInternalKey = \ref ik -> 
-      atomicModifyIORef' ref $ \st ->
-          (st & memItoF . at (internalKeyValue ik) .~ Nothing, 0)
+        _createInternalKey ref entity =
+          atomicModifyIORef' ref $ \st ->
+            (memNextKey +~ 1 $ st, InternalKey entity (st ^. memNextKey))
 
+        _lookupInternalKey ref fk = do
+          st <- readIORef ref
+          return $ st ^? memFtoI . ix fk . to (InternalKey (fkEntity fk)) 
 
-  , recordForeignKey = \ref ik fk -> do
-        let iki@(_, internal_id) = internalKeyValue ik
-        let fki@(_,source_name, foreign_id) = foreignKeyValue fk
-        atomicModifyIORef' ref $ \st ->
-            ( st & memItoF . at iki . non mempty . at source_name ?~ foreign_id
-                 & memFtoI . at fki ?~ internal_id
-            , ())
+        _deleteInternalKey ref ik =
+          atomicModifyIORef' ref $ \st ->
+              (st & memItoF . at ik .~ Nothing, 0)
 
-  , lookupForeignKey = \ref ik -> do
-        st <- readIORef ref
-        -- Acquire the SourceName from the inferred type
-        let source = symbolVal (Proxy :: Proxy source)
-        -- Acquire the InternalKeyIdentifier from the inferred type
-        let iki    = internalKeyValue ik
-        -- Construct a new ForeignKey if it exists in the memItoF map
-        return $ st ^? memItoF . ix iki . ix source . to ForeignKey
+        _recordForeignKey ref ik fk =
+          let source_name = fkSource fk
+              foreign_id  = fkID     fk
+              internal_id = ikID     ik
+          in  atomicModifyIORef' ref $ \st ->
+                ( st & memItoF . at ik . non mempty . at source_name ?~ foreign_id
+                     & memFtoI . at fk ?~ internal_id
+                , ())
 
-  , deleteForeignKey = \ref fk -> do
-        let fki@(_,_, foreign_id) = foreignKeyValue fk
-        maybe_iki <- (fmap . fmap) internalKeyValue (storeLookupInternalKey store fk)
-        atomicModifyIORef' ref $ \st ->
-            -- Go through the internal to foreign map removing all foreign ids
-            -- that match this value under the associated internal key.
-            ( st & maybe id (\iki -> memItoF . ix iki %~ M.filter (/= foreign_id)) maybe_iki
-            -- Also, delete the foreign in the foreign to internal map.
-                 & memFtoI . at fki .~ Nothing
-            , 0)
+        _lookupForeignKey ref source_name ik = do
+            let entity_name = ikEntity ik
+            st <- readIORef ref
+            -- Construct a new ForeignKey if it exists in the memItoF map
+            return $ st ^? memItoF . ix ik . ix source_name . to (ForeignKey entity_name source_name)
 
-   , deleteForeignKeysWithInternal = \ref ik -> do
-         let iki@(entity_name, _) = internalKeyValue ik
-         atomicModifyIORef' ref $ \st ->
-             -- List of the foreign key identifiers associated with the internal
-             -- key
-             let fkis = map (\(source, f_id) -> (entity_name, source, f_id)) $
-                         st ^.. memItoF . at iki . _Just . itraversed . withIndex in
-             -- Now delete the foreign keys from the foreign to internal map
-             ( st & memFtoI %~ (\ftoi -> foldr M.delete ftoi fkis)
-             , ())
-         -- Now remove the internal key.
-         storeDeleteInternalKey store ik
+        _deleteForeignKey ref fk = do
+          maybe_ik <- _lookupInternalKey ref fk
+          atomicModifyIORef' ref $ \st ->
+              -- Go through the internal to foreign map removing all foreign ids
+              -- that match this value under the associated internal key.
+              ( st & maybe id (\iki -> memItoF . ix iki %~ M.filter (/= fkID fk)) maybe_ik
+              -- Also, delete the foreign in the foreign to internal map.
+                   & memFtoI . at fk .~ Nothing
+              , 0)
 
-   , recordDocument = \ref ik doc ->
-         atomicModifyIORef' ref $ \st ->
-             (st & memInits . at (internalKeyValue ik) ?~ doc, ())
-
-   , lookupDocument = \ref ik -> 
-         (^. memInits . at (internalKeyValue ik)) <$> readIORef ref
-
-   , deleteInitialDocument = \ref ik ->
-       atomicModifyIORef' ref $ \st ->
-         (st & memInits . at (internalKeyValue ik) .~ Nothing, 0)
-
-
-   , recordDiffs = \ref ik new ->
-         let relabeled = bimap void (map void) new in
-         atomicModifyIORef' ref $ \st ->
-             -- Slow due to list traversal
-             (st & memDiffs . at (internalKeyValue ik) . non mempty <%~ (++[relabeled]))
-             ^. swapped & _2 %~ length
-
-     -- this is defined in the class but not implmented???
-   , resolveDiffs = undefined
-
-     -- TODO Implement
-   , lookupDiff = \ref did ->
-       let get st = (st, Nothing)
-       in  atomicModifyIORef' ref get
-
-     -- TODO Implement
-   , lookupDiffIds  = \ref ik ->
-       let get st = (st, [])
-       in  atomicModifyIORef' ref get
-
-     -- TODO: Implement
-   , deleteDiff = \ref did ->
-       let del st = (st, 0)
-       in  atomicModifyIORef' ref del
-
-   , deleteDiffsWithKey = \ref ik ->
-         atomicModifyIORef' ref $ \st ->
-             (st & memDiffs . at (internalKeyValue ik) .~ Nothing, 0)
-
-   , recordNotification = \ref ik did -> do
-         t <- getCurrentTime
-         let (entity, key) = internalKeyValue ik
-         let note = Notification t (T.pack entity) key did
-         atomicModifyIORef' ref $ \st ->
-             (st & memNotes %~ (++ [note]), ())
-
-   , fetchNotifications = \ref limit ->
-         atomicModifyIORef' ref $ \st ->
-             let (del, keep) = splitAt limit $ st ^. memNotes
-                 remaining = length keep
-             in (st & memNotes .~ keep, (remaining, del))
-
-    , addWork      = const $ const $ return ()
-    , getWork      = const $ return Nothing
-    , completeWork = const $ const $ return ()
-  }
-
-  where emptyMem = MemoryStore 0 mempty mempty mempty mempty mempty
+        _deleteForeignKeysWithInternal ref ik source = do
+            let entity_name = ikEntity ik
+            atomicModifyIORef' ref $ \st ->
+                -- List of the foreign key identifiers associated with the internal
+                -- key
+                let fkis = map (uncurry (ForeignKey entity_name)) $
+                            st ^.. memItoF . at ik . _Just . itraversed . withIndex in
+                -- Now delete the foreign keys from the foreign to internal map
+                ( st & memFtoI %~ (\ftoi -> foldr M.delete ftoi fkis)
+                , ())
+            -- Now remove the internal key.
+            _deleteInternalKey ref ik
 
 
+        _recordInitialDocument ref ik doc =
+            atomicModifyIORef' ref $ \st ->
+                (st & memInits . at ik ?~ doc, ())
+
+        _lookupInitialDocument ref ik =
+            (^. memInits . at ik) <$> readIORef ref
+
+        _deleteInitialDocument ref ik =
+          atomicModifyIORef' ref $ \st ->
+            (st & memInits . at ik .~ Nothing, 0)
+
+        _recordDiffs ref ik new =
+            let relabeled = bimap void (map void) new in
+            atomicModifyIORef' ref $ \st ->
+                -- Slow due to list traversal
+                (st & memDiffs . at ik . non mempty <%~ (++[relabeled]))
+                ^. swapped & _2 %~ length
+
+        -- this is defined in the class but not implmented???
+        _resolveDiffs = undefined
+
+        -- TODO Implement
+        _lookupDiff ref did =
+          let get st = (st, Nothing)
+          in  atomicModifyIORef' ref get
+
+        -- TODO Implement
+        _lookupDiffIDs ref ik =
+          let get st = (st, [])
+          in  atomicModifyIORef' ref get
+
+        -- TODO: Implement
+        _deleteDiff ref did =
+          let del st = (st, 0)
+          in  atomicModifyIORef' ref del
+
+        _deleteDiffsWithKey ref ik =
+            atomicModifyIORef' ref $ \st ->
+                (st & memDiffs . at ik .~ Nothing, 0)
+
+        _addWork      = const $ const $ return ()
+        _getWork      = const $ return Nothing
+        _completeWork = const $ const $ return ()
