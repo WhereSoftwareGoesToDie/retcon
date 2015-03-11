@@ -8,6 +8,7 @@
 --
 
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell   #-}
 
 -- | Description: Unique identifiers for internal an external use.
 module Synchronise.Identifier (
@@ -23,19 +24,20 @@ module Synchronise.Identifier (
     compatibleSource,
 ) where
 
+import Control.Lens
 import Data.String
 import Data.Text (Text)
 import qualified Data.Text as T
 
 -- | Unique name for an entity.
-newtype EntityName = EntityName { unwrapEntityName :: Text }
+newtype EntityName = EntityName { ename :: Text }
   deriving (Eq, Ord, Show)
 
 instance IsString EntityName where
     fromString = EntityName . T.pack
 
 -- | Unique name for a data source.
-newtype SourceName = SourceName { unwrapSourceName :: Text }
+newtype SourceName = SourceName { sname :: Text }
   deriving (Eq, Ord, Show)
 
 instance IsString SourceName where
@@ -56,21 +58,19 @@ class Synchronisable a where
 -- 'DataSource's which store copies of the associated 'Document'.
 data InternalKey = InternalKey
     { ikEntity :: EntityName
-    , ikKey    :: Int
-    }
-  deriving (Eq)
+    , ikID     :: Int
+    } deriving (Eq, Ord)
 
 instance Synchronisable InternalKey where
-    getEntityName = ikEntity
+    getEntityName   = ikEntity
     getSourceName _ = SourceName ""
 
 -- | Uniquely identify a 'Document' stored in 'DataSource'.
 data ForeignKey = ForeignKey
     { fkEntity :: EntityName
     , fkSource :: SourceName
-    , fkKey    :: Text
-    }
-  deriving (Eq, Show)
+    , fkID     :: Text
+    } deriving (Eq, Ord, Show)
 
 instance Synchronisable ForeignKey where
     getEntityName = fkEntity
@@ -91,3 +91,4 @@ compatibleSource
     -> b
     -> Bool
 compatibleSource a b = compatibleEntity a b && getSourceName a == getSourceName b
+

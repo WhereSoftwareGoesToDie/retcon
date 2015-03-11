@@ -30,6 +30,7 @@ library
     Synchronise.Diff
     Synchronise.Document
     Synchronise.Identifier
+    Synchronise.Store
     Synchronise.Program.Daemon
     Synchronise.Program.Once
   other-modules:
@@ -47,6 +48,8 @@ library
     , process
     , text
     , transformers >= 0.4
+  ghc-options:
+    -Wall
 
 executable synchronise
   default-language:    Haskell2010

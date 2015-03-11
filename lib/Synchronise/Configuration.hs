@@ -155,4 +155,4 @@ getDataSource (Configuration es) en sn =
                 <> n
             Just ds -> Right ds
   where
-    n = T.unpack $ unwrapEntityName en <> "/" <> unwrapSourceName sn
+    n = T.unpack $ ename en <> "/" <> sname sn
