@@ -59,6 +59,21 @@ suite = do
             forM_ (zip ress docs) $ \res -> case res of
                 (Left err, _) -> assertFailure (show err)
                 (Right doc', doc) -> assertBool "Read returned different object than Created" (doc == doc')
+        it "can create and delete" $ do
+            let doc = Document "entity" "source" (object ["foo" .= ("bar" :: String)])
+            fk' <- runDSMonad $ createDocument source doc
+            fk <- case fk' of
+                Left err -> assertFailure (show err) >>= undefined
+                Right fk -> return fk
+            res1 <- runDSMonad $ readDocument source fk
+            case res1 of
+                Left err -> assertFailure (show err)
+                Right doc' -> assertBool "Read returned different object than Created" (doc == doc')
+            runDSMonad (deleteDocument source fk) `shouldReturn` Right ()
+            res2 <- runDSMonad $ readDocument source fk
+            case res2 of
+                Left _ -> return ()
+                Right _ -> assertFailure "delete not successful"
 
 main :: IO ()
 main = hspec suite

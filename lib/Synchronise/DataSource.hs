@@ -157,8 +157,6 @@ readDocument src fk = do
 -- 'ForeignKey', returning the 'ForeignKey' to use for the updated document in
 -- future.
 --
--- If no 'ForeignKey' is supplied, this is, a create operation.
---
 -- It is an error if the 'DataSource' and 'ForeignKey' supplied do not agree on
 -- the entity and source names.
 updateDocument
@@ -170,7 +168,6 @@ updateDocument src fk doc = do
     -- 1. Check source, key, and document are compatible.
     checkCompatibility src fk
     checkCompatibility src doc
-
     -- 2. Spawn process.
     -- 3. Write input.
     -- 4. Read output.
