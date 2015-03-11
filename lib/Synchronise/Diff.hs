@@ -24,7 +24,6 @@ data LabelledOp label = LabelledOp
   { opLabel :: label
   , op      :: D.Operation }
 
-
 --------------------------------------------------------------------------------
 
 -- | A 'D.Diff' with metadata.

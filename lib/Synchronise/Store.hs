@@ -10,7 +10,6 @@ import Data.ByteString (ByteString)
 import Data.IORef
 import Data.Map (Map)
 import qualified Data.Map as M
-import qualified Control.Exception as E
 import Data.Monoid
 import Control.Monad
 import Data.Text (Text)
@@ -18,7 +17,6 @@ import Data.Text (Text)
 
 import Synchronise.Diff
 import Synchronise.Document
-import Synchronise.DataSource
 import Synchronise.Identifier
 
 
@@ -181,6 +179,7 @@ makeLenses ''MemStore
 --
 memoryStore :: Store Mem
 memoryStore = Store
+  -- yes it needs to be this terrible because we're not an actual module
   _initBackend 
   _closeBackend 
   _cloneStore 
@@ -197,14 +196,15 @@ memoryStore = Store
   _recordDiffs
   _resolveDiffs
   _lookupDiffIDs
-  undefined --_lookupConflicts
+  undefined -- NOT DEFINED IN RETCON
   _lookupDiff
-  undefined --_lookupDiffConflicts
+  undefined -- NOT DEFINED
   _deleteDiff
-  undefined --_deleteDiffsWithKey
+  undefined -- NOT DEFINED
   _addWork
   _getWork
   _completeWork
+
 
   where emptyMem = MemStore 0 mempty mempty mempty mempty 
 
@@ -251,7 +251,7 @@ memoryStore = Store
                    & memFtoI . at fk .~ Nothing
               , 0)
 
-        _deleteForeignKeysWithInternal ref ik source = do
+        _deleteForeignKeysWithInternal ref ik _ = do
             let entity_name = ikEntity ik
             atomicModifyIORef' ref $ \st ->
                 -- List of the foreign key identifiers associated with the internal
@@ -287,17 +287,17 @@ memoryStore = Store
         _resolveDiffs = undefined
 
         -- TODO Implement
-        _lookupDiff ref did =
+        _lookupDiff ref _ =
           let get st = (st, Nothing)
           in  atomicModifyIORef' ref get
 
         -- TODO Implement
-        _lookupDiffIDs ref ik =
+        _lookupDiffIDs ref _ =
           let get st = (st, [])
           in  atomicModifyIORef' ref get
 
         -- TODO: Implement
-        _deleteDiff ref did =
+        _deleteDiff ref _ =
           let del st = (st, 0)
           in  atomicModifyIORef' ref del
 
