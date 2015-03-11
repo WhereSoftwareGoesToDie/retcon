@@ -18,8 +18,8 @@ import Test.HUnit
 
 import Synchronise
 
-source :: DataSource
-source = DataSource
+fileSource :: DataSource
+fileSource = DataSource
     { sourceEntity = "entity"
     , sourceName = "source"
     , sourceDescription = Nothing
@@ -35,8 +35,8 @@ allDifferent (x:xs) = do
   when (x `elem` xs) $ assertFailure $ "allDifferent: found multiple occurances of " <> show x
   allDifferent xs
 
-suite :: Spec
-suite = do
+suite :: DataSource -> Spec
+suite source = do
     describe "DataSource" $ do
         it "can create and read out again" $ do
             let doc = Document "entity" "source" (object ["foo" .= ("bar" :: String)])
@@ -126,4 +126,4 @@ suite = do
                 (Right doc', doc) -> assertBool "Read returned different object than Created" (doc == doc')
 
 main :: IO ()
-main = hspec suite
+main = hspec (suite fileSource)
