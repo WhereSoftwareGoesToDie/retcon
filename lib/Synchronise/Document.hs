@@ -38,7 +38,7 @@ data Document = Document
     , _documentSource  :: SourceName -- ^ System of origin.
     , _documentContent :: Value      -- ^ Document content.
     }
-  deriving (Show)
+  deriving (Eq, Show)
 
 makeLenses ''Document
 

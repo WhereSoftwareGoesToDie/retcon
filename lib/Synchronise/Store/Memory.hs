@@ -1,4 +1,4 @@
-
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE RankNTypes        #-}
 {-# LANGUAGE TemplateHaskell   #-}
@@ -37,7 +37,7 @@ data MemStore = MemStore
 makeLenses ''MemStore
 
 emptyMem :: MemStore
-emptyMem = MemStore 0 mempty mempty mempty mempty
+emptyMem = MemStore 0 mempty mempty mempty mempty 
 
 -- | "Open the module" with the in-memory store type.
 --

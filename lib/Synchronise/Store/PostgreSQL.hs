@@ -1,30 +1,30 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes        #-}
+{-# LANGUAGE TupleSections     #-}
 {-# LANGUAGE TypeFamilies      #-}
-{-# LANGUAGE ViewPatterns #-}
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE ViewPatterns      #-}
 
 module Synchronise.Store.PostgreSQL
      ( PGStore
      ) where
 
-import Data.Monoid
-import Control.Applicative
-import Data.Aeson
-import Data.Aeson.Diff
-import Data.Maybe
-import           Control.Lens
+import           Control.Applicative
+import           Control.Lens               
 import           Control.Monad
+import           Data.Aeson
+import           Data.Aeson.Diff
 import           Data.ByteString            (ByteString)
 import qualified Data.List                  as L
+import           Data.Maybe
+import           Data.Monoid
 import           Data.String
 import           Data.Text                  (Text)
 import qualified Data.Text                  as T
 import           Database.PostgreSQL.Simple
 
+import           Synchronise.Diff hiding (op)
 import           Synchronise.Identifier
-import           Synchronise.Diff
-import           Synchronise.Store.Base
+import           Synchronise.Store.Base hiding (ops)
 
 
 data PGStore = PGStore
