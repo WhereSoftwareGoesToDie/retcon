@@ -8,6 +8,7 @@
 --
 
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell   #-}
 
 -- | Description: Unique identifiers for internal an external use.
 module Synchronise.Identifier (
@@ -24,9 +25,10 @@ module Synchronise.Identifier (
     compatibleSource,
 ) where
 
+import           Data.Aeson.TH
 import           Data.String
-import           Data.Text    (Text)
-import qualified Data.Text    as T
+import           Data.Text     (Text)
+import qualified Data.Text     as T
 
 
 -- | Unique name for an entity.
@@ -80,6 +82,10 @@ data ForeignKey = ForeignKey
 instance Synchronisable ForeignKey where
     getEntityName = fkEntity
     getSourceName = fkSource
+
+$(deriveJSON defaultOptions ''EntityName)
+$(deriveJSON defaultOptions ''SourceName)
+$(deriveJSON defaultOptions ''ForeignKey)
 
 -- | Check that two synchronisable values have the same entity.
 compatibleEntity

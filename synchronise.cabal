@@ -48,6 +48,7 @@ library
     , containers
     , lens
     , mtl
+    , postgresql-simple
     , process
     , text
     , transformers >= 0.4

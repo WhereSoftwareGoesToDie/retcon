@@ -1,5 +1,7 @@
-{-# LANGUAGE RankNTypes      #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE RankNTypes        #-}
+
+{-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Synchronise.Store.Base
      ( -- * Database
@@ -14,19 +16,17 @@ module Synchronise.Store.Base
      , diffEntity, diffKey, diffPatch, diffConflicts
      ) where
 
-import           Control.Lens
+import           Control.Applicative
+import           Control.Monad
+import           Control.Lens           hiding ((.=))
+import           Data.Aeson
 import           Data.ByteString        (ByteString)
+import           Data.Monoid
 import           Data.Text              (Text)
 
 import           Synchronise.Diff
 import           Synchronise.Document
 import           Synchronise.Identifier
-
-
--- TODO
-data WorkItem
-data WorkItemID
-data Diff
 
 
 type DiffID  = Int
@@ -162,4 +162,26 @@ class Store store where
   completeWork :: store -> WorkItemID -> IO ()
 
 
+--------------------------------------------------------------------------------
 
+-- | The identifier of a work item in the work queue.
+type WorkItemID = Int
+
+-- | An item of work to be stored in the work queue.
+data WorkItem
+    -- | A document was changed; process the update.
+    = WorkNotify ForeignKey
+    -- | A patch was submitted by a human; apply it.
+    | WorkApplyPatch Int (LabelledPatch ())
+    deriving (Eq)
+
+instance ToJSON WorkItem where
+    toJSON (WorkNotify fki) = object ["notify" .= fki]
+    toJSON (WorkApplyPatch did new_diff) =
+        object ["did" .= did, "diff" .= new_diff]
+
+instance FromJSON WorkItem where
+    parseJSON (Object v)
+      =  (WorkNotify     <$> v .: "notify")
+      <> (WorkApplyPatch <$> v .: "did" <*> v .: "diff")
+    parseJSON _ = mzero

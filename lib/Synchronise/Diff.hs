@@ -9,6 +9,7 @@
 
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE DeriveFunctor   #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 -- | Description: Diff and patch /Synchronise/ documents.
 module Synchronise.Diff where
@@ -16,6 +17,7 @@ module Synchronise.Diff where
 import Control.Lens
 import Data.Aeson.Diff as D
 import Data.Monoid
+import Data.Aeson.TH
 
 import Synchronise.Document
 
@@ -23,6 +25,7 @@ import Synchronise.Document
 data LabelledOp label = LabelledOp
   { opLabel :: label
   , op      :: D.Operation }
+
 
 --------------------------------------------------------------------------------
 
@@ -34,9 +37,16 @@ data LabelledPatch l = LabelledPatch
 
 instance Monoid l => Monoid (LabelledPatch l) where
     mempty = LabelledPatch mempty mempty
+    (LabelledPatch l1 p1) `mappend` (LabelledPatch l2 p2)
+      = LabelledPatch (l1 <> l2) (p1 <> p2)
 
-    (LabelledPatch l1 p1) `mappend` (LabelledPatch l2 p2) = LabelledPatch
-        (l1 <> l2) (p1 <> p2)
+$(deriveJSON defaultOptions ''Patch)
+$(deriveJSON defaultOptions ''Operation)
+$(deriveJSON defaultOptions ''Key)
+$(deriveJSON defaultOptions ''LabelledPatch)
+
+
+--------------------------------------------------------------------------------
 
 data MergePolicy l = MergePolicy
     { extractLabel :: Document -> l
