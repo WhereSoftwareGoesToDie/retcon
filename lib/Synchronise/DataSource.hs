@@ -18,6 +18,7 @@
 module Synchronise.DataSource (
     DataSource(..),
     Command,
+    DataSourceError(..),
     DSMonad,
     runDSMonad,
     -- * Operations
@@ -56,10 +57,10 @@ data DataSourceError
     | IncompatibleDataSource
   deriving (Eq, Show)
 
-newtype DSMonad a = DSMonad { unDSMonad :: ExceptT DataSourceError IO a }
+newtype DSMonad m a = DSMonad { unDSMonad :: ExceptT DataSourceError m a }
   deriving (Applicative, Functor, Monad, MonadIO, MonadError DataSourceError)
 
-runDSMonad :: DSMonad a -> IO (Either DataSourceError a)
+runDSMonad :: DSMonad m a -> m (Either DataSourceError a)
 runDSMonad = runExceptT . unDSMonad
 
 -- | Replace a named hole in a string.
@@ -86,10 +87,10 @@ prepareCommand _ds fk cmd =
 -- | Check that a 'DataSource' and a 'ForeignKey' are compatible, otherwise
 -- raise an error in the monad.
 checkCompatibility
-    :: (Synchronisable a, Synchronisable b)
+    :: (Synchronisable a, Synchronisable b, MonadIO m)
     => a
     -> b
-    -> DSMonad ()
+    -> DSMonad m ()
 checkCompatibility a b =
     unless (compatibleSource a b) $ throwError IncompatibleDataSource
 
@@ -99,9 +100,10 @@ checkCompatibility a b =
 -- It is an error if the 'DataSource' and 'Document' supplied do not agree on
 -- the entity and source names.
 createDocument
-    :: DataSource
+    :: (MonadIO m, Functor m)
+    => DataSource
     -> Document
-    -> DSMonad ForeignKey
+    -> DSMonad m ForeignKey
 createDocument src doc = do
     -- 1. Check source and key are compatible.
     checkCompatibility src doc
@@ -130,9 +132,10 @@ createDocument src doc = do
 -- It is an error if the 'DataSource' and 'ForeignKey' supplied do not agree on
 -- the entity and source names.
 readDocument
-    :: DataSource
+    :: (MonadIO m, Functor m)
+    => DataSource
     -> ForeignKey
-    -> DSMonad Document
+    -> DSMonad m Document
 readDocument src fk = do
     -- 1. Check source and key are compatible.
     checkCompatibility src fk
@@ -161,10 +164,11 @@ readDocument src fk = do
 -- It is an error if the 'DataSource' and 'ForeignKey' supplied do not agree on
 -- the entity and source names.
 updateDocument
-    :: DataSource
+    :: (MonadIO m, Functor m)
+    => DataSource
     -> ForeignKey
     -> Document
-    -> DSMonad ForeignKey -- ^ New (or old) key for this document.
+    -> DSMonad m ForeignKey -- ^ New (or old) key for this document.
 updateDocument src fk doc = do
     -- 1. Check source, key, and document are compatible.
     checkCompatibility src fk
@@ -195,9 +199,10 @@ updateDocument src fk doc = do
 -- It is an error if the 'DataSource' and 'ForeignKey' do not agree on the
 -- entity and source names.
 deleteDocument
-    :: DataSource
+    :: (MonadIO m, Functor m)
+    => DataSource
     -> ForeignKey
-    -> DSMonad ()
+    -> DSMonad m ()
 deleteDocument src fk = do
     -- 1. Check source and key are compatible.
     checkCompatibility src fk

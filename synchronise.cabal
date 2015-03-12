@@ -30,6 +30,7 @@ library
     Synchronise.Diff
     Synchronise.Document
     Synchronise.Identifier
+    Synchronise.Monad
     Synchronise.Store.Base
     Synchronise.Store.Memory
     Synchronise.Program.Daemon

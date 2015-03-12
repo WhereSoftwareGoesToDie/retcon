@@ -10,15 +10,14 @@
 -- | Description: Run /Synchronise/ as a one-short command.
 module Synchronise.Program.Once where
 
-import Control.Monad.Error.Class
+import Control.Monad.IO.Class
 import Data.Aeson
-import Data.Either
-import Data.Monoid
 
 import Synchronise.Configuration
 import Synchronise.DataSource
 import Synchronise.Document
 import Synchronise.Identifier
+import Synchronise.Monad
 
 -- | A request to be processed.
 data Request
@@ -32,7 +31,7 @@ data Request
 synchroniseOnce
     :: Request
     -> Configuration
-    -> IO ()
+    -> SynchroniseMonad ()
 synchroniseOnce req cfg = do
     let rk = commandKey req
     ds <- either error return $ getDataSource cfg (fkEntity rk) (fkSource rk)
@@ -43,17 +42,18 @@ synchroniseOnce req cfg = do
         Update fk -> inputDocument rk >>= exec . updateDocument ds fk
         Delete fk -> exec $ deleteDocument ds fk
   where
-    exec :: Show a => DSMonad a -> IO ()
+    exec :: (MonadIO m, Show a) => DSMonad m a -> m ()
     exec a = do
         res <- runDSMonad a
         case res of
             Left e -> error $ show e
-            Right v -> print v
+            Right v -> liftIO $ print v
 
 -- | Read JSON from standard input and produce a 'Document'.
 inputDocument
-    :: ForeignKey
-    -> IO Document
+    :: MonadIO m
+    => ForeignKey
+    -> m Document
 inputDocument fk =
     let e = fkEntity fk
         s = fkSource fk
