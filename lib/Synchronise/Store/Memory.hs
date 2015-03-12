@@ -1,28 +1,29 @@
 
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE RankNTypes      #-}
+{-# LANGUAGE RankNTypes        #-}
+{-# LANGUAGE TemplateHaskell   #-}
 
-module Synchronise.Store.Memory where
-
-
-import Control.Applicative
-import Control.Lens
-import Data.ByteString (ByteString)
-import Data.IORef
-import Data.Map (Map)
-import qualified Data.Map as M
-import Data.Monoid
-import Control.Monad
-import Data.Text (Text)
-
-import Synchronise.Diff
-import Synchronise.Document
-import Synchronise.Identifier
+module Synchronise.Store.Memory
+     ( MemStore
+     ) where
 
 
-import Synchronise.Store.Base
-       
+import           Control.Applicative
+import           Control.Lens
+import           Control.Monad
+import           Data.ByteString        (ByteString)
+import           Data.IORef
+import           Data.Map               (Map)
+import qualified Data.Map               as M
+import           Data.Monoid
+import           Data.Text              (Text)
+
+import           Synchronise.Diff
+import           Synchronise.Document
+import           Synchronise.Identifier
+import           Synchronise.Store.Base
+
+
 -- | An acid-state like in-memory store.
 type Mem = IORef MemStore
 
@@ -35,7 +36,7 @@ data MemStore = MemStore
     }
 makeLenses ''MemStore
 
-emptyMem = MemStore 0 mempty mempty mempty mempty 
+emptyMem = MemStore 0 mempty mempty mempty mempty
 
 -- | "Open the module" with the in-memory store type.
 --
@@ -52,7 +53,7 @@ instance Store (IORef MemStore) where
 
   lookupInternalKey ref fk = do
     st <- readIORef ref
-    return $ st ^? memFtoI . ix fk . to (InternalKey (fkEntity fk)) 
+    return $ st ^? memFtoI . ix fk . to (InternalKey (fkEntity fk))
 
   deleteInternalKey ref ik =
     atomicModifyIORef' ref $ \st ->

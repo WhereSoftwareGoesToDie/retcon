@@ -1,15 +1,26 @@
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE RankNTypes      #-}
+{-# LANGUAGE TemplateHaskell #-}
 
-module Synchronise.Store.Base where
+module Synchronise.Store.Base
+     ( -- * Database
+       Store(..)
 
-import Control.Lens
-import Data.ByteString (ByteString)
-import Data.Text (Text)
+       -- * Operation responses
+     , ConflictResp
+     , conflictRawDoc, conflictRawDiff, conflictDiffID, conflictRawOps
+     , OpResp
+     , opDiffID, opID, ops
+     , DiffResp
+     , diffEntity, diffKey, diffPatch, diffConflicts
+     ) where
 
-import Synchronise.Diff
-import Synchronise.Document
-import Synchronise.Identifier
+import           Control.Lens
+import           Data.ByteString        (ByteString)
+import           Data.Text              (Text)
+
+import           Synchronise.Diff
+import           Synchronise.Document
+import           Synchronise.Identifier
 
 
 -- TODO
@@ -20,9 +31,6 @@ data Diff
 
 type DiffID  = Int
 type OpID    = Int
-
-type InternalID = Int
-type ForeignID  = Text
 
 data ConflictResp = ConflictResp
   { _conflictRawDoc  :: ByteString
@@ -40,7 +48,7 @@ data DiffResp = DiffResp
   }
 makeLenses ''DiffResp
 
-data OpResp label = OpResp 
+data OpResp label = OpResp
   { _opDiffID :: DiffID
   , _opID     :: OpID
   , _ops      :: LabelledOp label
@@ -113,7 +121,7 @@ class Store store where
     :: forall label. store
     -> InternalKey
     -> (LabelledPatch label, [LabelledPatch label])
-    -> IO DiffID 
+    -> IO DiffID
 
   -- | Record that the conflicts in a 'Diff' are resolved.
   resolveDiffs        :: store -> Int -> IO ()
@@ -138,7 +146,7 @@ class Store store where
 
 
   -- Operation on store work queue
-      
+
   -- | Add a work item to the work queue.
   addWork :: store -> WorkItem -> IO ()
 
@@ -152,6 +160,6 @@ class Store store where
 
   -- | Remove a completed work item from the queue.
   completeWork :: store -> WorkItemID -> IO ()
-  
 
-  
+
+

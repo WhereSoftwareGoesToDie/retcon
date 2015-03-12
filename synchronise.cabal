@@ -30,8 +30,10 @@ library
     Synchronise.Diff
     Synchronise.Document
     Synchronise.Identifier
+    Synchronise.Store
     Synchronise.Store.Base
     Synchronise.Store.Memory
+    Synchronise.Store.PostgreSQL
     Synchronise.Program.Daemon
     Synchronise.Program.Once
   other-modules:
@@ -103,3 +105,22 @@ test-suite source-test
     , aeson
     , hspec
     , synchronise
+
+test-suite store-test
+  type:                exitcode-stdio-1.0
+  default-language:    Haskell2010
+  hs-source-dirs:      test
+  main-is:             store-test.hs
+  build-depends:
+      base
+    , hspec
+    , synchronise
+    , lens
+    , mtl
+    , transformers
+    , aeson
+    , bytestring
+    , text
+    , containers
+    , unordered-containers
+
