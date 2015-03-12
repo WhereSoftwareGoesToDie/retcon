@@ -26,6 +26,7 @@ module Synchronise.Document (
 import Control.Lens
 import Control.Monad
 import Data.Aeson
+import Data.Aeson.TH
 import Data.List
 import Data.Monoid
 
@@ -41,8 +42,7 @@ data Document = Document
 
 makeLenses ''Document
 
-instance ToJSON Document where
-    toJSON = _documentContent
+$(deriveJSON defaultOptions ''Document)
 
 instance Synchronisable Document where
     getEntityName = _documentEntity

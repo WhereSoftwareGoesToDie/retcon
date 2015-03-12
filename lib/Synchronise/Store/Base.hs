@@ -1,18 +1,19 @@
 {-# LANGUAGE RankNTypes        #-}
-
 {-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE TypeFamilies      #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ConstraintKinds   #-}
 
 module Synchronise.Store.Base
      ( -- * Database
        Store(..)
 
        -- * Operation responses
-     , ConflictResp
+     , ConflictResp(..)
      , conflictRawDoc, conflictRawDiff, conflictDiffID, conflictRawOps
-     , OpResp
+     , OpResp(..)
      , opDiffID, opID, ops
-     , DiffResp
+     , DiffResp(..)
      , diffEntity, diffKey, diffPatch, diffConflicts
      ) where
 
@@ -22,7 +23,7 @@ import           Control.Lens           hiding ((.=))
 import           Data.Aeson
 import           Data.ByteString        (ByteString)
 import           Data.Monoid
-import           Data.Text              (Text)
+import GHC.Exts
 
 import           Synchronise.Diff
 import           Synchronise.Document
@@ -58,8 +59,11 @@ makeLenses ''OpResp
 -- | The internal store "module".
 --
 class Store store where
+  data StoreOpts opts
+  type LabelConstraint store label :: Constraint
+
   -- | Initialise a handle to the storage backend.
-  initBackend  :: IO store
+  initBackend  :: StoreOpts store -> IO store
 
   -- | Finalise a handle to the storage backend.
   closeBackend :: store -> IO ()
@@ -98,7 +102,7 @@ class Store store where
 
   -- | Delete all 'ForeignKey's associated with an 'InternalKey'.
   deleteForeignKeysWithInternal
-    :: store -> InternalKey -> SourceName -> IO Int
+    :: store -> InternalKey -> IO Int
 
 
   -- Operations on initial documents
@@ -136,7 +140,9 @@ class Store store where
   lookupDiff          :: store -> DiffID -> IO (Maybe DiffResp)
 
   -- | Lookup the specified 'DiffOp's from the data store.
-  lookupDiffConflicts :: forall label. store -> [OpID] -> IO [OpResp label]
+  lookupDiffConflicts
+    :: forall label. LabelConstraint store label
+    => store -> [OpID] -> IO [OpResp label]
 
   -- | Delete the 'Diff', if any, with a given ID.
   deleteDiff          :: store -> DiffID -> IO Int

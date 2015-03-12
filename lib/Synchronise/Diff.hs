@@ -7,27 +7,28 @@
 -- the 3-clause BSD licence.
 --
 
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE DeriveFunctor   #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE DeriveFunctor     #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE TemplateHaskell   #-}
 
 -- | Description: Diff and patch /Synchronise/ documents.
 module Synchronise.Diff where
 
-import Control.Lens
-import Data.Aeson.Diff as D
-import Data.Monoid
-import Data.Aeson.TH
+import           Control.Applicative
+import           Control.Lens         hiding ((.=))
+import           Control.Monad
+import           Data.Aeson
+import           Data.Aeson.Diff      as D
+import           Data.Aeson.TH
+import           Data.Monoid
 
-import Synchronise.Document
+import           Synchronise.Document
 
 
 data LabelledOp label = LabelledOp
   { opLabel :: label
   , op      :: D.Operation }
-
-
---------------------------------------------------------------------------------
 
 -- | A 'D.Diff' with metadata.
 data LabelledPatch l = LabelledPatch
@@ -45,6 +46,16 @@ $(deriveJSON defaultOptions ''Operation)
 $(deriveJSON defaultOptions ''Key)
 $(deriveJSON defaultOptions ''LabelledPatch)
 
+instance FromJSON label => FromJSON (LabelledOp label) where
+  parseJSON (Object x)
+    =   LabelledOp
+    <$> x .: "label"
+    <*> x .: "op"
+  parseJSON _ = mzero
+
+instance ToJSON label => ToJSON (LabelledOp label) where
+  toJSON (LabelledOp l o)
+    = object [ "label" .= l, "op" .= o ]
 
 --------------------------------------------------------------------------------
 

@@ -2,21 +2,21 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE RankNTypes        #-}
 {-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE TypeFamilies      #-}
 
 module Synchronise.Store.Memory
      ( MemStore
+     , Mem
      ) where
 
 
 import           Control.Applicative
 import           Control.Lens
 import           Control.Monad
-import           Data.ByteString        (ByteString)
 import           Data.IORef
 import           Data.Map               (Map)
 import qualified Data.Map               as M
 import           Data.Monoid
-import           Data.Text              (Text)
 
 import           Synchronise.Diff
 import           Synchronise.Document
@@ -36,12 +36,16 @@ data MemStore = MemStore
     }
 makeLenses ''MemStore
 
+emptyMem :: MemStore
 emptyMem = MemStore 0 mempty mempty mempty mempty
 
 -- | "Open the module" with the in-memory store type.
 --
 instance Store (IORef MemStore) where
-  initBackend   = newIORef emptyMem
+  newtype StoreOpts       (IORef MemStore)   = StoreOpts ()
+  type    LabelConstraint (IORef MemStore) x = ()
+
+  initBackend _ = newIORef emptyMem
 
   closeBackend  = flip writeIORef emptyMem
 
@@ -84,7 +88,7 @@ instance Store (IORef MemStore) where
              & memFtoI . at fk .~ Nothing
         , 0)
 
-  deleteForeignKeysWithInternal ref ik _ = do
+  deleteForeignKeysWithInternal ref ik = do
       let entity_name = ikEntity ik
       atomicModifyIORef' ref $ \st ->
           -- List of the foreign key identifiers associated with the internal

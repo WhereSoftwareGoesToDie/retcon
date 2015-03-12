@@ -27,8 +27,10 @@ module Synchronise.Identifier (
 
 import           Data.Aeson.TH
 import           Data.String
-import           Data.Text     (Text)
-import qualified Data.Text     as T
+import           Data.Text                          (Text)
+import qualified Data.Text                          as T
+import           Database.PostgreSQL.Simple.ToField
+import           Database.PostgreSQL.Simple.ToRow
 
 
 -- | Unique name for an entity.
@@ -83,9 +85,27 @@ instance Synchronisable ForeignKey where
     getEntityName = fkEntity
     getSourceName = fkSource
 
+-- json
+
 $(deriveJSON defaultOptions ''EntityName)
 $(deriveJSON defaultOptions ''SourceName)
 $(deriveJSON defaultOptions ''ForeignKey)
+
+-- postgres
+
+instance ToField EntityName where
+  toField (EntityName n) = toField n
+
+instance ToField SourceName where
+  toField (SourceName n) = toField n
+
+instance ToRow ForeignKey where
+  toRow (ForeignKey a b c) = toRow (a,b,c)
+
+instance ToRow InternalKey where
+  toRow (InternalKey a b) = toRow (a,b)
+
+--------------------------------------------------------------------------------
 
 -- | Check that two synchronisable values have the same entity.
 compatibleEntity
