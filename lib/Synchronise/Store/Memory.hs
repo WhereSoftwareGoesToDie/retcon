@@ -42,7 +42,7 @@ emptyMem = MemStore 0 mempty mempty mempty mempty
 -- | "Open the module" with the in-memory store type.
 --
 instance Store (IORef MemStore) where
-  newtype StoreOpts       (IORef MemStore)   = StoreOpts ()
+  newtype StoreOpts       (IORef MemStore)   = MemOpts ()
   type    LabelConstraint (IORef MemStore) x = ()
 
   initBackend _ = newIORef emptyMem

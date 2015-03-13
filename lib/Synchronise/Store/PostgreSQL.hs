@@ -5,7 +5,8 @@
 {-# LANGUAGE ViewPatterns      #-}
 
 module Synchronise.Store.PostgreSQL
-     ( PGStore
+     ( PGStore(..)
+     , StoreOpts(..)
      ) where
 
 import           Control.Applicative
@@ -37,7 +38,7 @@ sqlConcat = fromString . L.intercalate ";"
 
 -- | Persistent PostgreSQL-backed data storage.
 instance Store PGStore where
-  newtype StoreOpts PGStore = StoreOpts { connstr :: ByteString }
+  newtype StoreOpts PGStore = PGOpts { connstr :: ByteString }
   type    LabelConstraint PGStore label = FromJSON label
 
   initBackend (connstr -> str) = do
