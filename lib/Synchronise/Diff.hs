@@ -21,15 +21,15 @@ module Synchronise.Diff
        -- * Re-exports
      , Operation(..)
      , Patch(..)
-     
+
      ) where
 
 import           Control.Applicative
 import           Control.Lens         hiding ((.=))
 import           Control.Monad
 import           Data.Aeson
-import           Data.Aeson.Diff (Operation, Patch)
-import qualified Data.Aeson.Diff as D
+import           Data.Aeson.Diff      (Operation, Patch)
+import qualified Data.Aeson.Diff      as D
 import           Data.Aeson.TH
 import           Data.Monoid
 

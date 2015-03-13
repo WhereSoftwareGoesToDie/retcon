@@ -10,7 +10,7 @@
 -- | Description: Run /Synchronise/ as a server.
 module Synchronise.Program.Daemon where
 
-import Synchronise.Configuration
+import           Synchronise.Configuration
 
 -- | Start the synchronise daemon.
 synchronise

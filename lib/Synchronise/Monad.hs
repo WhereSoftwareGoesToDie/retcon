@@ -7,22 +7,22 @@
 -- the 3-clause BSD licence.
 --
 
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE DeriveDataTypeable         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE TemplateHaskell            #-}
 
 module Synchronise.Monad where
 
-import Control.Applicative
-import Control.Exception
-import Control.Lens
-import Control.Monad.Error.Class
-import Control.Monad.Reader
-import Control.Monad.Trans.Except
-import Data.Typeable
+import           Control.Applicative
+import           Control.Exception
+import           Control.Lens
+import           Control.Monad.Error.Class
+import           Control.Monad.Reader
+import           Control.Monad.Trans.Except
+import           Data.Typeable
 
-import Synchronise.Configuration
-import Synchronise.DataSource
+import           Synchronise.Configuration
+import           Synchronise.DataSource
 
 data SynchroniseError
     = SynchroniseFailed
@@ -32,7 +32,7 @@ data SynchroniseError
     | SynchroniseUnknown String      -- ^ Unknown entity, source, or document.
   deriving (Show, Typeable)
 
-instance Exception SynchroniseError 
+instance Exception SynchroniseError
 
 -- | Monad transformer stack used in the 'SynchroniseHandler' monad.
 type SynchroniseHandlerStack =

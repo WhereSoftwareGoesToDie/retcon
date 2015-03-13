@@ -23,14 +23,14 @@ module Synchronise.Document (
     calculateInitialDocument,
 ) where
 
-import Control.Lens
-import Control.Monad
-import Data.Aeson
-import Data.Aeson.TH
-import Data.List
-import Data.Monoid
+import           Control.Lens
+import           Control.Monad
+import           Data.Aeson
+import           Data.Aeson.TH
+import           Data.List
+import           Data.Monoid
 
-import Synchronise.Identifier
+import           Synchronise.Identifier
 
 
 -- | A JSON 'Value' from a particular 'Entity'.

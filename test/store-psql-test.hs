@@ -16,20 +16,20 @@
 
 module Main where
 
-import Control.Monad
-import Control.Monad.IO.Class
 import           Control.Applicative
 import           Control.Exception
 import           Control.Lens.Operators
+import           Control.Monad
+import           Control.Monad.IO.Class
 import           Data.Aeson
 import qualified Data.ByteString.Char8        as BS
+import qualified Data.Map                     as M
 import           Data.Maybe
 import           Data.Monoid
+import           Data.Text                    (Text)
 import           Database.PostgreSQL.Simple
 import           System.Process
 import           Test.Hspec
-import qualified Data.Map as M
-import Data.Text (Text)
 
 import           Synchronise.Configuration
 import           Synchronise.Diff
@@ -47,7 +47,7 @@ options :: StoreOpts PGStore
 options = PGOpts { connstr = "dbname=" <> dbname }
 
 
-config :: Configuration 
+config :: Configuration
 config = Configuration M.empty
 
 runAction :: SynchroniseMonad a -> IO (Either SynchroniseError a)
@@ -326,7 +326,7 @@ postgresqlSuite = around_ prepareDatabase $ do
       store@(PGStore conn _) <- initBackend options
 
       -- TODO Put some actual diffs in here.
-      let a1  = mempty 
+      let a1  = mempty
           l1  = []
           ds1 = (a1, l1)
           a2  = mempty
