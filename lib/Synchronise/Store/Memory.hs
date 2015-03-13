@@ -32,7 +32,7 @@ data MemStore = MemStore
     , _memItoF    :: Map InternalKey (Map SourceName ForeignID)
     , _memFtoI    :: Map ForeignKey InternalID
     , _memInits   :: Map InternalKey Document
-    , _memDiffs   :: Map InternalKey [(LabelledPatch (), [LabelledPatch ()])]
+    , _memDiffs   :: Map InternalKey [(Patch, [Patch])]
     }
 makeLenses ''MemStore
 
@@ -114,10 +114,9 @@ instance Store (IORef MemStore) where
       (st & memInits . at ik .~ Nothing, 0)
 
   recordDiffs ref ik new =
-      let relabeled = bimap void (map void) new in
       atomicModifyIORef' ref $ \st ->
           -- Slow due to list traversal
-          (st & memDiffs . at ik . non mempty <%~ (++[relabeled]))
+          (st & memDiffs . at ik . non mempty <%~ (++[new]))
           ^. swapped & _2 %~ length
 
   -- TODO Implement

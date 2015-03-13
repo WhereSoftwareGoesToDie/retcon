@@ -17,6 +17,7 @@
 module Main where
 
 import Control.Monad
+import Control.Monad.IO.Class
 import           Control.Applicative
 import           Control.Exception
 import           Control.Lens.Operators
@@ -27,9 +28,12 @@ import           Data.Monoid
 import           Database.PostgreSQL.Simple
 import           System.Process
 import           Test.Hspec
-import qualified Test.Hspec                   as H
+import qualified Data.Map as M
+import Data.Text (Text)
 
 import           Synchronise.Configuration
+import           Synchronise.Diff
+import           Synchronise.Document
 import           Synchronise.Identifier
 import           Synchronise.Monad
 import           Synchronise.Store
@@ -42,16 +46,26 @@ dbname = "retcon_test"
 options :: StoreOpts PGStore
 options = PGOpts { connstr = "dbname=" <> dbname }
 
-runAction :: Configuration -> SynchroniseMonad a -> IO (Either SynchroniseError a)
-runAction cfg = runSynchroniseMonad (SynchroniseMonadState cfg)
 
--- | Canned query to run to check that connections are live.
-onepluszero :: Connection -> IO [Only Int]
-onepluszero conn = query_ conn "SELECT 1 + 0;"
+config :: Configuration 
+config = Configuration M.empty
+
+runAction :: SynchroniseMonad a -> IO (Either SynchroniseError a)
+runAction = runSynchroniseMonad (SynchroniseMonadState config)
 
 -- | Check that a SqlError exception is about a disconnected connection.
 isDisconnected :: SqlError -> Bool
 isDisconnected e = sqlErrorMsg e == "connection disconnected"
+
+
+--------------------------------------------------------------------------------
+
+-- | Bunch of data structures to track table contents
+type RetconTable        = [(String, Int)]
+type RetconFkTable      = [(String, Int, String, String)]
+type RetconInitialTable = [(String, Int, Value)]
+type RetconDiffs        = [(String, Int, Int, Value)]
+type RetconConflicts    = [(Int, Int, Value)]
 
 -- | Count the objects in the store.
 countStore :: PGStore -> IO (Int, Int, Int, Int)
@@ -61,13 +75,6 @@ countStore (PGStore conn _) = do
     [Only docs] <- query_ conn "SELECT count(*) FROM retcon_initial;"
     [Only diffs] <- query_ conn "SELECT count(*) FROM retcon_diff;"
     return (iks, fks, docs, diffs)
-
--- | Bunch of data structures to track table contents
-type RetconTable = [(String, Int)]
-type RetconFkTable = [(String, Int, String, String)]
-type RetconInitialTable = [(String, Int, Value)]
-type RetconDiffs = [(String, Int, Int, Value)]
-type RetconConflicts = [(Int, Int, Value)]
 
 -- | Dump all tables from PostgreSQL
 dumpStore
@@ -80,6 +87,10 @@ dumpStore (PGStore conn _) = do
     retconDiffTable         <- query_ conn "SELECT entity, id, diff_id, content FROM retcon_diff ORDER BY entity, id, diff_id;"
     retconDiffConflictTable <- query_ conn "SELECT operation_id, diff_id, content FROM retcon_diff_conflicts ORDER BY diff_id, operation_id;"
     return (retconTable, retconFkTable, retconInitialTable, retconDiffTable, retconDiffConflictTable)
+
+-- | Canned query to run to check that connections are live.
+onepluszero :: Connection -> IO [Only Int]
+onepluszero conn = query_ conn "SELECT 1 + 0;"
 
 
 --------------------------------------------------------------------------------
@@ -139,18 +150,18 @@ postgresqlSuite = around_ prepareDatabase $ do
       initialDumps `shouldBe` ([], [], [], [], [])
 
       -- Create some internal keys.
-      keys <- runAction store $ do
-          (ik1 :: InternalKey "tests") <- createInternalKey
-          (ik2 :: InternalKey "tests") <- createInternalKey
-          (ik3 :: InternalKey "testers") <- createInternalKey
+      keys <- runAction $ liftIO $ do
+          ik1 <- createInternalKey store "tests"
+          ik2 <- createInternalKey store "tests"
+          ik3 <- createInternalKey store "testers"
 
-          let (fk1 :: ForeignKey "tests" "test") = ForeignKey "fk1"
-          let (fk2 :: ForeignKey "tests" "more") = ForeignKey "fk2"
-          let (fk3 :: ForeignKey "testers" "tester1") = ForeignKey "fk3"
+          let fk1 = ForeignKey "tests" "test" "fk1"
+          let fk2 = ForeignKey "tests" "more" "fk2"
+          let fk3 = ForeignKey "testers" "tester1" "fk3"
 
-          recordForeignKey ik1 fk1
-          recordForeignKey ik1 fk2
-          recordForeignKey ik3 fk3
+          recordForeignKey store ik1 fk1
+          recordForeignKey store ik1 fk2
+          recordForeignKey store ik3 fk3
 
           return (ik1, ik2, ik3)
 
@@ -168,8 +179,8 @@ postgresqlSuite = around_ prepareDatabase $ do
           Left  _          -> error "Couldn't create internal keys"
           Right (k1, _, _) -> return k1
 
-      runAction store (deleteInternalKey ik1)
-          >>= either throwIO (`shouldBe` 3)
+      do x <- runAction $ liftIO $ deleteInternalKey store ik1
+         either throwIO (`shouldBe` 3) x
 
       try2 <- countStore store
       try2 `shouldBe` (2, 1, 0, 0)
@@ -179,291 +190,230 @@ postgresqlSuite = around_ prepareDatabase $ do
 
       closeBackend store
 
-{-
     it "should associate foreign and internal keys" $ do
-        store@(PGStore conn _) <- initBackend options
+      store@(PGStore conn _) <- initBackend options
 
-        let (fk1 :: ForeignKey "tests" "test") = ForeignKey "test1"
-        let (fk2 :: ForeignKey "tests" "test") = ForeignKey "test2"
-        let (fk3 :: ForeignKey "tests" "test") = ForeignKey "test3"
-        let (fk4 :: ForeignKey "tests" "more") = ForeignKey "more1"
-        let (fk5 :: ForeignKey "tests" "more") = ForeignKey "more2"
-        let (fk6 :: ForeignKey "tests" "more") = ForeignKey "more3"
+      let fk1 = ForeignKey "tests" "test" "test1"
+          fk2 = ForeignKey "tests" "test" "test2"
+          fk3 = ForeignKey "tests" "test" "test3"
+          fk4 = ForeignKey "tests" "more" "more1"
+          fk5 = ForeignKey "tests" "more" "more2"
+          fk6 = ForeignKey "tests" "more" "more3"
 
-        ik1 <- runAction store $ do
-            (ik1 :: InternalKey "tests") <- createInternalKey
-            (ik2 :: InternalKey "tests") <- createInternalKey
-            (ik3 :: InternalKey "tests") <- createInternalKey
+      ik1 <- runAction $ liftIO $ do
+          ik1 <- createInternalKey store "tests"
+          ik2 <- createInternalKey store "tests"
+          ik3 <- createInternalKey store "tests"
 
-            recordForeignKey ik1 fk3
-            recordForeignKey ik1 fk4
-            recordForeignKey ik2 fk2
-            recordForeignKey ik2 fk5
-            recordForeignKey ik3 fk1
-            recordForeignKey ik3 fk6
+          recordForeignKey store ik1 fk3
+          recordForeignKey store ik1 fk4
+          recordForeignKey store ik2 fk2
+          recordForeignKey store ik2 fk5
+          recordForeignKey store ik3 fk1
+          recordForeignKey store ik3 fk6
 
-            return ik1
+          return ik1
 
-        -- Check there are as many things in the database as we expect.
-        counts <- countStore store
-        counts `shouldBe` (3, 6, 0, 0)
+      -- Check there are as many things in the database as we expect.
+      counts <- countStore store
+      counts `shouldBe` (3, 6, 0, 0)
 
-        contents1 <- dumpStore store
-        contents1 `shouldBe` (
-            [("tests", 1), ("tests", 2), ("tests", 3)],
-            [("tests", 1, "more", "more1"), ("tests", 1, "test", "test3"), ("tests", 2, "more", "more2"),
-            ("tests", 2, "test", "test2"), ("tests", 3, "more", "more3"), ("tests", 3, "test", "test1")],
-            [], [], [])
+      contents1 <- dumpStore store
+      contents1 `shouldBe` (
+          [("tests", 1), ("tests", 2), ("tests", 3)],
+          [("tests", 1, "more", "more1"), ("tests", 1, "test", "test3"), ("tests", 2, "more", "more2"),
+          ("tests", 2, "test", "test2"), ("tests", 3, "more", "more3"), ("tests", 3, "test", "test1")],
+          [], [], [])
 
-        runAction store (deleteForeignKey fk5)
-            >>= either throwIO return
+      fmap (either throwIO return)
+        $ runAction $ liftIO $ deleteForeignKey store fk5
 
-        -- Check there are as many things in the database as we expect.
-        counts <- countStore store
-        counts `shouldBe` (3, 5, 0, 0)
+      -- Check there are as many things in the database as we expect.
+      counts <- countStore store
+      counts `shouldBe` (3, 5, 0, 0)
 
-        contents2 <- dumpStore store
-        contents2 `shouldBe` (
-            [("tests", 1), ("tests", 2), ("tests", 3)],
-            [("tests", 1, "more", "more1"), ("tests", 1, "test", "test3"),
-            ("tests", 2, "test", "test2"), ("tests", 3, "more", "more3"), ("tests", 3, "test", "test1")],
-            [], [], [])
+      contents2 <- dumpStore store
+      contents2 `shouldBe` (
+          [("tests", 1), ("tests", 2), ("tests", 3)],
+          [("tests", 1, "more", "more1"), ("tests", 1, "test", "test3"),
+          ("tests", 2, "test", "test2"), ("tests", 3, "more", "more3"), ("tests", 3, "test", "test1")],
+          [], [], [])
 
-        result <- runAction store $
-            case ik1 of
-                Left  _ -> error "Was not able to create ik1."
-                Right k -> deleteInternalKey k
+      result <- runAction $ liftIO $
+          case ik1 of
+              Left  _ -> error "Was not able to create ik1."
+              Right k -> deleteInternalKey store k
 
-        -- Check there are as many things in the database as we expect.
-        either throwIO (`shouldBe` 3) result
-        counts <- countStore store
-        counts `shouldBe` (2, 3, 0, 0)
+      -- Check there are as many things in the database as we expect.
+      either throwIO (`shouldBe` 3) result
+      counts <- countStore store
+      counts `shouldBe` (2, 3, 0, 0)
 
-        contents3 <- dumpStore store
-        contents3 `shouldBe` (
-            [("tests", 2), ("tests", 3)],
-            [("tests", 2, "test", "test2"), ("tests", 3, "more", "more3"), ("tests", 3, "test", "test1")],
-            [], [], [])
+      contents3 <- dumpStore store
+      contents3 `shouldBe` (
+          [("tests", 2), ("tests", 3)],
+          [("tests", 2, "test", "test2"), ("tests", 3, "more", "more3"), ("tests", 3, "test", "test1")],
+          [], [], [])
 
-        closeBackend store
+      closeBackend store
 
     it "should record initial documents" $ do
-        store@(PGStore conn _) <- initBackend options
+      store@(PGStore conn _) <- initBackend options
 
-        let doc1 = fromJust $ mkNode (Just "Document One")
-        let doc2 = fromJust $ mkNode (Just "Document Two")
-        let doc3 = fromJust $ mkNode (Just "Document Three")
-        let doc4 = fromJust $ mkNode (Just "Document Four")
+      let doc1 = Document "" "" "Document One"
+          doc2 = Document "" "" "Document Two"
+          doc3 = Document "" "" "Document Three"
+          doc4 = Document "" "" "Document Four"
 
-        Right (ik1, ik2, ik3, ik4) <- runAction store $ do
-            (ik1 :: InternalKey "tests") <- createInternalKey
-            (ik2 :: InternalKey "testers") <- createInternalKey
-            (ik3 :: InternalKey "tests") <- createInternalKey
-            (ik4 :: InternalKey "tests") <- createInternalKey
-            return (ik1, ik2, ik3, ik4)
+      Right (ik1, ik2, ik3, ik4) <- runAction $ liftIO $ do
+          ik1 <- createInternalKey store "tests"
+          ik2 <- createInternalKey store "testers"
+          ik3 <- createInternalKey store "tests"
+          ik4 <- createInternalKey store "tests"
+          return (ik1, ik2, ik3, ik4)
 
-        (runAction store $ do
-            recordInitialDocument ik1 doc1
-            recordInitialDocument ik2 doc2
-            recordInitialDocument ik3 doc3) >>= either throwIO return
+      fmap (either throwIO return) $ runAction $ liftIO $ do
+          recordInitialDocument store ik1 doc1
+          recordInitialDocument store ik2 doc2
+          recordInitialDocument store ik3 doc3
 
-        -- Check it.
-        count <- countStore store
-        count `shouldBe` (4, 0, 3, 0)
+      -- Check it.
+      count <- countStore store
+      count `shouldBe` (4, 0, 3, 0)
 
-        contents <- dumpStore store
-        contents `shouldBe` (
-            [("testers", 2), ("tests", 1), ("tests", 3), ("tests", 4)],
-            [],
-            [("testers", 2, toJSON doc2), ("tests", 1, toJSON doc1),
-            ("tests", 3, toJSON doc3)],
-            [], [])
+      contents <- dumpStore store
+      contents `shouldBe` (
+          [("testers", 2), ("tests", 1), ("tests", 3), ("tests", 4)],
+          [],
+          [("testers", 2, toJSON doc2), ("tests", 1, toJSON doc1),
+          ("tests", 3, toJSON doc3)],
+          [], [])
 
-        runAction store (recordInitialDocument ik3 doc4)
-            >>= either throwIO return
+      fmap (either throwIO return)
+        $ runAction
+        $ liftIO
+        $ recordInitialDocument store ik3 doc4
 
-        -- Check it.
-        count <- countStore store
-        count `shouldBe` (4, 0, 3, 0)
+      -- Check it.
+      count <- countStore store
+      count `shouldBe` (4, 0, 3, 0)
 
-        contents <- dumpStore store
-        contents `shouldBe` (
-            [("testers", 2), ("tests", 1), ("tests", 3), ("tests", 4)],
-            [],
-            [("testers", 2, toJSON doc2), ("tests", 1, toJSON doc1),
-            ("tests", 3, toJSON doc4)],
-            [], [])
+      contents <- dumpStore store
+      contents `shouldBe` (
+          [("testers", 2), ("tests", 1), ("tests", 3), ("tests", 4)],
+          [],
+          [("testers", 2, toJSON doc2), ("tests", 1, toJSON doc1),
+          ("tests", 3, toJSON doc4)],
+          [], [])
 
-        result <- runAction store (deleteInitialDocument ik2)
-            >>= either throwIO return
+      result <- fmap (either throwIO return)
+                  $ runAction $ liftIO $ deleteInitialDocument store ik2
 
-        -- Check it.
-        count <- countStore store
-        count `shouldBe` (4, 0, 2, 0)
+      -- Check it.
+      count <- countStore store
+      count `shouldBe` (4, 0, 2, 0)
 
-        contents <- dumpStore store
-        contents `shouldBe` (
-            [("testers", 2), ("tests", 1), ("tests", 3), ("tests", 4)],
-            [],
-            [("tests", 1, toJSON doc1), ("tests", 3, toJSON doc4)],
-            [], [])
+      contents <- dumpStore store
+      contents `shouldBe` (
+          [("testers", 2), ("tests", 1), ("tests", 3), ("tests", 4)],
+          [],
+          [("tests", 1, toJSON doc1), ("tests", 3, toJSON doc4)],
+          [], [])
 
-        closeBackend store
+      closeBackend store
 
     it "should record diffs" $ do
-        store@(PGStore conn _) <- initBackend options
+      store@(PGStore conn _) <- initBackend options
 
-        -- TODO Put some actual diffs in here.
-        let a1 = mempty
-        let l1 = []
-        let ds1 = (a1, l1)
-        let a2 = mempty
-        let l2 = [mempty]
-        let ds2 = (a2, l2)
-        let a3 = mempty
-        let l3 = [mempty]
-        let ds3 = (a3, l3)
+      -- TODO Put some actual diffs in here.
+      let a1  = mempty 
+          l1  = []
+          ds1 = (a1, l1)
+          a2  = mempty
+          l2  = [mempty]
+          ds2 = (a2, l2)
+          a3  = mempty
+          l3  = [mempty]
+          ds3 = (a3, l3)
 
-        -- Insert some initial documents.
-        Right (ik1, ik2, ik3, ik4) <- runAction store $ do
-            (ik1 :: InternalKey "tests") <- createInternalKey
-            (ik2 :: InternalKey "testers") <- createInternalKey
-            (ik3 :: InternalKey "tests") <- createInternalKey
-            (ik4 :: InternalKey "tests") <- createInternalKey
-            return (ik1, ik2, ik3, ik4)
+      -- Insert some initial documents.
+      Right (ik1, ik2, ik3, ik4) <- runAction $ liftIO $ do
+        ik1 <- createInternalKey store "tests"
+        ik2 <- createInternalKey store "testers"
+        ik3 <- createInternalKey store "tests"
+        ik4 <- createInternalKey store "tests"
+        return (ik1, ik2, ik3, ik4)
 
-        result <- runAction store $
-            (,,) <$> recordDiffs ik1 ds1
-                 <*> recordDiffs ik2 ds2
-                 <*> recordDiffs ik3 ds3
+      fmap (either throwIO (`shouldBe` (1,2,3))) $ runAction $ liftIO $
+          (,,) <$> recordDiffs store ik1 ds1
+               <*> recordDiffs store ik2 ds2
+               <*> recordDiffs store ik3 ds3
 
-        either throwIO (`shouldBe` (1,2,3)) result
-        count <- countStore store
-        count `shouldBe` (4, 0, 0, 3)
+      count <- countStore store
+      count `shouldBe` (4, 0, 0, 3)
 
-        -- Extract operations from "conflict" diffs.
-        -- TODO extract the operations from the diffs defined above.
-        let expectedL1 = []
-        let expectedL2 = []
-        let expectedL3 = []
-        let conflicts = concat [expectedL1, expectedL2, expectedL3]
+      -- Extract operations from "conflict" diffs.
+      -- TODO extract the operations from the diffs defined above.
+      let expectedL1 = []
+      let expectedL2 = []
+      let expectedL3 = []
+      let conflicts = concat [expectedL1, expectedL2, expectedL3]
 
-        contents <- dumpStore store
-        contents `shouldBe` (
-            [("testers", 2), ("tests", 1), ("tests", 3), ("tests", 4)],
-            [], [],
-            [("testers", 2, 2, toJSON a1), ("tests", 1, 1, toJSON a2), ("tests", 3, 3, toJSON a3)],
-            conflicts
-            )
+      contents <- dumpStore store
+      contents `shouldBe` (
+          [("testers", 2), ("tests", 1), ("tests", 3), ("tests", 4)],
+          [], [],
+          [("testers", 2, 2, toJSON a1), ("tests", 1, 1, toJSON a2), ("tests", 3, 3, toJSON a3)],
+          conflicts
+          )
 
-        result <- runAction store $
-            deleteDiffs ik2
+      -- deletes a successful and unsuccessful diff
+      fmap (either throwIO (`shouldBe` 1))
+        $ runAction $ liftIO $ deleteDiffsWithKey store ik2
 
-        either throwIO (`shouldBe` 1) result -- deletes a successful and unsuccessful diff
-        count <- countStore store
-        count `shouldBe` (4, 0, 0, 2)
+      count <- countStore store
+      count `shouldBe` (4, 0, 0, 2)
 
-        contents <- dumpStore store
-        contents `shouldBe` (
-            [("testers", 2), ("tests", 1), ("tests", 3), ("tests", 4)],
-            [], [],
-            [("tests", 1, 1, toJSON a2), ("tests", 3, 3, toJSON a3)],
-            concat [expectedL1, expectedL3]
-            )
+      contents <- dumpStore store
+      contents `shouldBe` (
+          [("testers", 2), ("tests", 1), ("tests", 3), ("tests", 4)],
+          [], [],
+          [("tests", 1, 1, toJSON a2), ("tests", 3, 3, toJSON a3)],
+          concat [expectedL1, expectedL3]
+          )
 
-        closeBackend store
+      closeBackend store
 
     it "should maintain a work queue" $ do
         store@PGStore{} <- initBackend options
 
-        let work1 = WorkNotify ("tests", "foo", "1")
-        let work2 = WorkNotify ("tests", "foo", "2")
-
-        let work3 = WorkApplyPatch 3 mempty
+        let work1 = WorkNotify $ ForeignKey "tests" "foo" "1"
+            work2 = WorkNotify $ ForeignKey "tests" "foo" "2"
+            work3 = WorkApplyPatch 3 mempty
 
         -- Add some WorkItems
-        storeAddWork store work1
-        storeAddWork store work2
+        addWork store work1
+        addWork store work2
 
         -- Order should be preserved
-        work1' <- storeGetWork store
+        work1' <- getWork store
         snd <$> work1' `shouldBe` Just work1
 
         -- Work should not be removed unless deleted
-        work1'' <- storeGetWork store
+        work1'' <- getWork store
         snd <$> work1'' `shouldBe` Just work1
 
         let Just wid1 = fst <$> work1'
-        storeCompleteWork store wid1
-        work2' <- storeGetWork store
+        completeWork store wid1
+        work2' <- getWork store
         snd <$> work2' `shouldBe` Just work2
 
         let Just wid2 = fst <$> work2'
-        storeCompleteWork store wid2
-        nowork <- storeGetWork store
+        completeWork store wid2
+        nowork <- getWork store
         nowork `shouldBe` Nothing
 
-        storeAddWork store work3
-        work3' <- storeGetWork store
+        addWork store work3
+        work3' <- getWork store
         snd <$> work3' `shouldBe` Just work3
 
--- $ Entities and Data Sources
---
--- This test suite uses two data entities, each with two data sources, in all
--- tests. This helps check that we're distinguishing internal and foreign keys
--- correctly, etc.
-
-instance RetconEntity "tests" where
-    entitySources _ = []
-
-instance RetconEntity "testers" where
-    entitySources _ = []
-
-instance RetconDataSource "tests" "test" where
-
-    data DataSourceState "tests" "test" = TestsTest
-    initialiseState = return TestsTest
-    finaliseState _ = return ()
-
-    setDocument _ _ = undefined
-
-    getDocument _ = undefined
-
-    deleteDocument _ = return ()
-
-instance RetconDataSource "tests" "more" where
-
-    data DataSourceState "tests" "more" = TestsMore
-    initialiseState = return TestsMore
-    finaliseState _ = return ()
-
-    setDocument _ _ = undefined
-
-    getDocument _ = undefined
-
-    deleteDocument _ = return ()
-
-instance RetconDataSource "testers" "tester1" where
-
-    data DataSourceState "testers" "tester1" = TestersTester1
-    initialiseState = return TestersTester1
-    finaliseState _ = return ()
-
-    setDocument _ _ = undefined
-
-    getDocument _ = undefined
-
-    deleteDocument _ = return ()
-
-instance RetconDataSource "testers" "tester2" where
-
-    data DataSourceState "testers" "tester2" = TestersTester2
-    initialiseState = return TestersTester2
-    finaliseState _ = return ()
-
-    setDocument _ _ = undefined
-
-    getDocument _ = undefined
-
-    deleteDocument _ = return ()
--}

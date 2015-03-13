@@ -32,6 +32,7 @@ import Data.Monoid
 
 import Synchronise.Identifier
 
+
 -- | A JSON 'Value' from a particular 'Entity'.
 data Document = Document
     { _documentEntity  :: EntityName -- ^ Type of data.
@@ -47,6 +48,8 @@ $(deriveJSON defaultOptions ''Document)
 instance Synchronisable Document where
     getEntityName = _documentEntity
     getSourceName = _documentSource
+
+--------------------------------------------------------------------------------
 
 -- | Construct an initial 'Document' for use in identifying and processing
 -- changes.

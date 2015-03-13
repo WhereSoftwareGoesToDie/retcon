@@ -8,6 +8,10 @@ module Synchronise.Store.Base
      ( -- * Database
        Store(..)
 
+       -- * Work
+     , WorkItem(..)
+     , WorkItemID
+
        -- * Operation responses
      , ConflictResp(..)
      , conflictRawDoc, conflictRawDiff, conflictDiffID, conflictRawOps
@@ -15,6 +19,7 @@ module Synchronise.Store.Base
      , opDiffID, opID, ops
      , DiffResp(..)
      , diffEntity, diffKey, diffPatch, diffConflicts
+
      ) where
 
 import           Control.Applicative
@@ -44,15 +49,15 @@ makeLenses ''ConflictResp
 data DiffResp = DiffResp
   { _diffEntity    :: ByteString
   , _diffKey       :: Int
-  , _diffPatch     :: LabelledPatch ()
-  , _diffConflicts :: [LabelledPatch ()]
+  , _diffPatch     :: Patch
+  , _diffConflicts :: [Patch]
   }
 makeLenses ''DiffResp
 
 data OpResp label = OpResp
   { _opDiffID :: DiffID
   , _opID     :: OpID
-  , _ops      :: LabelledOp label
+  , _ops      :: Operation
   }
 makeLenses ''OpResp
 
@@ -121,11 +126,7 @@ class Store store where
 
   -- | Record the success 'Diff' and a list of failed 'Diff's associated with a
   --   processed 'InternalKey'.
-  recordDiffs
-    :: forall label. store
-    -> InternalKey
-    -> (LabelledPatch label, [LabelledPatch label])
-    -> IO DiffID
+  recordDiffs         :: store -> InternalKey -> (Patch, [Patch]) -> IO DiffID
 
   -- | Record that the conflicts in a 'Diff' are resolved.
   resolveDiffs        :: store -> Int -> IO ()
@@ -178,8 +179,8 @@ data WorkItem
     -- | A document was changed; process the update.
     = WorkNotify ForeignKey
     -- | A patch was submitted by a human; apply it.
-    | WorkApplyPatch Int (LabelledPatch ())
-    deriving (Eq)
+    | WorkApplyPatch Int Patch
+    deriving (Show, Eq)
 
 instance ToJSON WorkItem where
     toJSON (WorkNotify fki) = object ["notify" .= fki]

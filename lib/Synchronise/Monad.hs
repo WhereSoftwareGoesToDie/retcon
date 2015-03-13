@@ -9,14 +9,17 @@
 
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE DeriveDataTypeable #-}
 
 module Synchronise.Monad where
 
 import Control.Applicative
+import Control.Exception
 import Control.Lens
 import Control.Monad.Error.Class
 import Control.Monad.Reader
 import Control.Monad.Trans.Except
+import Data.Typeable
 
 import Synchronise.Configuration
 import Synchronise.DataSource
@@ -27,7 +30,9 @@ data SynchroniseError
     | SynchroniseSourceError DataSourceError -- ^ An error occured with a data source.
     | SynchroniseNotSupported String -- ^ An unsupported configuration.
     | SynchroniseUnknown String      -- ^ Unknown entity, source, or document.
-  deriving (Show)
+  deriving (Show, Typeable)
+
+instance Exception SynchroniseError 
 
 -- | Monad transformer stack used in the 'SynchroniseHandler' monad.
 type SynchroniseHandlerStack =

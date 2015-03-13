@@ -10,22 +10,19 @@ module Synchronise.Store.PostgreSQL
      ) where
 
 import           Control.Applicative
-import           Control.Lens               
+import           Control.Lens               hiding (op)
 import           Control.Monad
 import           Data.Aeson
-import           Data.Aeson.Diff
+import           Data.Aeson.Diff            hiding (diff)
 import           Data.ByteString            (ByteString)
 import qualified Data.List                  as L
 import           Data.Maybe
 import           Data.Monoid
 import           Data.String
-import           Data.Text                  (Text)
-import qualified Data.Text                  as T
 import           Database.PostgreSQL.Simple
 
-import           Synchronise.Diff hiding (op)
 import           Synchronise.Identifier
-import           Synchronise.Store.Base hiding (ops)
+import           Synchronise.Store.Base     hiding (ops)
 
 
 data PGStore = PGStore
@@ -47,9 +44,9 @@ instance Store PGStore where
 
   closeBackend = close . pgconn
 
-  cloneStore (PGStore _ connstr) = do
-      conn <- connectPostgreSQL connstr
-      return $ PGStore conn connstr
+  cloneStore (PGStore _ str) = do
+      conn <- connectPostgreSQL str
+      return $ PGStore conn str
 
   -- | Create a new 'InternalKey' by inserting a row in the database and
   -- using the allocated ID as the new key.
@@ -137,10 +134,10 @@ instance Store PGStore where
       -- the arbitrary, possibly unserialisable, labels.
 
       -- Extract the operations from the conflicting diffs.
-      let ops = map (toJSON) . concatOf (traversed . to void . to diffDiff . to patchOperations) $ ds
+      let ops = map (toJSON) . concatOf (traversed . to patchOperations) $ ds
 
       -- Record the merged diff in the database.
-      [Only did] <- query conn diffQ (entity, key, not . null $ ops, encode . void $ d)
+      [Only did] <- query conn diffQ (entity, key, not . null $ ops, encode d)
 
       -- Record conflicts in the database.
       void . executeMany conn opsQ . map (did,) $ ops
