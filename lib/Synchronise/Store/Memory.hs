@@ -11,7 +11,6 @@ module Synchronise.Store.Memory
 
 import           Control.Applicative
 import           Control.Lens
-import           Control.Monad
 import           Data.IORef
 import           Data.Map               (Map)
 import qualified Data.Map               as M
