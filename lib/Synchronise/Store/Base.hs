@@ -28,7 +28,6 @@ import           Control.Lens           hiding ((.=))
 import           Data.Aeson
 import           Data.ByteString        (ByteString)
 import           Data.Monoid
-import GHC.Exts
 
 import           Synchronise.Diff
 import           Synchronise.Document
@@ -54,7 +53,7 @@ data DiffResp = DiffResp
   }
 makeLenses ''DiffResp
 
-data OpResp label = OpResp
+data OpResp = OpResp
   { _opDiffID :: DiffID
   , _opID     :: OpID
   , _ops      :: Operation
@@ -65,7 +64,6 @@ makeLenses ''OpResp
 --
 class Store store where
   data StoreOpts opts
-  type LabelConstraint store label :: Constraint
 
   -- | Initialise a handle to the storage backend.
   initBackend  :: StoreOpts store -> IO store
@@ -141,9 +139,7 @@ class Store store where
   lookupDiff          :: store -> DiffID -> IO (Maybe DiffResp)
 
   -- | Lookup the specified 'DiffOp's from the data store.
-  lookupDiffConflicts
-    :: forall label. LabelConstraint store label
-    => store -> [OpID] -> IO [OpResp label]
+  lookupDiffConflicts :: store -> [OpID] -> IO [OpResp]
 
   -- | Delete the 'Diff', if any, with a given ID.
   deleteDiff          :: store -> DiffID -> IO Int

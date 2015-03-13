@@ -41,7 +41,6 @@ emptyMem = MemStore 0 mempty mempty mempty mempty
 --
 instance Store (IORef MemStore) where
   newtype StoreOpts       (IORef MemStore)   = MemOpts ()
-  type    LabelConstraint (IORef MemStore) x = ()
 
   initBackend _ = newIORef emptyMem
 

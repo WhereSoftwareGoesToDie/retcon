@@ -36,7 +36,6 @@ sqlConcat = fromString . L.intercalate ";"
 -- | Persistent PostgreSQL-backed data storage.
 instance Store PGStore where
   newtype StoreOpts PGStore = PGOpts { connstr :: ByteString }
-  type    LabelConstraint PGStore label = FromJSON label
 
   initBackend (connstr -> str) = do
       conn <- connectPostgreSQL str
