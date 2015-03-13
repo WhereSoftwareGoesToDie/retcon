@@ -43,7 +43,6 @@ diff
 diff MergePolicy{..} d1 d2 =
     let j1 = d1 ^. documentContent
         j2 = d2 ^. documentContent
-        l = extractLabel d2
     in  D.diff j1 j2
 
 -- | Combine two 'Patch'es according to the rules of a 'MergePolicy'.

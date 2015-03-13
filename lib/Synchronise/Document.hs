@@ -26,7 +26,6 @@ module Synchronise.Document (
 import           Control.Lens
 import           Control.Monad
 import           Data.Aeson
-import           Data.Aeson.TH
 import           Data.List
 import           Data.Monoid
 
@@ -40,10 +39,13 @@ data Document = Document
     , _documentContent :: Value      -- ^ Document content.
     }
   deriving (Eq, Show)
-
 makeLenses ''Document
 
-$(deriveJSON defaultOptions ''Document)
+instance ToJSON Document where
+  toJSON = _documentContent
+
+instance FromJSON Document where
+  parseJSON x = return $ Document "" "" x
 
 instance Synchronisable Document where
     getEntityName = _documentEntity
