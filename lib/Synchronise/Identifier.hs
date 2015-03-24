@@ -16,6 +16,7 @@ module Synchronise.Identifier (
     EntityName(..),
     SourceName(..),
     -- * Unique identifiers
+    InternalID, ForeignID,
     ForeignKey(..),
     InternalKey(..),
     -- * Checking compatibility
@@ -24,10 +25,13 @@ module Synchronise.Identifier (
     compatibleSource,
 ) where
 
-import Control.Lens
-import Data.String
-import Data.Text (Text)
-import qualified Data.Text as T
+import           Data.Aeson.TH
+import           Data.String
+import           Data.Text                          (Text)
+import qualified Data.Text                          as T
+import           Database.PostgreSQL.Simple.ToField
+import           Database.PostgreSQL.Simple.ToRow
+
 
 -- | Unique name for an entity.
 newtype EntityName = EntityName { ename :: Text }
@@ -52,13 +56,18 @@ class Synchronisable a where
     -- | Get the 'SourceName' for which the value is valid.
     getSourceName :: a -> SourceName
 
+--------------------------------------------------------------------------------
+
+type InternalID = Int
+type ForeignID  = Text
+
 -- | Uniquely identify a 'Document' shared across one or more 'DataSource's.
 --
 -- Each 'InternalKey' value can be mapped to the 'ForeignKey's for the
 -- 'DataSource's which store copies of the associated 'Document'.
 data InternalKey = InternalKey
     { ikEntity :: EntityName
-    , ikID     :: Int
+    , ikID     :: InternalID
     } deriving (Eq, Ord)
 
 instance Synchronisable InternalKey where
@@ -69,12 +78,34 @@ instance Synchronisable InternalKey where
 data ForeignKey = ForeignKey
     { fkEntity :: EntityName
     , fkSource :: SourceName
-    , fkID     :: Text
+    , fkID     :: ForeignID
     } deriving (Eq, Ord, Show)
 
 instance Synchronisable ForeignKey where
     getEntityName = fkEntity
     getSourceName = fkSource
+
+-- json
+
+$(deriveJSON defaultOptions ''EntityName)
+$(deriveJSON defaultOptions ''SourceName)
+$(deriveJSON defaultOptions ''ForeignKey)
+
+-- postgres
+
+instance ToField EntityName where
+  toField (EntityName n) = toField n
+
+instance ToField SourceName where
+  toField (SourceName n) = toField n
+
+instance ToRow ForeignKey where
+  toRow (ForeignKey a b c) = toRow (a,b,c)
+
+instance ToRow InternalKey where
+  toRow (InternalKey a b) = toRow (a,b)
+
+--------------------------------------------------------------------------------
 
 -- | Check that two synchronisable values have the same entity.
 compatibleEntity

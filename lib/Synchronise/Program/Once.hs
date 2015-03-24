@@ -10,14 +10,14 @@
 -- | Description: Run /Synchronise/ as a one-short command.
 module Synchronise.Program.Once where
 
-import Control.Monad.IO.Class
-import Data.Aeson
+import           Control.Monad.IO.Class
+import           Data.Aeson
 
-import Synchronise.Configuration
-import Synchronise.DataSource
-import Synchronise.Document
-import Synchronise.Identifier
-import Synchronise.Monad
+import           Synchronise.Configuration
+import           Synchronise.DataSource
+import           Synchronise.Document
+import           Synchronise.Identifier
+import           Synchronise.Monad
 
 -- | A request to be processed.
 data Request

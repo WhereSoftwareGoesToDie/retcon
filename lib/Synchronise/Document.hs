@@ -23,13 +23,14 @@ module Synchronise.Document (
     calculateInitialDocument,
 ) where
 
-import Control.Lens
-import Control.Monad
-import Data.Aeson
-import Data.List
-import Data.Monoid
+import           Control.Lens
+import           Control.Monad
+import           Data.Aeson
+import           Data.List
+import           Data.Monoid
 
-import Synchronise.Identifier
+import           Synchronise.Identifier
+
 
 -- | A JSON 'Value' from a particular 'Entity'.
 data Document = Document
@@ -38,15 +39,19 @@ data Document = Document
     , _documentContent :: Value      -- ^ Document content.
     }
   deriving (Eq, Show)
-
 makeLenses ''Document
 
 instance ToJSON Document where
-    toJSON = _documentContent
+  toJSON = _documentContent
+
+instance FromJSON Document where
+  parseJSON x = return $ Document "" "" x
 
 instance Synchronisable Document where
     getEntityName = _documentEntity
     getSourceName = _documentSource
+
+--------------------------------------------------------------------------------
 
 -- | Construct an initial 'Document' for use in identifying and processing
 -- changes.

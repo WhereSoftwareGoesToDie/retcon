@@ -1,27 +1,27 @@
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE RankNTypes      #-}
+{-# LANGUAGE RankNTypes        #-}
+{-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE TypeFamilies      #-}
 
-module Synchronise.Store.Memory where
-
-
-import Control.Applicative
-import Control.Lens
-import Data.ByteString (ByteString)
-import Data.IORef
-import Data.Map (Map)
-import qualified Data.Map as M
-import Data.Monoid
-import Control.Monad
-import Data.Text (Text)
-
-import Synchronise.Diff
-import Synchronise.Document
-import Synchronise.Identifier
+module Synchronise.Store.Memory
+     ( MemStore
+     , Mem
+     ) where
 
 
-import Synchronise.Store.Base
-       
+import           Control.Applicative
+import           Control.Lens
+import           Data.IORef
+import           Data.Map               (Map)
+import qualified Data.Map               as M
+import           Data.Monoid
+
+import           Synchronise.Diff
+import           Synchronise.Document
+import           Synchronise.Identifier
+import           Synchronise.Store.Base
+
+
 -- | An acid-state like in-memory store.
 type Mem = IORef MemStore
 
@@ -30,17 +30,19 @@ data MemStore = MemStore
     , _memItoF    :: Map InternalKey (Map SourceName ForeignID)
     , _memFtoI    :: Map ForeignKey InternalID
     , _memInits   :: Map InternalKey Document
-    , _memDiffs   :: Map InternalKey [(LabelledPatch (), [LabelledPatch ()])]
+    , _memDiffs   :: Map InternalKey [(Patch, [Patch])]
     }
 makeLenses ''MemStore
 
 emptyMem :: MemStore
-emptyMem = MemStore 0 mempty mempty mempty mempty 
+emptyMem = MemStore 0 mempty mempty mempty mempty
 
 -- | "Open the module" with the in-memory store type.
 --
 instance Store (IORef MemStore) where
-  initBackend   = newIORef emptyMem
+  newtype StoreOpts       (IORef MemStore)   = MemOpts ()
+
+  initBackend _ = newIORef emptyMem
 
   closeBackend  = flip writeIORef emptyMem
 
@@ -52,7 +54,7 @@ instance Store (IORef MemStore) where
 
   lookupInternalKey ref fk = do
     st <- readIORef ref
-    return $ st ^? memFtoI . ix fk . to (InternalKey (fkEntity fk)) 
+    return $ st ^? memFtoI . ix fk . to (InternalKey (fkEntity fk))
 
   deleteInternalKey ref ik =
     atomicModifyIORef' ref $ \st ->
@@ -83,7 +85,7 @@ instance Store (IORef MemStore) where
              & memFtoI . at fk .~ Nothing
         , 0)
 
-  deleteForeignKeysWithInternal ref ik _ = do
+  deleteForeignKeysWithInternal ref ik = do
       let entity_name = ikEntity ik
       atomicModifyIORef' ref $ \st ->
           -- List of the foreign key identifiers associated with the internal
@@ -109,10 +111,9 @@ instance Store (IORef MemStore) where
       (st & memInits . at ik .~ Nothing, 0)
 
   recordDiffs ref ik new =
-      let relabeled = bimap void (map void) new in
       atomicModifyIORef' ref $ \st ->
           -- Slow due to list traversal
-          (st & memDiffs . at ik . non mempty <%~ (++[relabeled]))
+          (st & memDiffs . at ik . non mempty <%~ (++[new]))
           ^. swapped & _2 %~ length
 
   -- TODO Implement

@@ -9,7 +9,7 @@
 
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE RecordWildCards          #-}
+{-# LANGUAGE RecordWildCards            #-}
 
 -- | Description: Define and operate on data sources.
 --
@@ -28,28 +28,28 @@ module Synchronise.DataSource (
     deleteDocument,
 ) where
 
-import Control.Applicative
-import Control.Monad
-import Control.Monad.Error.Class
-import Control.Monad.IO.Class
-import Control.Monad.Trans.Except
-import Data.Aeson
-import qualified Data.ByteString.Char8 as BS
+import           Control.Applicative
+import           Control.Monad
+import           Control.Monad.Error.Class
+import           Control.Monad.IO.Class
+import           Control.Monad.Trans.Except
+import           Data.Aeson
+import qualified Data.ByteString.Char8      as BS
 import qualified Data.ByteString.Lazy.Char8 as BSL
-import Data.Char
-import Data.Monoid
-import Data.String ()
-import Data.Text (Text)
-import qualified Data.Text as T
-import qualified Data.Text.Encoding as T
-import Text.Regex
-import System.Exit
-import System.IO
-import System.Process
+import           Data.Char
+import           Data.Monoid
+import           Data.String                ()
+import           Data.Text                  (Text)
+import qualified Data.Text                  as T
+import qualified Data.Text.Encoding         as T
+import           System.Exit
+import           System.IO
+import           System.Process
+import           Text.Regex
 
-import Synchronise.Configuration
-import Synchronise.Document
-import Synchronise.Identifier
+import           Synchronise.Configuration
+import           Synchronise.Document
+import           Synchronise.Identifier
 
 data DataSourceError
     = DecodeError String
@@ -82,7 +82,7 @@ prepareCommand _ds fk cmd =
         Nothing -> T.unpack . unCommand $ cmd
         Just ForeignKey{..} ->
             let cmd' = T.unpack . unCommand $ cmd
-            in subNamedHole "fk" cmd' (T.unpack fkKey)
+            in subNamedHole "fk" cmd' (T.unpack fkID)
 
 -- | Check that a 'DataSource' and a 'ForeignKey' are compatible, otherwise
 -- raise an error in the monad.

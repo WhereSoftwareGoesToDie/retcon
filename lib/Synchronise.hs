@@ -23,10 +23,10 @@ module Synchronise (
     S.version,
 ) where
 
-import Synchronise.Configuration
-import Synchronise.DataSource
-import Synchronise.Diff
-import Synchronise.Document
-import Synchronise.Identifier
+import           Synchronise.Configuration
+import           Synchronise.DataSource
+import           Synchronise.Diff
+import           Synchronise.Document
+import           Synchronise.Identifier
 
-import Paths_synchronise as S
+import           Paths_synchronise         as S

@@ -1,28 +1,41 @@
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE RankNTypes      #-}
+{-# LANGUAGE RankNTypes        #-}
+{-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE TypeFamilies      #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ConstraintKinds   #-}
 
-module Synchronise.Store.Base where
+module Synchronise.Store.Base
+     ( -- * Database
+       Store(..)
 
-import Control.Lens
-import Data.ByteString (ByteString)
-import Data.Text (Text)
+       -- * Work
+     , WorkItem(..)
+     , WorkItemID
 
-import Synchronise.Diff
-import Synchronise.Document
-import Synchronise.Identifier
+       -- * Operation responses
+     , ConflictResp(..)
+     , conflictRawDoc, conflictRawDiff, conflictDiffID, conflictRawOps
+     , OpResp(..)
+     , opDiffID, opID, ops
+     , DiffResp(..)
+     , diffEntity, diffKey, diffPatch, diffConflicts
 
+     ) where
 
--- TODO
-data WorkItem
-data WorkItemID
-data Diff
+import           Control.Applicative
+import           Control.Monad
+import           Control.Lens           hiding ((.=))
+import           Data.Aeson
+import           Data.ByteString        (ByteString)
+import           Data.Monoid
+
+import           Synchronise.Diff
+import           Synchronise.Document
+import           Synchronise.Identifier
 
 
 type DiffID  = Int
 type OpID    = Int
-
-type InternalID = Int
-type ForeignID  = Text
 
 data ConflictResp = ConflictResp
   { _conflictRawDoc  :: ByteString
@@ -35,23 +48,25 @@ makeLenses ''ConflictResp
 data DiffResp = DiffResp
   { _diffEntity    :: ByteString
   , _diffKey       :: Int
-  , _diffPatch     :: LabelledPatch ()
-  , _diffConflicts :: [LabelledPatch ()]
+  , _diffPatch     :: Patch
+  , _diffConflicts :: [Patch]
   }
 makeLenses ''DiffResp
 
-data OpResp label = OpResp 
+data OpResp = OpResp
   { _opDiffID :: DiffID
   , _opID     :: OpID
-  , _ops      :: LabelledOp label
+  , _ops      :: Operation
   }
 makeLenses ''OpResp
 
 -- | The internal store "module".
 --
 class Store store where
+  data StoreOpts opts
+
   -- | Initialise a handle to the storage backend.
-  initBackend  :: IO store
+  initBackend  :: StoreOpts store -> IO store
 
   -- | Finalise a handle to the storage backend.
   closeBackend :: store -> IO ()
@@ -90,7 +105,7 @@ class Store store where
 
   -- | Delete all 'ForeignKey's associated with an 'InternalKey'.
   deleteForeignKeysWithInternal
-    :: store -> InternalKey -> SourceName -> IO Int
+    :: store -> InternalKey -> IO Int
 
 
   -- Operations on initial documents
@@ -109,11 +124,7 @@ class Store store where
 
   -- | Record the success 'Diff' and a list of failed 'Diff's associated with a
   --   processed 'InternalKey'.
-  recordDiffs
-    :: forall label. store
-    -> InternalKey
-    -> (LabelledPatch label, [LabelledPatch label])
-    -> IO DiffID 
+  recordDiffs         :: store -> InternalKey -> (Patch, [Patch]) -> IO DiffID
 
   -- | Record that the conflicts in a 'Diff' are resolved.
   resolveDiffs        :: store -> Int -> IO ()
@@ -128,7 +139,7 @@ class Store store where
   lookupDiff          :: store -> DiffID -> IO (Maybe DiffResp)
 
   -- | Lookup the specified 'DiffOp's from the data store.
-  lookupDiffConflicts :: forall label. store -> [OpID] -> IO [OpResp label]
+  lookupDiffConflicts :: store -> [OpID] -> IO [OpResp]
 
   -- | Delete the 'Diff', if any, with a given ID.
   deleteDiff          :: store -> DiffID -> IO Int
@@ -138,7 +149,7 @@ class Store store where
 
 
   -- Operation on store work queue
-      
+
   -- | Add a work item to the work queue.
   addWork :: store -> WorkItem -> IO ()
 
@@ -152,3 +163,28 @@ class Store store where
 
   -- | Remove a completed work item from the queue.
   completeWork :: store -> WorkItemID -> IO ()
+
+
+--------------------------------------------------------------------------------
+
+-- | The identifier of a work item in the work queue.
+type WorkItemID = Int
+
+-- | An item of work to be stored in the work queue.
+data WorkItem
+    -- | A document was changed; process the update.
+    = WorkNotify ForeignKey
+    -- | A patch was submitted by a human; apply it.
+    | WorkApplyPatch Int Patch
+    deriving (Show, Eq)
+
+instance ToJSON WorkItem where
+    toJSON (WorkNotify fki) = object ["notify" .= fki]
+    toJSON (WorkApplyPatch did new_diff) =
+        object ["did" .= did, "diff" .= new_diff]
+
+instance FromJSON WorkItem where
+    parseJSON (Object v)
+      =  (WorkNotify     <$> v .: "notify")
+      <> (WorkApplyPatch <$> v .: "did" <*> v .: "diff")
+    parseJSON _ = mzero
