@@ -74,6 +74,10 @@ data Configuration = Configuration
     }
   deriving (Eq, Show)
 
+-- | An \"empty\" configuration.
+emptyConfiguration :: Configuration
+emptyConfiguration = Configuration mempty ("tcp://127.0.0.1:9999", EMERGENCY)
+
 type Parser a = Config -> ExceptT Text IO a
 
 -- | Parse a configurator 'Config' value into a 'Configuration'.

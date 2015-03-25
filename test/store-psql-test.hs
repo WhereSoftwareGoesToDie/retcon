@@ -23,7 +23,6 @@ import Control.Monad
 import Control.Monad.IO.Class
 import Data.Aeson
 import qualified Data.ByteString.Char8 as BS
-import qualified Data.Map as M
 import Data.Monoid
 import Data.Text ()
 import qualified Data.Vector as V
@@ -46,9 +45,8 @@ dbname = "retcon_test"
 options :: StoreOpts PGStore
 options = PGOpts { connstr = "dbname=" <> dbname }
 
-
 config :: Configuration
-config = Configuration M.empty
+config = emptyConfiguration
 
 runAction :: SynchroniseMonad a -> IO (Either SynchroniseError a)
 runAction = runSynchroniseMonad (SynchroniseMonadState config)

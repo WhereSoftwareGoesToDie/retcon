@@ -42,7 +42,7 @@ emptyMem = MemStore 0 mempty mempty mempty mempty
 instance Store (IORef MemStore) where
   newtype StoreOpts       (IORef MemStore)   = MemOpts ()
 
-  initBackend _ = newIORef emptyMem
+  initBackend (MemOpts{}) = newIORef emptyMem
 
   closeBackend  = flip writeIORef emptyMem
 
@@ -98,7 +98,6 @@ instance Store (IORef MemStore) where
       -- Now remove the internal key.
       deleteInternalKey ref ik
 
-
   recordInitialDocument ref ik doc =
       atomicModifyIORef' ref $ \st ->
           (st & memInits . at ik ?~ doc, ())
@@ -134,6 +133,11 @@ instance Store (IORef MemStore) where
   deleteDiffsWithKey ref ik =
       atomicModifyIORef' ref $ \st ->
           (st & memDiffs . at ik .~ Nothing, 0)
+
+  resolveDiffs = const . const $ return ()
+
+  lookupConflicts = const $ return []
+  lookupDiffConflicts = const . const $ return []
 
   addWork      = const . const $ return ()
   getWork      = const $ return Nothing
