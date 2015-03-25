@@ -9,6 +9,8 @@
 
 -- | Re-export the public API to /Synchronise/.
 module Synchronise (
+    S.version,
+
     -- * Configuration
     module Synchronise.Configuration,
     -- * Identifiers
@@ -19,8 +21,6 @@ module Synchronise (
     module Synchronise.Document,
     -- * Data sources
     module Synchronise.DataSource,
-
-    S.version,
 ) where
 
 import           Synchronise.Configuration
@@ -30,3 +30,5 @@ import           Synchronise.Document
 import           Synchronise.Identifier
 
 import           Paths_synchronise         as S
+
+{-# ANN module "HLint: Ignore Use import/export shortcut" #-}

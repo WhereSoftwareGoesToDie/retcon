@@ -90,7 +90,7 @@ instance Store (IORef MemStore) where
       atomicModifyIORef' ref $ \st ->
           -- List of the foreign key identifiers associated with the internal
           -- key
-          let fkis = map (uncurry (ForeignKey entity_name)) $
+          let fkis = fmap (uncurry (ForeignKey entity_name)) $
                       st ^.. memItoF . at ik . _Just . itraversed . withIndex in
           -- Now delete the foreign keys from the foreign to internal map
           ( st & memFtoI %~ (\ftoi -> foldr M.delete ftoi fkis)
@@ -135,6 +135,6 @@ instance Store (IORef MemStore) where
       atomicModifyIORef' ref $ \st ->
           (st & memDiffs . at ik .~ Nothing, 0)
 
-  addWork      = const $ const $ return ()
+  addWork      = const . const $ return ()
   getWork      = const $ return Nothing
-  completeWork = const $ const $ return ()
+  completeWork = const . const $ return ()

@@ -67,7 +67,7 @@ instance Store PGStore where
       d2 <- execute' "DELETE FROM retcon_diff WHERE entity = ? AND id = ?"
       d3 <- execute' "DELETE FROM retcon_fk WHERE entity = ? AND id = ?"
       d4 <- execute' "DELETE FROM retcon WHERE entity = ? AND id = ?"
-      return . sum . map fromIntegral $ [d1, d2, d3, d4]
+      return . sum . fmap fromIntegral $ [d1, d2, d3, d4]
 
   recordForeignKey (PGStore conn _) ik fk = do
       let entity = fkEntity fk
@@ -133,19 +133,19 @@ instance Store PGStore where
       -- the arbitrary, possibly unserialisable, labels.
 
       -- Extract the operations from the conflicting diffs.
-      let ops = map (toJSON) . concatOf (traversed . to patchOperations) $ ds
+      let ops = fmap toJSON . concatOf (traversed . to patchOperations) $ ds
 
       -- Record the merged diff in the database.
       [Only did] <- query conn diffQ (entity, key, not . null $ ops, encode d)
 
       -- Record conflicts in the database.
-      void . executeMany conn opsQ . map (did,) $ ops
+      void . executeMany conn opsQ . fmap (did,) $ ops
       return did
     where
       diffQ = "INSERT INTO retcon_diff (entity, id, is_conflict, content) VALUES (?, ?, ?, ?) RETURNING diff_id"
       opsQ = "INSERT INTO retcon_diff_conflicts (diff_id, content) VALUES (?, ?)"
 
-  resolveDiffs (PGStore conn _) did = do
+  resolveDiffs (PGStore conn _) did =
       void $ execute conn sql (Only did)
     where
       sql = "UPDATE retcon_diff SET is_conflict = FALSE WHERE diff_id = ?"
@@ -155,11 +155,11 @@ instance Store PGStore where
 
       -- Load the merged diff.
       diff <- query' "SELECT entity, id, content FROM retcon_diff WHERE diff_id = ?"
-      let diff' = map (\(entity, key, c) -> (entity,key,) <$> fromJSON c) diff
+      let diff' = fmap (\(entity, key, c) -> (entity,key,) <$> fromJSON c) diff
 
       -- Load the conflicting fragments.
       conflicts <- query' "SELECT content FROM retcon_diff_conflicts WHERE diff_id = ?"
-      let conflicts' = map fromSuccess . filter isSuccess . map (fromJSON . _3) $ conflicts
+      let conflicts' = fmap fromSuccess . filter isSuccess . fmap (fromJSON . _3) $ conflicts
 
       return $ case diff' of
           Success (entity,key,d):_ -> Just $ DiffResp entity key d conflicts'
@@ -175,7 +175,7 @@ instance Store PGStore where
   lookupConflicts (PGStore conn _) = do
       diffs <- query_ conn diffS
       ops <- query_ conn opsS
-      return $ map (match ops) diffs
+      return $ fmap (match ops) diffs
     where
       -- Filter the operations which correspond to a diff and add them to the
       -- tuple.
@@ -183,7 +183,7 @@ instance Store PGStore where
       -- TODO This is O(mn). I am embarrassing.
       -- thsutton
       match all_ops (doc, diff, diff_id) =
-          let ops = map (\(_, op_id, op) -> (op_id, op))
+          let ops = fmap (\(_, op_id, op) -> (op_id, op))
                   . filter (\(op_diff_id,_,_) -> diff_id == op_diff_id)
                   $ all_ops
           in ConflictResp doc diff diff_id ops
@@ -197,11 +197,11 @@ instance Store PGStore where
           <> "LEFT JOIN retcon_diff AS diff ON (op.diff_id = diff.diff_id) "
           <> "WHERE diff.is_conflict ORDER BY op.diff_id ASC"
 
-  lookupDiffConflicts (PGStore conn _) ids = do
-      (map parse) <$> (query conn sql . Only . In $ ids)
+  lookupDiffConflicts (PGStore conn _) ids =
+      fmap parse <$> (query conn sql . Only . In $ ids)
     where
       sql = "SELECT diff_id, operation_id, content FROM retcon_diff_conflicts WHERE operation_id IN ?"
-      parse (did, opid, op_json) = do
+      parse (did, opid, op_json) =
           case fromJSON op_json of
               Success dop -> OpResp did opid dop
               Error e     -> error $
@@ -209,20 +209,20 @@ instance Store PGStore where
 
   lookupDiffIDs (PGStore conn _) ik = do
       r <- query conn "SELECT diff_id FROM retcon_diff WHERE entity = ? AND id = ?" ik
-      return . map fromOnly $ r
+      return . fmap fromOnly $ r
 
   deleteDiff (PGStore conn _) diff_id = do
       let execute' sql = execute conn sql (Only diff_id)
       ops <- execute' "DELETE FROM retcon_diff_conflicts WHERE diff_id = ?"
       d <- execute' "DELETE FROM retcon_diff WHERE diff_id = ?"
-      return . sum . map fromIntegral $ [ops, d]
+      return . sum . fmap fromIntegral $ [ops, d]
 
   deleteDiffsWithKey (PGStore conn _) ik = do
       let execute' sql = execute conn sql ik
       d1 <- execute' "DELETE FROM retcon_diff_conflicts WHERE diff_id IN (SELECT diff_id FROM retcon_diff WHERE entity = ? AND id = ?)"
       d2 <- execute' "DELETE FROM retcon_notifications WHERE entity = ? AND id = ?"
       d3 <- execute' "DELETE FROM retcon_diff WHERE entity = ? AND id = ?"
-      return . sum . map fromIntegral $ [d1, d2, d3]
+      return . sum . fmap fromIntegral $ [d1, d2, d3]
 
   addWork (PGStore conn _) work = do
       let content = toJSON work

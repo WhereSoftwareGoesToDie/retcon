@@ -7,10 +7,8 @@
 -- the 3-clause BSD licence.
 --
 
-{-# LANGUAGE DeriveFunctor     #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
-{-# LANGUAGE TemplateHaskell   #-}
 
 -- | Description: Diff and patch /Synchronise/ documents.
 module Synchronise.Diff

@@ -51,6 +51,9 @@ import           Synchronise.Configuration
 import           Synchronise.Document
 import           Synchronise.Identifier
 
+-- TODO(thsutton): Remove this
+{-# ANN module ("HLint: ignore Reduce duplication" :: String) #-}
+
 data DataSourceError
     = DecodeError String
     | ForeignError Int Text
@@ -69,7 +72,7 @@ subNamedHole
     -> String    -- ^ Input string
     -> String    -- ^ Replacement text
     -> String    -- ^ Output string
-subNamedHole name = subRegex $ mkRegex $ "\\$\\{" <> name <> "\\}"
+subNamedHole name = subRegex . mkRegex $ "\\$\\{" <> name <> "\\}"
 
 -- | Prepare a 'Command' by interpolating
 prepareCommand
