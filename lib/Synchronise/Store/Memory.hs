@@ -9,17 +9,17 @@ module Synchronise.Store.Memory
      ) where
 
 
-import           Control.Applicative
-import           Control.Lens
-import           Data.IORef
-import           Data.Map               (Map)
-import qualified Data.Map               as M
-import           Data.Monoid
+import Control.Applicative
+import Control.Lens
+import Data.IORef
+import Data.Map (Map)
+import qualified Data.Map as M
+import Data.Monoid
 
-import           Synchronise.Diff
-import           Synchronise.Document
-import           Synchronise.Identifier
-import           Synchronise.Store.Base
+import Synchronise.Diff
+import Synchronise.Document
+import Synchronise.Identifier
+import Synchronise.Store.Base
 
 
 -- | An acid-state like in-memory store.

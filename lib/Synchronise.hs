@@ -23,12 +23,12 @@ module Synchronise (
     module Synchronise.DataSource,
 ) where
 
-import           Synchronise.Configuration
-import           Synchronise.DataSource
-import           Synchronise.Diff
-import           Synchronise.Document
-import           Synchronise.Identifier
+import Synchronise.Configuration
+import Synchronise.DataSource
+import Synchronise.Diff
+import Synchronise.Document
+import Synchronise.Identifier
 
-import           Paths_synchronise         as S
+import Paths_synchronise as S
 
-{-# ANN module "HLint: Ignore Use import/export shortcut" #-}
+{-# ANN module "HLint: ignore Use import/export shortcut" #-}

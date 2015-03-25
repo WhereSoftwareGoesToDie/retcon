@@ -9,20 +9,20 @@ module Synchronise.Store.PostgreSQL
      , StoreOpts(..)
      ) where
 
-import           Control.Applicative
-import           Control.Lens               hiding (op)
-import           Control.Monad
-import           Data.Aeson
-import           Data.Aeson.Diff            hiding (diff)
-import           Data.ByteString            (ByteString)
-import qualified Data.List                  as L
-import           Data.Maybe
-import           Data.Monoid
-import           Data.String
-import           Database.PostgreSQL.Simple
+import Control.Applicative
+import Control.Lens hiding (op)
+import Control.Monad
+import Data.Aeson
+import Data.Aeson.Diff hiding (diff)
+import Data.ByteString (ByteString)
+import qualified Data.List as L
+import Data.Maybe
+import Data.Monoid
+import Data.String
+import Database.PostgreSQL.Simple
 
-import           Synchronise.Identifier
-import           Synchronise.Store.Base     hiding (ops)
+import Synchronise.Identifier
+import Synchronise.Store.Base hiding (ops)
 
 
 data PGStore = PGStore
