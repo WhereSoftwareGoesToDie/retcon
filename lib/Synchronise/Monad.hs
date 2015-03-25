@@ -13,16 +13,16 @@
 
 module Synchronise.Monad where
 
-import           Control.Applicative
-import           Control.Exception
-import           Control.Lens
-import           Control.Monad.Error.Class
-import           Control.Monad.Reader
-import           Control.Monad.Trans.Except
-import           Data.Typeable
+import Control.Applicative
+import Control.Exception
+import Control.Lens
+import Control.Monad.Error.Class
+import Control.Monad.Reader
+import Control.Monad.Trans.Except
+import Data.Typeable
 
-import           Synchronise.Configuration
-import           Synchronise.DataSource
+import Synchronise.Configuration
+import Synchronise.DataSource
 
 data SynchroniseError
     = SynchroniseFailed

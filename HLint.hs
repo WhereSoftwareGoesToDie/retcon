@@ -1,4 +1,5 @@
-{-# LANGUAGE PackageImports #-}
+{-# LANGUAGE PackageImports  #-}
+{-# LANGUAGE TemplateHaskell #-}
 module HLint.HLint where
 
 import "hint" HLint.Builtin.All

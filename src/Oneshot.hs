@@ -12,22 +12,22 @@
 
 module Main where
 
-import           Control.Applicative
-import           Control.Exception
-import           Control.Monad.Trans.Except
-import           Data.Configurator
-import           Data.Monoid
-import qualified Data.Text                  as T
-import qualified Data.Text.IO               as T
-import           Data.Version
-import           Options.Applicative
-import           System.Exit
-import           System.FilePath
+import Control.Applicative
+import Control.Exception
+import Control.Monad.Trans.Except
+import Data.Configurator
+import Data.Monoid
+import qualified Data.Text as T
+import qualified Data.Text.IO as T
+import Data.Version
+import Options.Applicative
+import System.Exit
+import System.FilePath
 
-import qualified Paths_synchronise          as Paths
-import           Synchronise                hiding (Parser)
-import           Synchronise.Monad
-import           Synchronise.Program.Once
+import qualified Paths_synchronise as Paths
+import Synchronise hiding (Parser)
+import Synchronise.Monad
+import Synchronise.Program.Once
 
 -- | Command line options for the server.
 data Options = Options

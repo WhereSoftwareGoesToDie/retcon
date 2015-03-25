@@ -9,17 +9,17 @@ module Synchronise.Store.Memory
      ) where
 
 
-import           Control.Applicative
-import           Control.Lens
-import           Data.IORef
-import           Data.Map               (Map)
-import qualified Data.Map               as M
-import           Data.Monoid
+import Control.Applicative
+import Control.Lens
+import Data.IORef
+import Data.Map (Map)
+import qualified Data.Map as M
+import Data.Monoid
 
-import           Synchronise.Diff
-import           Synchronise.Document
-import           Synchronise.Identifier
-import           Synchronise.Store.Base
+import Synchronise.Diff
+import Synchronise.Document
+import Synchronise.Identifier
+import Synchronise.Store.Base
 
 
 -- | An acid-state like in-memory store.
@@ -90,7 +90,7 @@ instance Store (IORef MemStore) where
       atomicModifyIORef' ref $ \st ->
           -- List of the foreign key identifiers associated with the internal
           -- key
-          let fkis = map (uncurry (ForeignKey entity_name)) $
+          let fkis = fmap (uncurry (ForeignKey entity_name)) $
                       st ^.. memItoF . at ik . _Just . itraversed . withIndex in
           -- Now delete the foreign keys from the foreign to internal map
           ( st & memFtoI %~ (\ftoi -> foldr M.delete ftoi fkis)
@@ -135,6 +135,6 @@ instance Store (IORef MemStore) where
       atomicModifyIORef' ref $ \st ->
           (st & memDiffs . at ik .~ Nothing, 0)
 
-  addWork      = const $ const $ return ()
+  addWork      = const . const $ return ()
   getWork      = const $ return Nothing
-  completeWork = const $ const $ return ()
+  completeWork = const . const $ return ()

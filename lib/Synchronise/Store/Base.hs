@@ -1,8 +1,8 @@
+{-# LANGUAGE ConstraintKinds   #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes        #-}
 {-# LANGUAGE TemplateHaskell   #-}
 {-# LANGUAGE TypeFamilies      #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE ConstraintKinds   #-}
 
 module Synchronise.Store.Base
      ( -- * Database
@@ -22,16 +22,16 @@ module Synchronise.Store.Base
 
      ) where
 
-import           Control.Applicative
-import           Control.Monad
-import           Control.Lens           hiding ((.=))
-import           Data.Aeson
-import           Data.ByteString        (ByteString)
-import           Data.Monoid
+import Control.Applicative
+import Control.Lens hiding ((.=))
+import Control.Monad
+import Data.Aeson
+import Data.ByteString (ByteString)
+import Data.Monoid
 
-import           Synchronise.Diff
-import           Synchronise.Document
-import           Synchronise.Identifier
+import Synchronise.Diff
+import Synchronise.Document
+import Synchronise.Identifier
 
 
 type DiffID  = Int

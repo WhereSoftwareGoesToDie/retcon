@@ -10,13 +10,15 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Main where
 
-import           Control.Monad
-import           Data.Aeson
-import           Data.Monoid
-import           Test.Hspec
-import           Test.HUnit
+import Control.Monad
+import Data.Aeson
+import Data.Monoid
+import Test.Hspec
+import Test.HUnit
 
-import           Synchronise
+import Synchronise
+
+{-# ANN module ("HLint: ignore Reduce duplication" :: String) #-}
 
 fileSource :: DataSource
 fileSource = DataSource
@@ -32,11 +34,12 @@ fileSource = DataSource
 allDifferent :: (Eq a, Show a) => [a] -> Assertion
 allDifferent [] = return ()
 allDifferent (x:xs) = do
-  when (x `elem` xs) $ assertFailure $ "allDifferent: found multiple occurances of " <> show x
+  when (x `elem` xs) . assertFailure $
+    "allDifferent: found multiple occurances of " <> show x
   allDifferent xs
 
 suite :: DataSource -> Spec
-suite source = do
+suite source =
     describe "DataSource" $ do
         it "can create and read out again" $ do
             let doc = Document "entity" "source" (object ["foo" .= ("bar" :: String)])

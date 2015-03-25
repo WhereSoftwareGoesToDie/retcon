@@ -7,10 +7,8 @@
 -- the 3-clause BSD licence.
 --
 
-{-# LANGUAGE DeriveFunctor     #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
-{-# LANGUAGE TemplateHaskell   #-}
 
 -- | Description: Diff and patch /Synchronise/ documents.
 module Synchronise.Diff
@@ -24,12 +22,12 @@ module Synchronise.Diff
 
      ) where
 
-import           Control.Lens         hiding ((.=))
-import           Data.Aeson.Diff      (Operation, Patch)
-import qualified Data.Aeson.Diff      as D
-import           Data.Monoid
+import Control.Lens hiding ((.=))
+import Data.Aeson.Diff (Operation, Patch)
+import qualified Data.Aeson.Diff as D
+import Data.Monoid
 
-import           Synchronise.Document
+import Synchronise.Document
 
 data MergePolicy l = MergePolicy
     { extractLabel :: Document -> l
