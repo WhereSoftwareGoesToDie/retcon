@@ -1,4 +1,5 @@
 /dist/
+/entity/
 /tags
 # Ignore the checked-out aeson-schema repo
 /aeson-schema/

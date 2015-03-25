@@ -27,6 +27,7 @@ import qualified Data.Map                     as M
 import           Data.Maybe
 import           Data.Monoid
 import           Data.Text                    (Text)
+import qualified Data.Vector as V
 import           Database.PostgreSQL.Simple
 import           System.Process
 import           Test.Hspec
@@ -260,10 +261,12 @@ postgresqlSuite = around_ prepareDatabase $ do
     it "should record initial documents" $ do
       store@(PGStore conn _) <- initBackend options
 
-      let doc1 = Document "" "" "Document One"
-          doc2 = Document "" "" "Document Two"
-          doc3 = Document "" "" "Document Three"
-          doc4 = Document "" "" "Document Four"
+      let f = Array . V.singleton
+
+      let doc1 = Document "" "" $ f "Document One"
+          doc2 = Document "" "" $ f "Document Two"
+          doc3 = Document "" "" $ f "Document Three"
+          doc4 = Document "" "" $ f "Document Four"
 
       Right (ik1, ik2, ik3, ik4) <- runAction $ liftIO $ do
           ik1 <- createInternalKey store "tests"

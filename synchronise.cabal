@@ -130,6 +130,7 @@ test-suite store-psql-test
     , text
     , containers
     , unordered-containers
+    , vector
     , postgresql-simple
     , process
 
