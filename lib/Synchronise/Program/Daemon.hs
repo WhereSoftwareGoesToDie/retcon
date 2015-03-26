@@ -21,6 +21,7 @@ synchronise
     :: Configuration
     -> IO ()
 synchronise cfg = do
-    updateGlobalLogger rootLoggerName (setLevel . snd . configServer $ cfg)
+    let (_, pri, _) = configServer cfg
+    updateGlobalLogger rootLoggerName (setLevel pri)
     api <- spawnApiServer cfg
     wait api

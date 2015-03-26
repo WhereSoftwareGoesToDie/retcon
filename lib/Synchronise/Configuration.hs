@@ -17,6 +17,8 @@ import Control.Applicative
 import Control.Monad.Error.Class
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Except
+import Data.ByteString
+import qualified Data.ByteString.Char8 as BS
 import Data.Configurator as C
 import Data.Configurator.Types
 import Data.Map (Map)
@@ -70,13 +72,15 @@ emptyEntity name = Entity (EntityName name) mempty mempty mempty mempty
 -- | Configuration of entities and data sources.
 data Configuration = Configuration
     { configEntities :: Map EntityName Entity
-    , configServer   :: (String, Priority)
+    , configServer   :: (String, Priority, ByteString)
     }
   deriving (Eq, Show)
 
 -- | An \"empty\" configuration.
 emptyConfiguration :: Configuration
-emptyConfiguration = Configuration mempty ("tcp://127.0.0.1:9999", EMERGENCY)
+emptyConfiguration = Configuration
+    mempty
+    ("tcp://127.0.0.1:9999", EMERGENCY, "")
 
 type Parser a = Config -> ExceptT Text IO a
 
@@ -95,14 +99,15 @@ parseConfiguration cfg = Configuration
             Just [] -> throwError "No entities enabled in configuration."
             Just es -> mapM (`parseEntity` cfg) es
         return . M.fromList . fmap (\e -> (entityName e, e)) $ ents
-    server :: Parser (String, Priority)
+    server :: Parser (String, Priority, ByteString)
     server _ =
-        (,) <$> liftIO (C.require cfg "server.listen")
-            <*> liftIO (read <$> C.require cfg "server.log-level")
+        (,,) <$> liftIO (C.require cfg "server.listen")
+             <*> liftIO (read <$> C.require cfg "server.log-level")
+             <*> liftIO (BS.pack <$> C.require cfg "server.database")
 
--- | Parse an
+-- | Parse an entity from a configuration.
 parseEntity
-    :: Text
+    :: Text -- ^ Entity name.
     -> Parser Entity
 parseEntity name cfg' = do
     let cfg = C.subconfig ("entities." <> name) cfg'

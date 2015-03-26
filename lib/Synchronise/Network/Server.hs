@@ -2,6 +2,8 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE TypeFamilies               #-}
 
@@ -19,16 +21,28 @@ import qualified Data.ByteString.Char8 as BS (unpack)
 import Data.ByteString.Lazy (fromStrict, toStrict)
 import qualified Data.ByteString.Lazy as LBS
 import Data.List.NonEmpty hiding (filter, length, map)
+import qualified Data.Map as M
 import Data.Monoid
 import Data.String
 import System.Log.Logger
 import System.ZMQ4
 
 import Synchronise.Configuration
+import Synchronise.Identifier
 import Synchronise.Network.Protocol
+import Synchronise.Store
+import Synchronise.Store.PostgreSQL
 
 --------------------------------------------------------------------------------
 -- * Server
+
+data ServerState = ServerState
+    { _serverContext :: Context
+    , _serverSocket  :: Socket Rep
+    , _serverConfig  :: Configuration
+    , _serverStore   :: PGStore
+    }
+makeLenses ''ServerState
 
 -- | Name of server component for logging.
 logName :: String
@@ -54,20 +68,20 @@ apiServer cfg = do
   where
     start :: IO ServerState
     start = do
+        let (zmq_conn, _, pg_conn) = configServer cfg
         ctx <- context
         sock <- socket ctx Rep
-        bind sock (fst . configServer $ cfg)
-        return (ctx, sock, cfg)
+        bind sock zmq_conn
+        db <- initBackend (PGOpts pg_conn)
+        return $  ServerState ctx sock cfg db
     stop :: ServerState -> IO ()
-    stop (ctx, sock, _) = do
-        close sock
-        term ctx
+    stop state = do
+        close $ state ^. serverSocket
+        term $ state ^. serverContext
         return ()
 
 --------------------------------------------------------------------------------
 -- * Protocol implementation
-
-type ServerState = (Context, Socket Rep, Configuration)
 
 newtype Protocol a = Proto
     { unProtocol :: ExceptT APIError (ReaderT ServerState IO) a }
@@ -86,14 +100,15 @@ protocol :: Protocol ()
 protocol = loop
   where
     loop = do
-        (_, sock, _cfg) <- ask
-        cmd <- liftIO . receiveMulti $ sock
+        sock <- _serverSocket <$> ask
+        cmd <- liftIO $ receiveMulti sock
         (status, resp) <- case cmd of
             [hdr, req] -> catchAndInject . join $
                     dispatch <$> (toEnum <$> decodeStrict hdr)
                              <*> pure (fromStrict req)
             _ -> throwError InvalidNumberOfMessageParts
         liftIO . sendMulti sock . fromList $ [encodeStrict status, resp]
+        -- Play it again, Sam.
         loop
     dispatch
         :: SomeHeader
@@ -157,10 +172,24 @@ notify
     :: RequestChange
     -> Protocol ResponseChange
 notify (RequestChange note) = do
+    let ent_name = note ^. notificationEntity
+        src_name = note ^. notificationSource
+        fid      = note ^. notificationForeignID
+    cfg <- _serverConfig <$> ask
+    store <- _serverStore <$> ask
     liftIO . infoM logName $
-        "Received change notification for: " <> show (note ^. notificationEntity)
-    -- TODO(thsutton) Implement
-    liftIO . emergencyM logName $ "Unimplemented: notify"
+        "Received change notification for: " <> show ent_name <> "."  <>
+        show src_name
+    let m_ds = do
+            Entity{..} <- M.lookup ent_name (configEntities cfg)
+            M.lookup src_name entitySources
+    case m_ds of
+        Nothing -> do
+            liftIO . errorM logName $ "Unknown source: "
+                <> show ent_name <> "."  <> show src_name
+            throwError UnknownKeyError
+        Just _ ->
+            liftIO . addWork store . WorkNotify $ ForeignKey ent_name src_name fid
     return ResponseChange
 
 --------------------------------------------------------------------------------
