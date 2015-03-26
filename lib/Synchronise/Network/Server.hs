@@ -24,6 +24,7 @@ import Data.List.NonEmpty hiding (filter, length, map)
 import qualified Data.Map as M
 import Data.Monoid
 import Data.String
+import qualified Data.Text as T
 import System.Log.Logger
 import System.ZMQ4
 
@@ -83,9 +84,12 @@ apiServer cfg = do
 --------------------------------------------------------------------------------
 -- * Protocol implementation
 
+-- | A monad which wraps up some state, some error handling, and some IO to
+-- implement the server side of synchronised.
 newtype Protocol a = Proto
     { unProtocol :: ExceptT APIError (ReaderT ServerState IO) a }
-  deriving (Applicative, Functor, Monad, MonadIO, MonadReader ServerState, MonadError APIError, MonadThrow, MonadCatch)
+  deriving (Applicative, Functor, Monad, MonadCatch, MonadError APIError,
+  MonadIO, MonadReader ServerState, MonadThrow)
 
 -- | Execute a 'Protocol' action.
 runProtocol :: ServerState -> Protocol a -> IO a
@@ -101,12 +105,15 @@ protocol = loop
   where
     loop = do
         sock <- _serverSocket <$> ask
+        -- Read a response from the client.
         cmd <- liftIO $ receiveMulti sock
+        -- Decode and process it.
         (status, resp) <- case cmd of
             [hdr, req] -> catchAndInject . join $
                     dispatch <$> (toEnum <$> decodeStrict hdr)
                              <*> pure (fromStrict req)
             _ -> throwError InvalidNumberOfMessageParts
+        -- Send the response to the client.
         liftIO . sendMulti sock . fromList $ [encodeStrict status, resp]
         -- Play it again, Sam.
         loop
@@ -177,16 +184,16 @@ notify (RequestChange note) = do
         fid      = note ^. notificationForeignID
     cfg <- _serverConfig <$> ask
     store <- _serverStore <$> ask
-    liftIO . infoM logName $
-        "Received change notification for: " <> show ent_name <> "."  <>
-        show src_name
+    liftIO . infoM logName . T.unpack $
+        "Received change notification for: " <> ename ent_name <> "." <>
+        sname src_name <> "/" <> fid
     let m_ds = do
             Entity{..} <- M.lookup ent_name (configEntities cfg)
             M.lookup src_name entitySources
     case m_ds of
         Nothing -> do
-            liftIO . errorM logName $ "Unknown source: "
-                <> show ent_name <> "."  <> show src_name
+            liftIO . errorM logName . T.unpack $ "Unknown entity or source: "
+                <> ename ent_name <> "." <> sname src_name
             throwError UnknownKeyError
         Just _ ->
             liftIO . addWork store . WorkNotify $ ForeignKey ent_name src_name fid
