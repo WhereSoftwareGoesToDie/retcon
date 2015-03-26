@@ -12,7 +12,7 @@ module Synchronise.Network.Server where
 import Control.Applicative
 import Control.Concurrent.Async
 import qualified Control.Exception as E
-import Control.Lens hiding (Context)
+import Control.Lens hiding (Context, coerce)
 import Control.Monad.Catch
 import Control.Monad.Error
 import Control.Monad.Trans.Except
@@ -22,6 +22,7 @@ import qualified Data.ByteString as BS hiding (unpack)
 import qualified Data.ByteString.Char8 as BS (unpack)
 import Data.ByteString.Lazy (fromStrict, toStrict)
 import qualified Data.ByteString.Lazy as LBS
+import Data.Coerce
 import Data.List.NonEmpty hiding (filter, length, map)
 import qualified Data.Map as M
 import Data.Monoid
@@ -169,8 +170,13 @@ listConflicts
     -> Protocol ResponseConflicted
 listConflicts RequestConflicted = do
     liftIO $ infoM logName "Listing conflicts"
-    liftIO . emergencyM logName $ "Unimplemented: listConflicts"
-    return $ ResponseConflicted []
+    conflicts <- liftIO . lookupConflicts =<< view serverStore
+    let conflicts' = fmap (\ConflictResp{..} -> ( _conflictRawDoc
+                                                , _conflictRawDiff
+                                                , coerce _conflictDiffID
+                                                , coerce _conflictRawOps))
+                          conflicts
+    return $ ResponseConflictedSerialised conflicts'
 
 -- | Process and resolve a conflict.
 resolveConflict
