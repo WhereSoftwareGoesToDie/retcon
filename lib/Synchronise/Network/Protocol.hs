@@ -87,23 +87,35 @@ data SomeHeader where
 data RequestConflicted = RequestConflicted
   deriving (Eq, Show)
 
+data ResponseConflictedItem = ResponseConflictedItem
+    { _conflictDocument :: Document
+    , _conflictPatch    :: Patch
+    , _conflictDiffID   :: DiffID
+    , _conflictOps      :: [(OpID, BS.ByteString)]
+    } deriving (Eq, Show)
+
+instance Binary ResponseConflictedItem where
+  put (ResponseConflictedItem d p i o) = put d >> put p >> put i >> put o
+  get = ResponseConflictedItem <$> get <*> get <*> get <*> get
+
+data ResponseConflictedSerialisedItem = ResponseConflictedSerialisedItem
+    { _conflictDocument' :: BS.ByteString
+    , _conflictPatch'    :: BS.ByteString
+    , _conflictDiffID'   :: Int
+    , _conflictOps'      :: [(Int, BS.ByteString)]
+    } deriving (Eq, Show)
+
+instance Binary ResponseConflictedSerialisedItem where
+  put (ResponseConflictedSerialisedItem d p i o) = put d >> put p >> put i >> put o
+  get = ResponseConflictedSerialisedItem <$> get <*> get <*> get <*> get
+
 -- | Response containing a list of unresolved conflicts.
 data ResponseConflicted
-    = ResponseConflicted
-        [ ( Document
-          , Patch
-          , DiffID
-          , [(OpID, BS.ByteString)]
-        )]
+    = ResponseConflicted [ResponseConflictedItem]
     -- | Pre-serialised version of the same data. This is generated on the server
     -- to avoid the overhead of de-serialising from the database only to serialise
     -- immediately. Woo.
-    | ResponseConflictedSerialised
-        [ ( BS.ByteString
-          , BS.ByteString
-          , Int
-          , [(Int, BS.ByteString)]
-        )]
+    | ResponseConflictedSerialised [ResponseConflictedSerialisedItem]
   deriving (Eq, Show)
 
 instance Binary RequestConflicted where
