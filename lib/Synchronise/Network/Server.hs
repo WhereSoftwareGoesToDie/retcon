@@ -11,9 +11,11 @@ module Synchronise.Network.Server where
 
 import Control.Applicative
 import Control.Concurrent.Async
+import qualified Control.Exception as E
 import Control.Lens hiding (Context)
 import Control.Monad.Catch
-import Control.Monad.Except
+import Control.Monad.Error
+import Control.Monad.Trans.Except
 import Control.Monad.Reader
 import Data.Binary
 import qualified Data.ByteString as BS hiding (unpack)
@@ -88,8 +90,14 @@ apiServer cfg = do
 -- implement the server side of synchronised.
 newtype Protocol a = Proto
     { unProtocol :: ExceptT APIError (ReaderT ServerState IO) a }
-  deriving (Applicative, Functor, Monad, MonadCatch, MonadError APIError,
-  MonadIO, MonadReader ServerState, MonadThrow)
+  deriving (Applicative, Functor, Monad, MonadError APIError,
+  MonadIO, MonadReader ServerState)
+
+instance MonadThrow Protocol where
+    throwM = liftIO . E.throwIO
+
+instance MonadCatch Protocol where
+    (Proto (ExceptT m)) `catch` f = Proto . ExceptT $ m `catch` (runExceptT . unProtocol . f)
 
 -- | Execute a 'Protocol' action.
 runProtocol :: ServerState -> Protocol a -> IO a
