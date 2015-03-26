@@ -32,6 +32,8 @@ library
     Synchronise.Identifier
     Synchronise.Store
     Synchronise.Monad
+    Synchronise.Network.Protocol
+    Synchronise.Network.Server
     Synchronise.Store.Base
     Synchronise.Store.Memory
     Synchronise.Store.PostgreSQL
@@ -44,17 +46,22 @@ library
     , aeson
     , aeson-diff
     , async
+    , binary
     , bytestring
     , configurator
     , containers
+    , exceptions
+    , hslogger
     , lens
     , mtl
     , postgresql-simple
     , process
     , regex-compat
+    , semigroups
     , text
     , transformers >= 0.3
     , transformers-compat >= 0.4
+    , zeromq4-haskell
   ghc-options:
     -Wall
 

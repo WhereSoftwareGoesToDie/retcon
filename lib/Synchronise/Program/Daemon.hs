@@ -10,10 +10,18 @@
 -- | Description: Run /Synchronise/ as a server.
 module Synchronise.Program.Daemon where
 
+import Control.Concurrent.Async
+import System.Log.Logger
+
 import Synchronise.Configuration
+import Synchronise.Network.Server
 
 -- | Start the synchronise daemon.
 synchronise
     :: Configuration
     -> IO ()
-synchronise = print
+synchronise cfg = do
+    let (_, pri, _) = configServer cfg
+    updateGlobalLogger rootLoggerName (setLevel pri)
+    api <- spawnApiServer cfg
+    wait api

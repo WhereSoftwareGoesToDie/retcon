@@ -20,6 +20,10 @@ module Synchronise.Store.Base
      , DiffResp(..)
      , diffEntity, diffKey, diffPatch, diffConflicts
 
+     -- * Type aliases
+     , DiffID
+     , OpID
+
      ) where
 
 import Control.Applicative
