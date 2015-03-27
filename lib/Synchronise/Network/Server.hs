@@ -171,12 +171,13 @@ listConflicts
 listConflicts RequestConflicted = do
     liftIO $ infoM logName "Listing conflicts"
     conflicts <- liftIO . lookupConflicts =<< view serverStore
-    let conflicts' = fmap (\ConflictResp{..} -> ( _conflictRawDoc
-                                                , _conflictRawDiff
-                                                , coerce _conflictDiffID
-                                                , coerce _conflictRawOps))
-                          conflicts
-    return $ ResponseConflictedSerialised conflicts'
+    return $ ResponseConflictedSerialised $ fmap mkRespItem conflicts
+    where mkRespItem ConflictResp{..}
+            = ResponseConflictedSerialisedItem
+              _conflictRawDoc
+              _conflictRawDiff
+              (coerce _conflictDiffID)
+              (coerce _conflictRawOps)
 
 -- | Process and resolve a conflict.
 resolveConflict
