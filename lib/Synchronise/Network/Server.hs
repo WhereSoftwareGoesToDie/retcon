@@ -11,15 +11,18 @@ module Synchronise.Network.Server where
 
 import Control.Applicative
 import Control.Concurrent.Async
-import Control.Lens hiding (Context)
+import qualified Control.Exception as E
+import Control.Lens hiding (Context, coerce)
 import Control.Monad.Catch
-import Control.Monad.Except
+import Control.Monad.Error
+import Control.Monad.Trans.Except
 import Control.Monad.Reader
 import Data.Binary
 import qualified Data.ByteString as BS hiding (unpack)
 import qualified Data.ByteString.Char8 as BS (unpack)
 import Data.ByteString.Lazy (fromStrict, toStrict)
 import qualified Data.ByteString.Lazy as LBS
+import Data.Coerce
 import Data.List.NonEmpty hiding (filter, length, map)
 import qualified Data.Map as M
 import Data.Monoid
@@ -88,8 +91,14 @@ apiServer cfg = do
 -- implement the server side of synchronised.
 newtype Protocol a = Proto
     { unProtocol :: ExceptT APIError (ReaderT ServerState IO) a }
-  deriving (Applicative, Functor, Monad, MonadCatch, MonadError APIError,
-  MonadIO, MonadReader ServerState, MonadThrow)
+  deriving (Applicative, Functor, Monad, MonadError APIError,
+  MonadIO, MonadReader ServerState)
+
+instance MonadThrow Protocol where
+    throwM = liftIO . E.throwIO
+
+instance MonadCatch Protocol where
+    (Proto (ExceptT m)) `catch` f = Proto . ExceptT $ m `catch` (runExceptT . unProtocol . f)
 
 -- | Execute a 'Protocol' action.
 runProtocol :: ServerState -> Protocol a -> IO a
@@ -161,8 +170,13 @@ listConflicts
     -> Protocol ResponseConflicted
 listConflicts RequestConflicted = do
     liftIO $ infoM logName "Listing conflicts"
-    liftIO . emergencyM logName $ "Unimplemented: listConflicts"
-    return $ ResponseConflicted []
+    conflicts <- liftIO . lookupConflicts =<< view serverStore
+    let conflicts' = fmap (\ConflictResp{..} -> ( _conflictRawDoc
+                                                , _conflictRawDiff
+                                                , coerce _conflictDiffID
+                                                , coerce _conflictRawOps))
+                          conflicts
+    return $ ResponseConflictedSerialised conflicts'
 
 -- | Process and resolve a conflict.
 resolveConflict
