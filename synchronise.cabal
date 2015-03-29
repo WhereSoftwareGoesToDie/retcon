@@ -34,6 +34,7 @@ library
     Synchronise.Monad
     Synchronise.Network.Protocol
     Synchronise.Network.Server
+    Synchronise.Network.Client
     Synchronise.Store.Base
     Synchronise.Store.Memory
     Synchronise.Store.PostgreSQL
@@ -97,6 +98,18 @@ executable synchronised
     , text
     , transformers
     , transformers-compat
+
+executable client
+  default-language:    Haskell2010
+  hs-source-dirs:      src
+  main-is:             client.hs
+  build-depends:
+      base
+    , bytestring
+    , lens
+    , optparse-applicative
+    , zeromq4-haskell
+    , synchronise
 
 test-suite test-synchronise
   type:                exitcode-stdio-1.0
