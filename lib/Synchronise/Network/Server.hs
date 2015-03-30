@@ -280,7 +280,7 @@ processNotification fk@(ForeignKey{..}) = do
       liftIO $ case (ik, doc) of
        (Nothing, Left  _) -> notifyProblem fk (SynchroniseUnknown "Unknown key. No Document")
        (Nothing, Right d) -> notifyCreate  store dss fk d
-       (Just i,  Left  _) -> notifyDelete  i
+       (Just i,  Left  _) -> notifyDelete  store dss i
        (Just i,  Right _) -> notifyUpdate  i
 
 -- | Creates a new internal document to reflect a new foreign change. Update
@@ -296,6 +296,8 @@ notifyCreate
   -> Document     -- ^ And this document.
   -> IO ()
 notifyCreate store datasources fk@(ForeignKey{..}) doc = do
+  infoM logName $ "CREATE: " <> show fk
+
   -- Create an internal key associated with the new document
   ik  <- createInternalKey store fkEntity
   recordForeignKey store ik fk
@@ -311,10 +313,37 @@ notifyCreate store datasources fk@(ForeignKey{..}) doc = do
           case x of Left  e -> errorM logName (show e)
                     Right _ -> return ()
 
-notifyDelete = undefined
+-- | Deletes internal document to reflect the foreign change. Update
+--   all given data sources of the change.
+--
+--   Caller is responsible for: ensuring the datasources exclude the one from
+--   which the event originates.
+--
+notifyDelete
+  :: Store store => store
+  -> [DataSource]
+  -> InternalKey
+  -> IO ()
+notifyDelete store datasources ik = do
+  infoM logName $ "DELETE: " <> show ik
+  forM_ datasources deleteDoc
+
+  where deleteDoc ds = do
+          f <- lookupForeignKey store (sourceName ds) ik
+          case f of
+            Nothing -> return ()
+            Just fk -> hushBoth $ runDSMonad $ DS.deleteDocument ds fk
+
 notifyUpdate = undefined
 notifyProblem = undefined
 
+-- | Silences both errors (via logging) and results.
+hushBoth :: Show a => IO (Either a b) -> IO ()
+hushBoth act = act >>= \x -> case x of
+  Left e  -> errorM logName (show e)
+  Right _ -> return ()
+
+-- really, construct this on every event?
 allDataSources :: Configuration -> [DataSource]
 allDataSources Configuration{..}
   = let entities =      M.elems   configEntities
