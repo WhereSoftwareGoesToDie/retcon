@@ -10,7 +10,6 @@
 module Synchronise.Network.Server where
 
 
-import qualified Data.List as L
 import Control.Applicative
 import Control.Concurrent
 import Control.Concurrent.Async
@@ -28,7 +27,6 @@ import qualified Data.ByteString.Lazy as LBS
 import Data.Coerce
 import Data.List.NonEmpty hiding (filter, length, map)
 import qualified Data.Map as M
-import Data.Maybe
 import Data.Monoid
 import Data.String
 import qualified Data.Text as T
@@ -36,7 +34,8 @@ import System.Log.Logger
 import System.ZMQ4
 
 import Synchronise.Configuration
-import Synchronise.DataSource (runDSMonad, readDocument)
+import Synchronise.DataSource (runDSMonad)
+import qualified Synchronise.DataSource as DS
 import Synchronise.Document
 import Synchronise.Identifier
 import Synchronise.Network.Protocol
@@ -232,57 +231,6 @@ notify (RequestChange note) = do
 
 -- * Asynchronous Server Workers
 
--- | Operations that the server can perform upon receiving a notification.
---
-data NotifyOp
-    = NotifyCreate  ForeignKey Document         -- ^ Create a new document.
-    | NotifyDelete  InternalKey                 -- ^ Delete an existing document.
-    | NotifyUpdate  InternalKey                 -- ^ Update an existing document.
-    | NotifyProblem ForeignKey SynchroniseError -- ^ Record an error.
-  deriving (Show)
-
--- | A worker for the synchronised server.
---   These workers cannot die, they simply log any errors and keep going.
---
-worker :: Protocol ()
-worker = go
-  where go = do
-          store          <- _serverStore <$> ask
-          (workid, item) <- liftIO $ getWorkBackoff store
-          case item of
-            WorkNotify fk -> do
-              liftIO . debugM logName $ "Processing a notifcation: " <> show fk
-              return ()
-              --dispatch fk
-          go
-
-process :: ForeignKey -> Protocol ()
-process fk@(ForeignKey{..}) = do
-  cfg   <- _serverConfig <$> ask
-
-  let ds = do es <- M.lookup fkEntity (configEntities cfg)
-              _  <- M.lookup fkSource (entitySources es)
-              ds <- M.lookup fkSource (entitySources es)
-              return ds
-  case ds of
-    Nothing         -> liftIO . errorM logName $ "Unknown key in workqueue: " <> show fk
-    Just datasource -> mkOp datasource fk >>= runOp
-
-mkOp :: DataSource -> ForeignKey -> Protocol NotifyOp
-mkOp datasource fk@(ForeignKey{..}) = do
-  store <- _serverStore  <$> ask
-  ik    <- liftIO     $ lookupInternalKey store fk
-  doc   <- runDSMonad $ readDocument datasource fk
-  let op = case (ik, doc) of
-        (Nothing, Left  _) -> NotifyProblem fk (SynchroniseUnknown "Unknown key. No Document")
-        (Nothing, Right d) -> NotifyCreate  fk d
-        (Just i,  Left  _) -> NotifyDelete  i
-        (Just i,  Right d) -> NotifyUpdate  i
-  return op 
-
-runOp :: NotifyOp -> Protocol ()
-runOp = undefined 
-
 -- | Get a work item from the work queue, apply a constant backoff if there is
 --   nothing in the queue.
 --
@@ -293,6 +241,71 @@ getWorkBackoff store = do
   case work of
     Nothing -> threadDelay 50000 >> getWorkBackoff store
     Just x  -> return x
+
+-- | A worker for the synchronised server.
+--   These workers cannot die, they simply log any errors and keep going.
+--
+worker :: Protocol ()
+worker = go
+  where go = do
+          store     <- _serverStore <$> ask
+          (_, item) <- liftIO $ getWorkBackoff store
+          case item of
+            WorkNotify fk -> do
+              liftIO . debugM logName $ "Processing a notifcation: " <> show fk
+              processNotification fk
+            WorkApplyPatch did diff -> do
+              liftIO . debugM logName $ "Processing a diff: " <> show did
+              processDiff did diff
+          go
+
+-- notifications
+
+processNotification :: ForeignKey -> Protocol ()
+processNotification fk@(ForeignKey{..}) = do
+  cfg   <- _serverConfig <$> ask
+  store <- _serverStore  <$> ask
+
+  let ds = do es <- M.lookup fkEntity (configEntities cfg)
+              _  <- M.lookup fkSource (entitySources es)
+              M.lookup fkSource (entitySources es)
+  case ds of
+    Nothing         -> liftIO . errorM logName $ "Unknown key in workqueue: " <> show fk
+    Just datasource -> do
+      ik    <- liftIO     $ lookupInternalKey store fk
+      doc   <- runDSMonad $ DS.readDocument datasource fk
+      liftIO $ case (ik, doc) of
+       (Nothing, Left  _) -> notifyProblem fk (SynchroniseUnknown "Unknown key. No Document")
+       (Nothing, Right d) -> notifyCreate  store datasource fk d
+       (Just i,  Left  _) -> notifyDelete  i
+       (Just i,  Right _) -> notifyUpdate  i
+
+-- | Creates a new internal document to reflect a new foreign change.
+--   Caller is responsible for ensuring the data source and foreign key match.
+--
+notifyCreate
+  :: Store store
+  => store
+  -> DataSource
+  -> ForeignKey
+  -> Document
+  -> IO ()
+notifyCreate store datasource@(DataSource{..}) fk doc = do
+  ik    <- createInternalKey store sourceEntity
+  recordForeignKey store ik fk
+  recordInitialDocument store ik doc
+  x <- runDSMonad $ DS.updateDocument datasource fk doc
+  case x of Left  e -> errorM logName (show e)
+            Right _ -> return ()
+
+notifyDelete = undefined
+notifyUpdate = undefined
+notifyProblem = undefined
+
+
+-- diffs
+
+processDiff = undefined
 
 --------------------------------------------------------------------------------
 
