@@ -41,8 +41,7 @@ type SynchroniseHandlerStack =
 
 -- | Product type wrapper for state components.
 data SynchroniseMonadState = SynchroniseMonadState
-    { _synchroniseConfig :: Configuration
-    }
+    { _synchroniseConfig :: Configuration }
 makeLenses ''SynchroniseMonadState
 
 -- | Monad for the Synchronise system.
@@ -55,7 +54,7 @@ newtype SynchroniseMonad a =
         unSynchroniseMonad :: SynchroniseHandlerStack a
     }
   deriving (Functor, Applicative, Monad, MonadIO,
-            MonadReader (SynchroniseMonadState),
+            MonadReader SynchroniseMonadState,
             MonadError SynchroniseError)
 
 -- | Execute an action in the 'SynchroniseMonad' monad.

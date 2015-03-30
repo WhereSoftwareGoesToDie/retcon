@@ -9,14 +9,17 @@
 
 module Synchronise.Network.Server where
 
+
+import qualified Data.List as L
 import Control.Applicative
+import Control.Concurrent
 import Control.Concurrent.Async
 import qualified Control.Exception as E
 import Control.Lens hiding (Context, coerce)
 import Control.Monad.Catch
 import Control.Monad.Error
-import Control.Monad.Trans.Except
 import Control.Monad.Reader
+import Control.Monad.Trans.Except
 import Data.Binary
 import qualified Data.ByteString as BS hiding (unpack)
 import qualified Data.ByteString.Char8 as BS (unpack)
@@ -25,6 +28,7 @@ import qualified Data.ByteString.Lazy as LBS
 import Data.Coerce
 import Data.List.NonEmpty hiding (filter, length, map)
 import qualified Data.Map as M
+import Data.Maybe
 import Data.Monoid
 import Data.String
 import qualified Data.Text as T
@@ -32,12 +36,16 @@ import System.Log.Logger
 import System.ZMQ4
 
 import Synchronise.Configuration
+import Synchronise.DataSource (runDSMonad, readDocument)
+import Synchronise.Document
 import Synchronise.Identifier
 import Synchronise.Network.Protocol
+import Synchronise.Monad
 import Synchronise.Store
 import Synchronise.Store.PostgreSQL
 
 --------------------------------------------------------------------------------
+
 -- * Server
 
 data ServerState = ServerState
@@ -85,6 +93,7 @@ apiServer cfg = do
         return ()
 
 --------------------------------------------------------------------------------
+
 -- * Protocol implementation
 
 -- | A monad which wraps up some state, some error handling, and some IO to
@@ -133,9 +142,9 @@ protocol = loop
     dispatch (SomeHeader hdr) body =
         (True,) <$> case hdr of
             HeaderConflicted -> encodeStrict <$> listConflicts (decode body)
-            HeaderResolve -> encodeStrict <$> resolveConflict (decode body)
-            HeaderChange -> encodeStrict <$> notify (decode body)
-            InvalidHeader -> return . encodeStrict $ InvalidResponse
+            HeaderResolve    -> encodeStrict <$> resolveConflict (decode body)
+            HeaderChange     -> encodeStrict <$> notify (decode body)
+            InvalidHeader    -> return . encodeStrict $ InvalidResponse
 
     -- Catch exceptions and inject them into the monad as errors.
     --
@@ -197,14 +206,17 @@ notify (RequestChange note) = do
     let ent_name = note ^. notificationEntity
         src_name = note ^. notificationSource
         fid      = note ^. notificationForeignID
-    cfg <- _serverConfig <$> ask
-    store <- _serverStore <$> ask
+    cfg   <- _serverConfig <$> ask
+    store <- _serverStore  <$> ask
+
     liftIO . infoM logName . T.unpack $
         "Received change notification for: " <> ename ent_name <> "." <>
         sname src_name <> "/" <> fid
+
     let m_ds = do
             Entity{..} <- M.lookup ent_name (configEntities cfg)
             M.lookup src_name entitySources
+
     case m_ds of
         Nothing -> do
             liftIO . errorM logName . T.unpack $ "Unknown entity or source: "
@@ -212,9 +224,78 @@ notify (RequestChange note) = do
             throwError UnknownKeyError
         Just _ ->
             liftIO . addWork store . WorkNotify $ ForeignKey ent_name src_name fid
+
     return ResponseChange
 
+
 --------------------------------------------------------------------------------
+
+-- * Asynchronous Server Workers
+
+-- | Operations that the server can perform upon receiving a notification.
+--
+data NotifyOp
+    = NotifyCreate  ForeignKey Document         -- ^ Create a new document.
+    | NotifyDelete  InternalKey                 -- ^ Delete an existing document.
+    | NotifyUpdate  InternalKey                 -- ^ Update an existing document.
+    | NotifyProblem ForeignKey SynchroniseError -- ^ Record an error.
+  deriving (Show)
+
+-- | A worker for the synchronised server.
+--   These workers cannot die, they simply log any errors and keep going.
+--
+worker :: Protocol ()
+worker = go
+  where go = do
+          store          <- _serverStore <$> ask
+          (workid, item) <- liftIO $ getWorkBackoff store
+          case item of
+            WorkNotify fk -> do
+              liftIO . debugM logName $ "Processing a notifcation: " <> show fk
+              return ()
+              --dispatch fk
+          go
+
+process :: ForeignKey -> Protocol ()
+process fk@(ForeignKey{..}) = do
+  cfg   <- _serverConfig <$> ask
+
+  let ds = do es <- M.lookup fkEntity (configEntities cfg)
+              _  <- M.lookup fkSource (entitySources es)
+              ds <- M.lookup fkSource (entitySources es)
+              return ds
+  case ds of
+    Nothing         -> liftIO . errorM logName $ "Unknown key in workqueue: " <> show fk
+    Just datasource -> mkOp datasource fk >>= runOp
+
+mkOp :: DataSource -> ForeignKey -> Protocol NotifyOp
+mkOp datasource fk@(ForeignKey{..}) = do
+  store <- _serverStore  <$> ask
+  ik    <- liftIO     $ lookupInternalKey store fk
+  doc   <- runDSMonad $ readDocument datasource fk
+  let op = case (ik, doc) of
+        (Nothing, Left  _) -> NotifyProblem fk (SynchroniseUnknown "Unknown key. No Document")
+        (Nothing, Right d) -> NotifyCreate  fk d
+        (Just i,  Left  _) -> NotifyDelete  i
+        (Just i,  Right d) -> NotifyUpdate  i
+  return op 
+
+runOp :: NotifyOp -> Protocol ()
+runOp = undefined 
+
+-- | Get a work item from the work queue, apply a constant backoff if there is
+--   nothing in the queue.
+--
+--   This function must not
+getWorkBackoff :: Store store => store -> IO (WorkItemID, WorkItem)
+getWorkBackoff store = do
+  work <- getWork store
+  case work of
+    Nothing -> threadDelay 50000 >> getWorkBackoff store
+    Just x  -> return x
+
+--------------------------------------------------------------------------------
+
 -- * Utility functions
 
 -- | Decode a serializable value from a strict 'ByteString'.

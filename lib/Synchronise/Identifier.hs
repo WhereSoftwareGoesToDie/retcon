@@ -74,7 +74,7 @@ type ForeignID  = Text
 data InternalKey = InternalKey
     { ikEntity :: EntityName
     , ikID     :: InternalID
-    } deriving (Eq, Ord)
+    } deriving (Eq, Ord, Show)
 
 instance Synchronisable InternalKey where
     getEntityName   = ikEntity
