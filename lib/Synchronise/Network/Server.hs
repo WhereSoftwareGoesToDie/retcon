@@ -25,6 +25,7 @@ import qualified Data.ByteString.Char8 as BS (unpack)
 import Data.ByteString.Lazy (fromStrict, toStrict)
 import qualified Data.ByteString.Lazy as LBS
 import Data.Coerce
+import qualified Data.List as L
 import Data.List.NonEmpty hiding (filter, length, map)
 import qualified Data.Map as M
 import Data.Monoid
@@ -38,8 +39,8 @@ import Synchronise.DataSource (runDSMonad)
 import qualified Synchronise.DataSource as DS
 import Synchronise.Document
 import Synchronise.Identifier
-import Synchronise.Network.Protocol
 import Synchronise.Monad
+import Synchronise.Network.Protocol
 import Synchronise.Store
 import Synchronise.Store.PostgreSQL
 
@@ -274,34 +275,50 @@ processNotification fk@(ForeignKey{..}) = do
     Just datasource -> do
       ik    <- liftIO     $ lookupInternalKey store fk
       doc   <- runDSMonad $ DS.readDocument datasource fk
+      let dss = L.delete datasource $ allDataSources cfg
+
       liftIO $ case (ik, doc) of
        (Nothing, Left  _) -> notifyProblem fk (SynchroniseUnknown "Unknown key. No Document")
-       (Nothing, Right d) -> notifyCreate  store datasource fk d
+       (Nothing, Right d) -> notifyCreate  store dss fk d
        (Just i,  Left  _) -> notifyDelete  i
        (Just i,  Right _) -> notifyUpdate  i
 
--- | Creates a new internal document to reflect a new foreign change.
---   Caller is responsible for ensuring the data source and foreign key match.
+-- | Creates a new internal document to reflect a new foreign change. Update
+--   all given data sources of the change.
+--
+--   Caller is responsible for: ensuring the datasources exclude the one from
+--   which the event originates.
 --
 notifyCreate
-  :: Store store
-  => store
-  -> DataSource
-  -> ForeignKey
-  -> Document
+  :: Store store => store
+  -> [DataSource] -- ^ Create in each of these data sources.
+  -> ForeignKey   -- ^ Using this foreign key.
+  -> Document     -- ^ And this document.
   -> IO ()
-notifyCreate store datasource@(DataSource{..}) fk doc = do
-  ik    <- createInternalKey store sourceEntity
+notifyCreate store datasources fk@(ForeignKey{..}) doc = do
+  -- Create an internal key associated with the new document
+  ik  <- createInternalKey store fkEntity
   recordForeignKey store ik fk
+
+  -- Create an initial document
   recordInitialDocument store ik doc
-  x <- runDSMonad $ DS.updateDocument datasource fk doc
-  case x of Left  e -> errorM logName (show e)
-            Right _ -> return ()
+
+  -- Update the document for all known entities
+  forM_ datasources updateDoc
+
+  where updateDoc ds = do
+          x  <- runDSMonad $ DS.updateDocument ds fk doc
+          case x of Left  e -> errorM logName (show e)
+                    Right _ -> return ()
 
 notifyDelete = undefined
 notifyUpdate = undefined
 notifyProblem = undefined
 
+allDataSources :: Configuration -> [DataSource]
+allDataSources Configuration{..}
+  = let entities =      M.elems   configEntities
+    in  concat   $ fmap M.elems $ map entitySources entities
 
 -- diffs
 
