@@ -66,7 +66,7 @@ apiServer
     -> IO ()
 apiServer cfg = do
     noticeM logName "Starting server"
-    bracket start stop (flip runProtocol protocol)
+    bracket start stop (`runProtocol` protocol)
     noticeM logName "Finished server"
     return ()
   where
