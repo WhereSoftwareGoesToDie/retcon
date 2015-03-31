@@ -22,5 +22,4 @@ synchronise
 synchronise cfg = do
     let (_, pri, _) = configServer cfg
     updateGlobalLogger rootLoggerName (setLevel pri)
-    -- Start the server with 4 worker threads
-    spawnServer cfg 4
+    spawnServer cfg 1

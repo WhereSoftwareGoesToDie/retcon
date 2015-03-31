@@ -44,6 +44,7 @@ import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import System.Exit
 import System.IO
+import System.Log.Logger
 import System.Process
 import Text.Regex
 
@@ -53,6 +54,9 @@ import Synchronise.Identifier
 
 -- TODO(thsutton): Remove this
 {-# ANN module ("HLint: ignore Reduce duplication" :: String) #-}
+
+logName :: String
+logName = "Synchronise.DataSource"
 
 data DataSourceError
     = DecodeError String
@@ -72,7 +76,7 @@ subNamedHole
     -> String    -- ^ Input string
     -> String    -- ^ Replacement text
     -> String    -- ^ Output string
-subNamedHole name = subRegex . mkRegex $ "\\$\\{" <> name <> "\\}"
+subNamedHole name = subRegex . mkRegex $ name
 
 -- | Prepare a 'Command' by interpolating
 prepareCommand
@@ -85,7 +89,7 @@ prepareCommand _ds fk cmd =
         Nothing -> T.unpack . unCommand $ cmd
         Just ForeignKey{..} ->
             let cmd' = T.unpack . unCommand $ cmd
-            in subNamedHole "fk" cmd' (T.unpack fkID)
+            in subNamedHole "%fk" cmd' (T.unpack fkID)
 
 -- | Check that a 'DataSource' and a 'ForeignKey' are compatible, otherwise
 -- raise an error in the monad.
@@ -112,6 +116,8 @@ createDocument src doc = do
     checkCompatibility src doc
     -- 2. Spawn process.
     let cmd = prepareCommand src Nothing . commandCreate $ src
+    liftIO . debugM logName $ "CREATE command: " <> show cmd
+
     let process = (shell cmd) { std_out = CreatePipe, std_in = CreatePipe }
     (Just hin, Just hout, Nothing, hproc) <- liftIO $ createProcess process
     -- 3. Write input.
@@ -144,6 +150,8 @@ readDocument src fk = do
     checkCompatibility src fk
     -- 2. Spawn process.
     let cmd = prepareCommand src (Just fk) . commandRead $ src
+    liftIO . debugM logName $ "READ command: " <> show cmd
+
     let process = (shell cmd) { std_out = CreatePipe }
     (Nothing, Just hout, Nothing, hproc) <- liftIO $ createProcess process
     -- 3. Read output.
@@ -211,6 +219,8 @@ deleteDocument src fk = do
     checkCompatibility src fk
     -- 2. Spawn process.
     let cmd = prepareCommand src (Just fk) . commandDelete $ src
+    liftIO . debugM logName $ "DELETE command: " <> show cmd
+
     let process = (shell cmd) { std_out = CreatePipe }
     (Nothing, Just hout, Nothing, hproc) <- liftIO $ createProcess process
     -- 3. Read output

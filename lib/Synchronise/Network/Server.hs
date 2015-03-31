@@ -336,8 +336,11 @@ notifyDelete store datasources ik = do
             Nothing -> return ()
             Just fk -> hushBoth $ runDSMonad $ DS.deleteDocument ds fk
 
-notifyUpdate = undefined
-notifyProblem = undefined
+notifyUpdate ik = do
+  infoM logName $ "UPDATE: " <> show ik
+
+notifyProblem _ _ = do
+  infoM logName "U MAD BRO"
 
 -- | Silences both errors (via logging) and results.
 hushBoth :: Show a => IO (Either a b) -> IO ()
@@ -353,7 +356,8 @@ allDataSources Configuration{..}
 
 -- diffs
 
-processDiff = undefined
+processDiff _ _ = do
+  infoM logName "DIFF"
 
 --------------------------------------------------------------------------------
 
