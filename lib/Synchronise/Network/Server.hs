@@ -280,7 +280,7 @@ processNotification store cfg fk@(ForeignKey{..}) = do
       let dss = L.delete datasource $ allDataSources cfg
 
       liftIO $ case (ik, doc) of
-       (Nothing, Left  _) -> notifyProblem fk (SynchroniseUnknown "Unknown key. No Document")
+       (Nothing, Left  _) -> notifyProblem (SynchroniseUnknown $ "Unknown key: " <> show fk <> ". No Document")
        (Nothing, Right d) -> notifyCreate  store dss fk d
        (Just i,  Left  _) -> notifyDelete  store dss i
        (Just i,  Right _) -> notifyUpdate  i
@@ -336,11 +336,18 @@ notifyDelete store datasources ik = do
             Nothing -> return ()
             Just fk -> hushBoth $ runDSMonad $ DS.deleteDocument ds fk
 
+-- | Updates internal document to reflect the foreign change. Update
+--   all given data sources of the change.
+--
+--   Caller is responsible for: ensuring the datasources exclude the one from
+--   which the event originates.
+--
+notifyUpdate :: InternalKey -> IO ()
 notifyUpdate ik = do
   infoM logName $ "UPDATE: " <> show ik
 
-notifyProblem _ _ = do
-  infoM logName "U MAD BRO"
+notifyProblem :: SynchroniseError -> IO ()
+notifyProblem = infoM logName . show
 
 -- | Silences both errors (via logging) and results.
 hushBoth :: Show a => IO (Either a b) -> IO ()
