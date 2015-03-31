@@ -10,7 +10,6 @@
 -- | Description: Run /Synchronise/ as a server.
 module Synchronise.Program.Daemon where
 
-import Control.Concurrent.Async
 import System.Log.Logger
 
 import Synchronise.Configuration
@@ -23,5 +22,5 @@ synchronise
 synchronise cfg = do
     let (_, pri, _) = configServer cfg
     updateGlobalLogger rootLoggerName (setLevel pri)
-    api <- spawnApiServer cfg
-    wait api
+    -- Start the server with 4 worker threads
+    spawnServer cfg 4

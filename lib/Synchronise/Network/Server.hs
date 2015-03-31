@@ -44,6 +44,7 @@ import Synchronise.Network.Protocol
 import Synchronise.Store
 import Synchronise.Store.PostgreSQL
 
+
 --------------------------------------------------------------------------------
 
 -- * Server
@@ -60,41 +61,46 @@ makeLenses ''ServerState
 logName :: String
 logName = "Synchronise.Server"
 
--- | Spawn a new thread running the synchronised API in a new thread.
-spawnApiServer
-    :: Configuration
-    -> IO (Async ())
-spawnApiServer cfg = async $ apiServer cfg
-
--- | Run the synchronised API in the current thread.
+-- | Spawn a thread serving the synchronise API and a number of worker threads
+--   to process requests accepted by that server.
 --
--- This does not return.
-apiServer
-    :: Configuration
-    -> IO ()
-apiServer cfg = do
+spawnServer :: Configuration -> Int -> IO ()
+spawnServer cfg n = do
     noticeM logName "Starting server"
-    bracket start stop (`runProtocol` protocol)
+    _ <- bracket start stop $ \state -> do
+
+      -- Spawn a server implementing the protocol and some workers
+      api      <- spawnServerAPI state
+      peasants <- spawnServerWorkers state
+
+      -- Wait for any of the API server or worker threads to finish.
+      mapM_ (link2 api) peasants
+      waitAny (api:peasants)
     noticeM logName "Finished server"
-    return ()
   where
+    spawnServerAPI :: ServerState -> IO (Async ())
+    spawnServerAPI           = async . flip runProtocol protocol
+
+    spawnServerWorkers :: ServerState -> IO [Async ()]
+    spawnServerWorkers state = replicateM n (async $ worker (_serverStore state) cfg)
+
     start :: IO ServerState
     start = do
         let (zmq_conn, _, pg_conn) = configServer cfg
-        ctx <- context
-        sock <- socket ctx Rep
+        ctx    <- context
+        sock   <- socket ctx Rep
         bind sock zmq_conn
-        db <- initBackend (PGOpts pg_conn)
+        db     <- initBackend (PGOpts pg_conn)
         return $  ServerState ctx sock cfg db
+
     stop :: ServerState -> IO ()
     stop state = do
         close $ state ^. serverSocket
-        term $ state ^. serverContext
-        return ()
+        term  $ state ^. serverContext
 
 --------------------------------------------------------------------------------
 
--- * Protocol implementation
+-- * Protocol Implementation
 
 -- | A monad which wraps up some state, some error handling, and some IO to
 -- implement the server side of synchronised.
@@ -246,15 +252,14 @@ getWorkBackoff store = do
 -- | A worker for the synchronised server.
 --   These workers cannot die, they simply log any errors and keep going.
 --
-worker :: Protocol ()
-worker = go
+worker :: Store store => store -> Configuration -> IO ()
+worker store cfg = go
   where go = do
-          store     <- _serverStore <$> ask
           (_, item) <- liftIO $ getWorkBackoff store
           case item of
             WorkNotify fk -> do
               liftIO . debugM logName $ "Processing a notifcation: " <> show fk
-              processNotification fk
+              processNotification store cfg fk
             WorkApplyPatch did diff -> do
               liftIO . debugM logName $ "Processing a diff: " <> show did
               processDiff did diff
@@ -262,11 +267,8 @@ worker = go
 
 -- notifications
 
-processNotification :: ForeignKey -> Protocol ()
-processNotification fk@(ForeignKey{..}) = do
-  cfg   <- _serverConfig <$> ask
-  store <- _serverStore  <$> ask
-
+processNotification :: Store store => store -> Configuration -> ForeignKey -> IO ()
+processNotification store cfg fk@(ForeignKey{..}) = do
   let ds = do es <- M.lookup fkEntity (configEntities cfg)
               _  <- M.lookup fkSource (entitySources es)
               M.lookup fkSource (entitySources es)
