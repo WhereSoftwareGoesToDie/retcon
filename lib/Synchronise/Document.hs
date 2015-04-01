@@ -31,7 +31,6 @@ import Data.Monoid
 
 import Synchronise.Identifier
 
-
 -- | A JSON 'Value' from a particular 'Entity'.
 data Document = Document
     { _documentEntity  :: EntityName -- ^ Type of data.

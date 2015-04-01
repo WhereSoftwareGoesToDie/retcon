@@ -30,13 +30,13 @@ import Control.Applicative
 import Control.Lens hiding ((.=))
 import Control.Monad
 import Data.Aeson
+import qualified Data.Aeson.Diff as D
 import Data.ByteString (ByteString)
 import Data.Monoid
 
 import Synchronise.Diff
 import Synchronise.Document
 import Synchronise.Identifier
-
 
 type DiffID  = Int
 type OpID    = Int
@@ -52,15 +52,15 @@ makeLenses ''ConflictResp
 data DiffResp = DiffResp
   { _diffEntity    :: ByteString
   , _diffKey       :: Int
-  , _diffPatch     :: Patch
-  , _diffConflicts :: [Patch]
+  , _diffPatch     :: D.Patch
+  , _diffConflicts :: [D.Operation]
   }
 makeLenses ''DiffResp
 
 data OpResp = OpResp
   { _opDiffID :: DiffID
   , _opID     :: OpID
-  , _ops      :: Operation
+  , _ops      :: D.Operation
   }
 makeLenses ''OpResp
 
@@ -128,7 +128,7 @@ class Store store where
 
   -- | Record the success 'Diff' and a list of failed 'Diff's associated with a
   --   processed 'InternalKey'.
-  recordDiffs         :: store -> InternalKey -> (Patch, [Patch]) -> IO DiffID
+  recordDiffs         :: store -> InternalKey -> (D.Patch, [D.Patch]) -> IO DiffID
 
   -- | Record that the conflicts in a 'Diff' are resolved.
   resolveDiffs        :: store -> Int -> IO ()
@@ -179,7 +179,7 @@ data WorkItem
     -- | A document was changed; process the update.
     = WorkNotify ForeignKey
     -- | A patch was submitted by a human; apply it.
-    | WorkApplyPatch Int Patch
+    | WorkApplyPatch Int D.Patch
     deriving (Show, Eq)
 
 instance ToJSON WorkItem where
