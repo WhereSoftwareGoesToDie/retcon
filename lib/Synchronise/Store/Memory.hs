@@ -8,19 +8,17 @@ module Synchronise.Store.Memory
      , Mem
      ) where
 
-
 import Control.Applicative
 import Control.Lens
+import qualified Data.Aeson.Diff as D
 import Data.IORef
 import Data.Map (Map)
 import qualified Data.Map as M
 import Data.Monoid
 
-import Synchronise.Diff
 import Synchronise.Document
 import Synchronise.Identifier
 import Synchronise.Store.Base
-
 
 -- | An acid-state like in-memory store.
 type Mem = IORef MemStore
@@ -30,7 +28,7 @@ data MemStore = MemStore
     , _memItoF    :: Map InternalKey (Map SourceName ForeignID)
     , _memFtoI    :: Map ForeignKey InternalID
     , _memInits   :: Map InternalKey Document
-    , _memDiffs   :: Map InternalKey [(Patch, [Patch])]
+    , _memDiffs   :: Map InternalKey [(D.Patch, [D.Patch])]
     }
 makeLenses ''MemStore
 

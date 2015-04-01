@@ -19,7 +19,6 @@ import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import Data.Typeable
 
-import Synchronise.Diff
 import Synchronise.Document
 import Synchronise.Identifier
 import Synchronise.Store
@@ -89,7 +88,7 @@ data RequestConflicted = RequestConflicted
 
 data ResponseConflictedItem = ResponseConflictedItem
     { _conflictDocument :: Document
-    , _conflictPatch    :: Patch
+    , _conflictPatch    :: Diff.Patch
     , _conflictDiffID   :: DiffID
     , _conflictOps      :: [(OpID, BS.ByteString)]
     } deriving (Eq, Show)
@@ -206,7 +205,7 @@ instance Binary SourceName where
     put (SourceName n) = put n
     get = SourceName <$> get
 
-instance Binary Patch where
+instance Binary Diff.Patch where
     put = put . Aeson.encode
     get = getJSON
 
