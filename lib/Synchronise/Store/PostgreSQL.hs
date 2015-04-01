@@ -231,52 +231,23 @@ instance Store PGStore where
       sql = "INSERT INTO retcon_workitems (content) VALUES (?)"
 
   getWork (PGStore conn _) = do
-      res <- listToMaybe <$> query_ conn sql
+      res <- listToMaybe <$> query_ conn select
       case res of
          Just (work_id, work) -> case fromJSON work of
-             Success x -> return (Just (work_id, x))
+             Success x -> do void $ execute conn wait (Only work_id)
+                             return (Just (work_id, x))
              _         -> return Nothing
          _ -> return Nothing
     where
-      sql = "SELECT id, content FROM retcon_workitems ORDER BY id ASC LIMIT 1"
+      select = "SELECT id, content FROM retcon_workitems WHERE is_busy = FALSE ORDER BY id ASC LIMIT 1"
+      wait   = "UPDATE retcon_workitems SET is_busy = TRUE WHERE id = ?"
+
+  ungetWork (PGStore conn _) work_id =
+      void $ execute conn sql (Only work_id)
+    where
+      sql = "UPDATE retcon_workitems SET is_busy = FALSE WHERE id = ?"
 
   completeWork (PGStore conn _) work_id =
       void $ execute conn sql (Only work_id)
     where
       sql = "DELETE FROM retcon_workitems WHERE id = ?"
-
-{-
--- | Load the parameters from the path specified in the options.
-prepareConfig
-    :: (RetconOptions, [Text])
-    -> [SomeEntity]
-    -> IO (RetconConfig SomeEntity RWToken)
-prepareConfig (opt, event) entities = do
-    params <- maybe (return mempty) readParams $ opt ^. optParams
-    store :: PGStorage <- storeInitialise opt
-    -- entities' <- initialiseEntities params entities
-    return $ RetconConfig
-        (opt ^. optVerbose)
-        (fromMaybe LogNone $ opt ^. optLogging)
-        (token store)
-        params
-        event
-        entities
-  where
-    readParams :: FilePath -> IO (Map (Text, Text) (Map Text Text))
-    readParams path = do
-        exists <- doesFileExist path
-        results <- if exists
-            then parseFromFileEx configParser path
-            else error $ "specified config file doesn not exist: \"" ++ path ++ "\""
-        case results of
-            P.Success results' -> return $ convertConfig results'
-            P.Failure failure -> error $ show failure
-
-cleanupConfig
-    :: RetconConfig SomeEntity RWToken
-    -> IO ()
-cleanupConfig cfg = do
-    -- void $ finaliseEntities (cfg ^. cfgParams) $ cfg ^. cfgEntities
-    void $ closeToken (cfg ^. cfgDB)
--}

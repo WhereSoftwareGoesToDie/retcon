@@ -61,14 +61,10 @@ withConfiguration fn opt =
             Right c -> return c
     unconfigure _ = return ()
 
--- | Run the synchronised process.
-run :: Configuration -> IO ()
-run = synchronise
-
 main :: IO ()
 main = do
     etc <- Paths.getSysconfDir
-    execParser (opts etc) >>= withConfiguration run
+    execParser (opts etc) >>= withConfiguration synchronise
   where
     opts etc = info (helper <*> optionsParser etc)
         (  fullDesc

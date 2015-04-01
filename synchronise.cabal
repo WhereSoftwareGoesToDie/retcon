@@ -108,6 +108,7 @@ executable client
     , bytestring
     , lens
     , optparse-applicative
+    , text
     , zeromq4-haskell
     , synchronise
 

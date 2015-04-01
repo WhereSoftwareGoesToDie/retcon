@@ -44,6 +44,7 @@ import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import System.Exit
 import System.IO
+import System.Log.Logger
 import System.Process
 import Text.Regex
 
@@ -53,6 +54,9 @@ import Synchronise.Identifier
 
 -- TODO(thsutton): Remove this
 {-# ANN module ("HLint: ignore Reduce duplication" :: String) #-}
+
+logName :: String
+logName = "Synchronise.DataSource"
 
 data DataSourceError
     = DecodeError String
@@ -72,7 +76,7 @@ subNamedHole
     -> String    -- ^ Input string
     -> String    -- ^ Replacement text
     -> String    -- ^ Output string
-subNamedHole name = subRegex . mkRegex $ "\\$\\{" <> name <> "\\}"
+subNamedHole name = subRegex . mkRegex $ name
 
 -- | Prepare a 'Command' by interpolating
 prepareCommand
@@ -85,7 +89,7 @@ prepareCommand _ds fk cmd =
         Nothing -> T.unpack . unCommand $ cmd
         Just ForeignKey{..} ->
             let cmd' = T.unpack . unCommand $ cmd
-            in subNamedHole "fk" cmd' (T.unpack fkID)
+            in subNamedHole "%fk" cmd' (T.unpack fkID)
 
 -- | Check that a 'DataSource' and a 'ForeignKey' are compatible, otherwise
 -- raise an error in the monad.
@@ -110,22 +114,30 @@ createDocument
 createDocument src doc = do
     -- 1. Check source and key are compatible.
     checkCompatibility src doc
+
     -- 2. Spawn process.
     let cmd = prepareCommand src Nothing . commandCreate $ src
-    let process = (shell cmd) { std_out = CreatePipe, std_in = CreatePipe }
+        process = (shell cmd) { std_out = CreatePipe, std_in = CreatePipe }
+    liftIO . debugM logName $ "CREATE command: " <> show cmd
     (Just hin, Just hout, Nothing, hproc) <- liftIO $ createProcess process
+
     -- 3. Write input.
     liftIO . BSL.hPutStrLn hin . encode . _documentContent $ doc
     liftIO $ hClose hin
+
     -- 4. Read handles
     output <- T.filter (not. isSpace) . T.decodeUtf8 <$> (liftIO . BS.hGetContents $ hout)
+
     -- 5. Check return code, raising error if required.
     exit <- liftIO $ waitForProcess hproc
+    liftIO . debugM logName $ "CREATE exit: " <> show exit
     case exit of
         ExitFailure c -> throwError $ ForeignError c output
-        ExitSuccess -> return ()
+        ExitSuccess   -> return ()
+
     -- 6. Close handles.
     liftIO $ hClose hout
+
     -- 7. Parse response.
     return $ ForeignKey "entity" "source" output
 
@@ -142,22 +154,29 @@ readDocument
 readDocument src fk = do
     -- 1. Check source and key are compatible.
     checkCompatibility src fk
+
     -- 2. Spawn process.
-    let cmd = prepareCommand src (Just fk) . commandRead $ src
-    let process = (shell cmd) { std_out = CreatePipe }
+    let cmd     = prepareCommand src (Just fk) . commandRead $ src
+        process = (shell cmd) { std_out = CreatePipe }
+    liftIO . debugM logName $ "READ command: " <> show cmd
     (Nothing, Just hout, Nothing, hproc) <- liftIO $ createProcess process
+
     -- 3. Read output.
     output <- liftIO $ BS.hGetContents hout
+
     -- 4. Check return code, raising error if required.
     exit <- liftIO $ waitForProcess hproc
+    liftIO . debugM logName $ "READ exit: " <> show exit
     case exit of
         ExitFailure c -> throwError $ ForeignError c (T.decodeUtf8 output)
-        ExitSuccess -> return ()
+        ExitSuccess   -> return ()
+
     -- 5. Close handles.
     liftIO $ hClose hout
+
     -- 6. Parse input and return value.
     case eitherDecode' . BSL.fromStrict $ output of
-        Left e -> throwError $ DecodeError e
+        Left e  -> throwError $ DecodeError e
         Right j -> return $ Document (fkEntity fk) (fkSource fk) j
 
 -- | Access a 'DataSource' and save the 'Document' under the specified
@@ -176,23 +195,30 @@ updateDocument src fk doc = do
     -- 1. Check source, key, and document are compatible.
     checkCompatibility src fk
     checkCompatibility src doc
+
     -- 2. Spawn process.
     let cmd = prepareCommand src (Just fk) . commandUpdate $ src
-    liftIO . print $ cmd
-    let process = (shell cmd) { std_out = CreatePipe, std_in = CreatePipe }
+        process = (shell cmd) { std_out = CreatePipe, std_in = CreatePipe }
+    liftIO . debugM logName $ "UPDATE command: " <> show cmd
     (Just hin, Just hout, Nothing, hproc) <- liftIO $ createProcess process
+
     -- 3. Write input.
     liftIO . BSL.hPutStrLn hin . encode . _documentContent $ doc
     liftIO $ hClose hin
+
     -- 4. Read handles
     output <- T.filter (not. isSpace) . T.decodeUtf8 <$> (liftIO . BS.hGetContents $ hout)
+
     -- 5. Check return code, raising error if required.
     exit <- liftIO $ waitForProcess hproc
+    liftIO . debugM logName $ "UPDATE exit: " <> show exit
     case exit of
         ExitFailure c -> throwError $ ForeignError c output
         ExitSuccess -> return ()
+
     -- 6. Close handles.
     liftIO $ hClose hout
+
     -- 7. Parse response.
     return $ ForeignKey "entity" "source" output
 
@@ -209,16 +235,22 @@ deleteDocument
 deleteDocument src fk = do
     -- 1. Check source and key are compatible.
     checkCompatibility src fk
+
     -- 2. Spawn process.
-    let cmd = prepareCommand src (Just fk) . commandDelete $ src
-    let process = (shell cmd) { std_out = CreatePipe }
+    let cmd     = prepareCommand src (Just fk) . commandDelete $ src
+        process = (shell cmd) { std_out = CreatePipe }
+    liftIO . debugM logName $ "DELETE command: " <> show cmd
     (Nothing, Just hout, Nothing, hproc) <- liftIO $ createProcess process
+
     -- 3. Read output
     output <- liftIO $ BS.hGetContents hout
+
     -- 4. Check return code, raising error if required.
     exit <- liftIO $ waitForProcess hproc
+    liftIO . debugM logName $ "DELETE exit: " <> show exit
     case exit of
         ExitFailure c -> throwError $ ForeignError c (T.decodeUtf8 output)
         ExitSuccess -> return ()
+
     -- 5. Close handles.
     liftIO $ hClose hout

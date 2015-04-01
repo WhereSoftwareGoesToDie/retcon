@@ -35,17 +35,23 @@ import Database.PostgreSQL.Simple.ToRow
 
 -- | Unique name for an entity.
 newtype EntityName = EntityName { ename :: Text }
-  deriving (Eq, Ord, Show, Read)
+  deriving (Eq, Ord, Show)
 
 instance IsString EntityName where
     fromString = EntityName . T.pack
 
+instance Read EntityName where
+    readsPrec _ s = [(EntityName (T.pack s), "")]
+
 -- | Unique name for a data source.
 newtype SourceName = SourceName { sname :: Text }
-  deriving (Eq, Ord, Show, Read)
+  deriving (Eq, Ord, Show)
 
 instance IsString SourceName where
     fromString = SourceName . T.pack
+
+instance Read SourceName where
+    readsPrec _ s = [(SourceName (T.pack s), "")]
 
 -- | Types which participate, in one way or another, in the synchronisation
 -- process.
@@ -68,7 +74,7 @@ type ForeignID  = Text
 data InternalKey = InternalKey
     { ikEntity :: EntityName
     , ikID     :: InternalID
-    } deriving (Eq, Ord)
+    } deriving (Eq, Ord, Show)
 
 instance Synchronisable InternalKey where
     getEntityName   = ikEntity

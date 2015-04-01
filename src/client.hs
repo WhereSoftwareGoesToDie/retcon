@@ -5,7 +5,9 @@ module Main where
 
 import Control.Applicative
 import Data.Monoid
+import qualified Data.Text as T
 import Options.Applicative hiding (command)
+import Options.Applicative.Types
 import qualified Options.Applicative as O
 import System.Exit
 
@@ -38,7 +40,8 @@ optionsParser = Options
     pNotify = Notify
         <$> argument auto (metavar "ENTITY")
         <*> argument auto (metavar "SOURCE")
-        <*> argument auto (metavar "FK")
+        <*> argument f    (metavar "FK")
+    f = readerAsk >>= return . T.pack
 
 run :: Options -> IO ()
 run Options{..} = do
