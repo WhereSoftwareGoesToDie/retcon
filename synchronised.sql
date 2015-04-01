@@ -80,7 +80,8 @@ CREATE TABLE retcon_notifications (
 -- | the `retcon_workitems` table acts as a persistent queue for `WorkItem`s
 CREATE TABLE retcon_workitems (
     id       SERIAL NOT NULL,
+    is_busy  BOOLEAN NOT NULL DEFAULT FALSE,
     content  JSON NOT NULL,
-    is_busy  BOOLEAN NOT NULL,
+
     PRIMARY KEY (id)
 );

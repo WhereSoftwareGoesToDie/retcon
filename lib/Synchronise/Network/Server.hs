@@ -285,6 +285,8 @@ processNotification store cfg fk@(ForeignKey{..}) = do
     Just datasource -> do
       ik    <- liftIO     $ lookupInternalKey store fk
       doc   <- runDSMonad $ DS.readDocument datasource fk
+
+      -- Update data sources other than the one from which the notification originated.
       let dss = L.delete datasource $ allDataSources cfg
 
       liftIO $ case (ik, doc) of
@@ -342,7 +344,14 @@ notifyDelete store datasources ik = do
           f <- lookupForeignKey store (sourceName ds) ik
           case f of
             Nothing -> return ()
-            Just fk -> hushBoth $ runDSMonad $ DS.deleteDocument ds fk
+            Just fk -> do
+              -- Delete the document
+              hushBoth $ runDSMonad $ DS.deleteDocument ds fk
+              -- Delete known foreign key
+              void $ deleteForeignKey store fk
+          -- Delete internal bookkeeping
+          void $ deleteInitialDocument store ik
+          deleteInternalKey store ik
 
 -- | Updates internal document to reflect the foreign change. Update
 --   all given data sources of the change.

@@ -240,12 +240,12 @@ instance Store PGStore where
          _ -> return Nothing
     where
       select = "SELECT id, content FROM retcon_workitems WHERE is_busy = FALSE ORDER BY id ASC LIMIT 1"
-      wait   = "UPDATE work_items SET is_busy = TRUE WHERE id = ?"
+      wait   = "UPDATE retcon_workitems SET is_busy = TRUE WHERE id = ?"
 
   ungetWork (PGStore conn _) work_id =
       void $ execute conn sql (Only work_id)
     where
-      sql = "UPDATE work_items SET is_busy = FALSE WHERE id = ?"
+      sql = "UPDATE retcon_workitems SET is_busy = FALSE WHERE id = ?"
 
   completeWork (PGStore conn _) work_id =
       void $ execute conn sql (Only work_id)
