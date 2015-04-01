@@ -50,10 +50,11 @@ import Synchronise.Store.PostgreSQL
 -- * Server
 
 data ServerState = ServerState
-    { _serverContext :: Context
-    , _serverSocket  :: Socket Rep
-    , _serverConfig  :: Configuration
-    , _serverStore   :: PGStore
+    { _serverContext     :: Context       -- ^ ZMQ context
+    , _serverSocket      :: Socket Rep    -- ^ ZMQ socket
+    , _serverConfig      :: Configuration -- ^ synchronised config
+    , _serverStore       :: PGStore       -- ^ Internal data store, shared between all server threads
+    , _serverDataSources :: [DataSource]  -- ^ "Memoised" eunmeration of data sources from conf
     }
 makeLenses ''ServerState
 
@@ -82,7 +83,8 @@ spawnServer cfg n = do
     spawnServerAPI           = async . flip runProtocol protocol
 
     spawnServerWorkers :: ServerState -> IO [Async ()]
-    spawnServerWorkers state = replicateM n (async $ worker (_serverStore state) cfg)
+    spawnServerWorkers state
+      = replicateM n (async $ worker (_serverStore state) (_serverDataSources state) cfg)
 
     start :: IO ServerState
     start = do
@@ -91,12 +93,18 @@ spawnServer cfg n = do
         sock   <- socket ctx Rep
         bind sock zmq_conn
         db     <- initBackend (PGOpts pg_conn)
-        return $  ServerState ctx sock cfg db
+        return $  ServerState ctx sock cfg db (allDataSources cfg)
 
     stop :: ServerState -> IO ()
     stop state = do
         close $ state ^. serverSocket
         term  $ state ^. serverContext
+
+    allDataSources :: Configuration -> [DataSource]
+    allDataSources Configuration{..}
+      = let entities =      M.elems   configEntities
+        in  concat   $ fmap M.elems $ map entitySources entities
+
 
 --------------------------------------------------------------------------------
 
@@ -252,8 +260,8 @@ getWorkBackoff store = do
 -- | A worker for the synchronised server.
 --   These workers cannot die, they simply log any errors and keep going.
 --
-worker :: Store store => store -> Configuration -> IO ()
-worker store cfg = go
+worker :: Store store => store -> [DataSource] -> Configuration -> IO ()
+worker store datasources cfg = go
   where -- Get a work item from the queue, mark it as busy and try to complete it.
         -- If all goes well, mark the work as finished when done, otherwise signal
         -- it as free.
@@ -267,7 +275,7 @@ worker store cfg = go
           case item of
             WorkNotify fk -> do
               liftIO . debugM logName $ "Processing a notifcation: " <> show fk
-              processNotification store cfg fk
+              processNotification store datasources cfg fk
             WorkApplyPatch did diff -> do
               liftIO . debugM logName $ "Processing a diff: " <> show did
               processDiff did diff
@@ -276,8 +284,8 @@ worker store cfg = go
 
 -- notifications
 
-processNotification :: Store store => store -> Configuration -> ForeignKey -> IO ()
-processNotification store cfg fk@(ForeignKey{..}) = do
+processNotification :: Store store => store -> [DataSource] -> Configuration -> ForeignKey -> IO ()
+processNotification store datasources cfg fk@(ForeignKey{..}) = do
   let ds = do es <- M.lookup fkEntity (configEntities cfg)
               M.lookup fkSource (entitySources es)
   case ds of
@@ -287,13 +295,13 @@ processNotification store cfg fk@(ForeignKey{..}) = do
       doc   <- runDSMonad $ DS.readDocument datasource fk
 
       -- Update data sources other than the one from which the notification originated.
-      let dss = L.delete datasource $ allDataSources cfg
+      let dss = L.delete datasource datasources
 
       liftIO $ case (ik, doc) of
         (Nothing, Left  e) -> notifyProblem (SynchroniseUnknown $ show e)
         (Nothing, Right d) -> notifyCreate  store dss fk d
         (Just i,  Left  _) -> notifyDelete  store dss i
-        (Just i,  Right _) -> notifyUpdate  i
+        (Just i,  Right d) -> notifyUpdate  store dss i
 
 -- | Creates a new internal document to reflect a new foreign change. Update
 --   all given data sources of the change.
@@ -359,25 +367,18 @@ notifyDelete store datasources ik = do
 --   Caller is responsible for: ensuring the datasources exclude the one from
 --   which the event originates.
 --
-notifyUpdate :: InternalKey -> IO ()
-notifyUpdate ik = do
+notifyUpdate
+  :: Store store => store
+  -> [DataSource]
+  -> InternalKey
+  -> IO ()
+notifyUpdate store datasources ik =
   infoM logName $ "UPDATE: " <> show ik
 
+-- | Logs a problem with the notification.
+--
 notifyProblem :: SynchroniseError -> IO ()
 notifyProblem = infoM logName . show
-
--- | Silences both errors (via logging) and results.
---
-hushBoth :: Show a => IO (Either a b) -> IO ()
-hushBoth act = act >>= \x -> case x of
-  Left e  -> errorM logName (show e)
-  Right _ -> return ()
-
--- really, construct this on every event?
-allDataSources :: Configuration -> [DataSource]
-allDataSources Configuration{..}
-  = let entities =      M.elems   configEntities
-    in  concat   $ fmap M.elems $ map entitySources entities
 
 -- diffs
 
@@ -409,3 +410,10 @@ encodeStrict
     => a
     -> BS.ByteString
 encodeStrict = toStrict . encode
+
+-- | Silences both errors (via logging) and results.
+--
+hushBoth :: Show a => IO (Either a b) -> IO ()
+hushBoth act = act >>= \x -> case x of
+  Left e  -> errorM logName (show e)
+  Right _ -> return ()
