@@ -254,8 +254,16 @@ getWorkBackoff store = do
 --
 worker :: Store store => store -> Configuration -> IO ()
 worker store cfg = go
-  where go = do
-          (_, item) <- liftIO $ getWorkBackoff store
+  where -- Get a work item from the queue, mark it as busy and try to complete it.
+        -- If all goes well, mark the work as finished when done, otherwise signal
+        -- it as free.
+        --
+        go      = bracketOnError getIt ungetIt completeIt
+
+        getIt   = liftIO $ getWorkBackoff store
+        ungetIt = ungetWork store . fst
+
+        completeIt (work_id, item) = do
           case item of
             WorkNotify fk -> do
               liftIO . debugM logName $ "Processing a notifcation: " <> show fk
@@ -263,6 +271,7 @@ worker store cfg = go
             WorkApplyPatch did diff -> do
               liftIO . debugM logName $ "Processing a diff: " <> show did
               processDiff did diff
+          completeWork store work_id
           go
 
 -- notifications
@@ -270,20 +279,19 @@ worker store cfg = go
 processNotification :: Store store => store -> Configuration -> ForeignKey -> IO ()
 processNotification store cfg fk@(ForeignKey{..}) = do
   let ds = do es <- M.lookup fkEntity (configEntities cfg)
-              _  <- M.lookup fkSource (entitySources es)
               M.lookup fkSource (entitySources es)
   case ds of
-    Nothing         -> liftIO . errorM logName $ "Unknown key in workqueue: " <> show fk
+    Nothing         -> liftIO . criticalM logName $ "Unknown key in workqueue: " <> show fk
     Just datasource -> do
       ik    <- liftIO     $ lookupInternalKey store fk
       doc   <- runDSMonad $ DS.readDocument datasource fk
       let dss = L.delete datasource $ allDataSources cfg
 
       liftIO $ case (ik, doc) of
-       (Nothing, Left  _) -> notifyProblem (SynchroniseUnknown $ "Unknown key: " <> show fk <> ". No Document")
-       (Nothing, Right d) -> notifyCreate  store dss fk d
-       (Just i,  Left  _) -> notifyDelete  store dss i
-       (Just i,  Right _) -> notifyUpdate  i
+        (Nothing, Left  e) -> notifyProblem (SynchroniseUnknown $ show e)
+        (Nothing, Right d) -> notifyCreate  store dss fk d
+        (Just i,  Left  _) -> notifyDelete  store dss i
+        (Just i,  Right _) -> notifyUpdate  i
 
 -- | Creates a new internal document to reflect a new foreign change. Update
 --   all given data sources of the change.
@@ -350,6 +358,7 @@ notifyProblem :: SynchroniseError -> IO ()
 notifyProblem = infoM logName . show
 
 -- | Silences both errors (via logging) and results.
+--
 hushBoth :: Show a => IO (Either a b) -> IO ()
 hushBoth act = act >>= \x -> case x of
   Left e  -> errorM logName (show e)

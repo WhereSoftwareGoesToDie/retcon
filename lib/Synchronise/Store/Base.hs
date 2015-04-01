@@ -158,12 +158,14 @@ class Store store where
   addWork :: store -> WorkItem -> IO ()
 
   -- | Get a work item from the work queue.
+  --   If the worker fails to complete the work, the desired behaviour
+  --   is for the work item to be put back in the queue. This relies
+  --   on the implementation.
   --
-  -- The item will be locked for a period of time, after which it will become
-  -- available for other workers to claim.
-  --
-  -- TODO: The period of time is currently hardcoded in the implementations.
   getWork :: store -> IO (Maybe (WorkItemID, WorkItem))
+
+  -- | Put a work item back in the work queue.
+  ungetWork    :: store -> WorkItemID -> IO ()
 
   -- | Remove a completed work item from the queue.
   completeWork :: store -> WorkItemID -> IO ()

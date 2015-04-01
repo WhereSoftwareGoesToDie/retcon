@@ -176,7 +176,7 @@ readDocument src fk = do
 
     -- 6. Parse input and return value.
     case eitherDecode' . BSL.fromStrict $ output of
-        Left e -> throwError $ DecodeError e
+        Left e  -> throwError $ DecodeError e
         Right j -> return $ Document (fkEntity fk) (fkSource fk) j
 
 -- | Access a 'DataSource' and save the 'Document' under the specified
