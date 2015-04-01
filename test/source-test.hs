@@ -26,9 +26,9 @@ fileSource = DataSource
     , sourceName = "source"
     , sourceDescription = Nothing
     , commandCreate = "bash -c 'mkdir -p entity/source ; FOREIGN_KEY=$(mktemp -u -p \"entity/source\" -t XXXXXXXX.json) ; cat > $FOREIGN_KEY ; echo $FOREIGN_KEY;'"
-    , commandRead = "mkdir -p entity/source && cat ${fk}"
-    , commandUpdate = "bash -c 'mkdir -p entity/source ; rm -f ${fk} ; FOREIGN_KEY=$(mktemp -u -p \"entity/source\" -t XXXXXXXX.json) ; cat > $FOREIGN_KEY ; echo $FOREIGN_KEY;'"
-    , commandDelete = "mkdir -p entity/source && rm ${fk}"
+    , commandRead   = "bash -c 'cat %fk 2>&1'"
+    , commandUpdate = "bash -c 'mkdir -p entity/source; rm -f %fk; FOREIGN_KEY=$(mktemp -u -p \"entity/source\" -t XXXXXXXX.json); cat > $FOREIGN_KEY ; echo $FOREIGN_KEY;'"
+    , commandDelete = "bash -c 'rm -f %fk 2>&1'"
     }
 
 allDifferent :: (Eq a, Show a) => [a] -> Assertion
@@ -50,10 +50,11 @@ suite source =
             res <- runDSMonad $ readDocument source fk
             case res of
                 Left err -> assertFailure (show err)
-                Right doc' -> assertBool "Read returned different object than Created" (doc == doc')
+                Right doc' -> assertBool "Read returned different object than created" (doc == doc')
+
         it "can create and read out again (multiple times)" $ do
             let docs = [Document "entity" "source" (object ["num" .= n]) | n <- [1..10::Int]]
-            fks' <- mapM (runDSMonad . createDocument source ) docs
+            fks' <- mapM (runDSMonad . createDocument source) docs
             fks <- forM fks' $ \fk' -> case fk' of
                 Left err -> assertFailure (show err) >>= undefined
                 Right fk -> return fk
@@ -61,7 +62,8 @@ suite source =
             ress <- mapM (runDSMonad . readDocument source) fks
             forM_ (zip ress docs) $ \res -> case res of
                 (Left err, _) -> assertFailure (show err)
-                (Right doc', doc) -> assertBool "Read returned different object than Created" (doc == doc')
+                (Right doc', doc) -> assertBool "Read returned different object than created" (doc == doc')
+
         it "can create and delete" $ do
             let doc = Document "entity" "source" (object ["foo" .= ("bar" :: String)])
             fk' <- runDSMonad $ createDocument source doc
@@ -71,12 +73,13 @@ suite source =
             res1 <- runDSMonad $ readDocument source fk
             case res1 of
                 Left err -> assertFailure (show err)
-                Right doc' -> assertBool "Read returned different object than Created" (doc == doc')
+                Right doc' -> assertBool "Read returned different object than created" (doc == doc')
             runDSMonad (deleteDocument source fk) `shouldReturn` Right ()
             res2 <- runDSMonad $ readDocument source fk
             case res2 of
                 Left _ -> return ()
                 Right _ -> assertFailure "delete not successful"
+
         it "can create and delete (multiple times)" $ do
             let docs = [Document "entity" "source" (object ["num" .= n]) | n <- [1..10::Int]]
             fks' <- mapM (runDSMonad . createDocument source ) docs
@@ -93,6 +96,7 @@ suite source =
                 case res2 of
                     Left _ -> return ()
                     Right _ -> assertFailure "delete not successful"
+
         it "can create and update" $ do
             let doc1 = Document "entity" "source" (object ["foo" .= ("bar" :: String)])
             fk1' <- runDSMonad $ createDocument source doc1
@@ -111,7 +115,8 @@ suite source =
             res2 <- runDSMonad $ readDocument source fk2
             case res2 of
                 Left err -> assertFailure (show err)
-                Right doc' -> assertBool "Read returned different object than Created" (doc2 == doc')
+                Right doc' -> assertBool "Read returned different object than created" (doc2 == doc')
+
         it "can create and update (multiple times)" $ do
             let docs1 = [Document "entity" "source" (object ["num" .= n]) | n <- [1..10::Int]]
             fks1' <- mapM (runDSMonad . createDocument source ) docs1
@@ -126,7 +131,7 @@ suite source =
             ress <- mapM (runDSMonad . readDocument source) fks2
             forM_ (zip ress docs2) $ \res -> case res of
                 (Left err, _) -> assertFailure (show err)
-                (Right doc', doc) -> assertBool "Read returned different object than Created" (doc == doc')
+                (Right doc', doc) -> assertBool "Read returned different object than created" (doc == doc')
 
 main :: IO ()
 main = hspec (suite fileSource)
