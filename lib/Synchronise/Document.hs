@@ -20,6 +20,7 @@ module Synchronise.Document (
     documentSource,
     documentContent,
 
+    emptyDocument,
     calculateInitialDocument,
 ) where
 
@@ -51,6 +52,13 @@ instance Synchronisable Document where
     getSourceName = _documentSource
 
 --------------------------------------------------------------------------------
+
+-- | Construct an empty 'Document'.
+emptyDocument
+    :: EntityName
+    -> SourceName
+    -> Document
+emptyDocument e s = Document e s Null
 
 -- | Construct an initial 'Document' for use in identifying and processing
 -- changes.

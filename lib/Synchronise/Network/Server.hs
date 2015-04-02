@@ -9,14 +9,13 @@
 
 module Synchronise.Network.Server where
 
-
 import Control.Applicative
 import Control.Concurrent
 import Control.Concurrent.Async
 import qualified Control.Exception as E
 import Control.Lens hiding (Context, coerce)
 import Control.Monad.Catch
-import Control.Monad.Error
+import Control.Monad.Error.Class
 import Control.Monad.Reader
 import Control.Monad.Trans.Except
 import Data.Binary
@@ -25,6 +24,7 @@ import qualified Data.ByteString.Char8 as BS (unpack)
 import Data.ByteString.Lazy (fromStrict, toStrict)
 import qualified Data.ByteString.Lazy as LBS
 import Data.Coerce
+import Data.Either
 import qualified Data.List as L
 import Data.List.NonEmpty hiding (filter, length, map)
 import qualified Data.Map as M
@@ -37,6 +37,7 @@ import System.ZMQ4
 import Synchronise.Configuration
 import Synchronise.DataSource (runDSMonad)
 import qualified Synchronise.DataSource as DS
+import Synchronise.Diff
 import Synchronise.Document
 import Synchronise.Identifier
 import Synchronise.Monad
@@ -276,9 +277,9 @@ worker store datasources cfg = go
             WorkNotify fk -> do
               liftIO . debugM logName $ "Processing a notifcation: " <> show fk
               processNotification store datasources cfg fk
-            WorkApplyPatch did diff -> do
+            WorkApplyPatch did a_diff -> do
               liftIO . debugM logName $ "Processing a diff: " <> show did
-              processDiff did diff
+              forM_ processDiff did a_diff
           completeWork store work_id
           go
 
@@ -301,7 +302,7 @@ processNotification store datasources cfg fk@(ForeignKey{..}) = do
         (Nothing, Left  e) -> notifyProblem (SynchroniseUnknown $ show e)
         (Nothing, Right d) -> notifyCreate  store dss fk d
         (Just i,  Left  _) -> notifyDelete  store dss i
-        (Just i,  Right d) -> notifyUpdate  store dss i
+        (Just i,  Right _) -> notifyUpdate  store dss i
 
 -- | Creates a new internal document to reflect a new foreign change. Update
 --   all given data sources of the change.
@@ -372,8 +373,47 @@ notifyUpdate
   -> [DataSource]
   -> InternalKey
   -> IO ()
-notifyUpdate store datasources ik =
+notifyUpdate store datasources ik = do
   infoM logName $ "UPDATE: " <> show ik
+
+  -- Fetch documents from all data sources.
+  docs <- getDocuments datasources ik
+  let (_missing, valid) = partitionEithers docs
+
+  -- Load (or calculate) the initial document.
+  initial <- lookupInitialDocument store ik >>=
+      maybe (calculate valid) return
+
+  -- Extract and merge patches.
+  let (merged, rejects) = merge policy $ map (diff policy initial) valid
+
+
+  if null rejects
+    then debugM logName $ "No rejected changes processing " <> show ik
+    else infoM logName $ "Rejected " <> show (length rejects) <> " changes in "
+      <> show ik
+
+  -- Record changes in history.
+  recordDiffs ik (merged, rejects)
+
+  -- Update and save the documents.
+  let docs' = map (patch policy merged . either (const initial) id) docs
+  setDocuments ik docs'
+
+  -- Update initial document.
+  let initial' = patch policy merged initial
+  recordInitialDocument store ik initial'
+
+  return ()
+
+  where
+    policy = ignoreConflicts
+    calculate :: [Document] -> IO Document
+    calculate docs = do
+      infoM logName $ "No initial document for " <> show ik <> "."
+      return . either (const $ emptyDocument (ikEntity ik) "<initial>") id
+        $ calculateInitialDocument docs
+
 
 -- | Logs a problem with the notification.
 --
@@ -382,8 +422,45 @@ notifyProblem = infoM logName . show
 
 -- diffs
 
+processDiff :: MonadIO m => a -> b -> m ()
 processDiff _ _ = do
-  infoM logName "DIFF"
+  liftIO $ infoM logName "DIFF"
+
+--------------------------------------------------------------------------------
+
+-- * Data source functions
+
+-- | Get the 'Document' corresponding to an 'InternalKey' from a list of
+-- 'DataSource's.
+getDocuments
+    :: MonadIO m
+    => [DataSource]
+    -> InternalKey
+    -> m [Either String Document]
+getDocuments datasources _ik =
+    return $ map (const (Left "Not found")) datasources
+
+setDocuments
+    :: MonadIO m
+    => InternalKey
+    -> [Document]
+    -> m ()
+setDocuments ik docs = do
+  liftIO . infoM logName $ "Saving updated documents for: " <> show ik
+
+merge
+    :: MergePolicy ()
+    -> [Patch ()]
+    -> (Patch (), [RejectedOp ()])
+merge pol =
+  foldr (\p1 -> \(p2, r) -> (r <>) <$> mergePatches pol p1 p2)
+        (Patch () mempty, mempty)
+
+extractDiff
+    :: Document
+    -> Document
+    -> Patch ()
+extractDiff = diff ignoreConflicts
 
 --------------------------------------------------------------------------------
 
