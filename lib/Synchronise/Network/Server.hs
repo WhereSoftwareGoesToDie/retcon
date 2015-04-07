@@ -47,6 +47,10 @@ import Synchronise.Network.Protocol
 import Synchronise.Store
 import Synchronise.Store.PostgreSQL
 
+
+
+type ErrorMsg = String
+
 --------------------------------------------------------------------------------
 
 -- * Server
@@ -432,14 +436,16 @@ processDiff _ _ = do
 
 -- | Get the 'Document' corresponding to an 'InternalKey' from a 'DataSource'.
 getDocument
-    :: (Store store, MonadIO m)
+    :: Store store
     => store
     -> InternalKey
     -> DataSource
-    -> m (Maybe Document)
-getDocument store ds ik
-  =   lookupForeignKey store (sourceName ds) ik
-  >>= fmap join . T.sequenceA . fmap (fmap hush . DS.runDSMonad . DS.readDocument ds)
+    -> IO (Either ErrorMsg Document)
+getDocument store ik ds = do
+  f  <- lookupForeignKey store (sourceName ds) ik
+  case f of
+    Nothing -> return (Left "getDocument: No foreign key found.")
+    Just fk -> fmap (over _Left show) . DS.runDSMonad . DS.readDocument ds $ fk
 
 setDocuments
     :: MonadIO m
@@ -453,7 +459,6 @@ merge
     :: MergePolicy ()
     -> [Patch ()]
     -> (Patch (), [RejectedOp ()])
-       ugh
 merge pol =
   foldr (\p1 -> \(p2, r) -> (r <>) <$> mergePatches pol p1 p2)
         (Patch () mempty, mempty)
@@ -463,6 +468,7 @@ extractDiff
     -> Document
     -> Patch ()
 extractDiff = diff ignoreConflicts
+
 
 --------------------------------------------------------------------------------
 

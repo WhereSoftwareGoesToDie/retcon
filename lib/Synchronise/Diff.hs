@@ -41,6 +41,7 @@ import Data.Monoid
 import Synchronise.Document
 import Synchronise.Identifier
 
+
 -- | A /synchronised/ 'Patch' is an @aeson-diff@ patch together with a label.
 data Patch l = Patch
     { _patchLabel :: l
@@ -62,6 +63,8 @@ data MergePolicy l = MergePolicy
     { extractLabel :: Document -> l
     , mergePatch   :: Patch l -> Patch l -> (Patch l, [RejectedOp l])
     }
+
+--------------------------------------------------------------------------------
 
 -- | Accept all changes, and let them stomp all over each other.
 acceptAll :: MergePolicy ()
@@ -111,6 +114,8 @@ ignoreConflicts = MergePolicy{..}
             r = reject p1 <> reject p2
         in (p,r)
 
+--------------------------------------------------------------------------------
+
 -- | Use a 'MergePolicy' to compare two versions of a document and extract a
 -- 'Patch' describing changes.
 diff
@@ -147,8 +152,12 @@ mergePatches
     -> (Patch l, [RejectedOp l])
 mergePatches MergePolicy{..} = mergePatch
 
+--------------------------------------------------------------------------------
+
 -- * Utility
 
 -- | Convert all the 'D.Operation's in a 'D.Patch' into 'RejectedOp's.
 reject :: Patch l -> [RejectedOp l]
 reject p = fmap (RejectedOp (p ^. patchLabel)) . D.patchOperations $ p ^. patchDiff
+
+-- | Convert all 'RejectedOp's back into 'D.Patch'.
