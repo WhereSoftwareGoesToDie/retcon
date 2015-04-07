@@ -9,8 +9,6 @@
 
 module Synchronise.Network.Server where
 
-import Control.Error.Util
-import qualified Data.Traversable as T
 import Control.Applicative
 import Control.Concurrent
 import Control.Concurrent.Async
@@ -108,8 +106,8 @@ spawnServer cfg n = do
 
     allDataSources :: Configuration -> [DataSource]
     allDataSources Configuration{..}
-      = let entities =      M.elems   configEntities
-        in  concat   $ fmap M.elems $ map entitySources entities
+      = let entities = M.elems     configEntities
+        in  concat   $ M.elems <$> map entitySources entities
 
 
 --------------------------------------------------------------------------------
@@ -222,10 +220,10 @@ resolveConflict (RequestResolve conflict_id _ops) = do
 notify
     :: RequestChange
     -> Protocol ResponseChange
-notify (RequestChange note) = do
-    let ent_name = note ^. notificationEntity
-        src_name = note ^. notificationSource
-        fid      = note ^. notificationForeignID
+notify (RequestChange nt) = do
+    let ent_name = nt ^. notificationEntity
+        src_name = nt ^. notificationSource
+        fid      = nt ^. notificationForeignID
     cfg   <- _serverConfig <$> ask
     store <- _serverStore  <$> ask
 
@@ -398,11 +396,11 @@ notifyUpdate store datasources ik = do
       <> show ik
 
   -- Record changes in history.
-  recordDiffs store ik (merged, rejects)
+  _ <- recordDiffs store ik (merged, rejects)
 
   -- Update and save the documents.
   let docs' = map (patch policy merged . either (const initial) id) docs
-  setDocuments ik docs'
+  mapM_ (setDocument store ik) (L.zip datasources docs')
 
   -- Update initial document.
   let initial' = patch policy merged initial
@@ -410,13 +408,13 @@ notifyUpdate store datasources ik = do
 
   return ()
 
-  where
-    policy = ignoreConflicts
-    calculate :: [Document] -> IO Document
-    calculate docs = do
-      infoM logName $ "No initial document for " <> show ik <> "."
-      return . either (const $ emptyDocument (ikEntity ik) "<initial>") id
-        $ calculateInitialDocument docs
+  where policy = ignoreConflicts
+
+        calculate :: [Document] -> IO Document
+        calculate docs = do
+          infoM logName $ "No initial document for " <> show ik <> "."
+          return . either (const $ emptyDocument (ikEntity ik) "<initial>") id
+            $ calculateInitialDocument docs
 
 
 -- | Logs a problem with the notification.
@@ -445,15 +443,20 @@ getDocument store ik ds = do
   f  <- lookupForeignKey store (sourceName ds) ik
   case f of
     Nothing -> return (Left "getDocument: No foreign key found.")
-    Just fk -> fmap (over _Left show) . DS.runDSMonad . DS.readDocument ds $ fk
+    Just fk -> fmap (over _Left show) . DS.runDSMonad $ DS.readDocument ds fk
 
-setDocuments
-    :: MonadIO m
-    => InternalKey
-    -> [Document]
-    -> m ()
-setDocuments ik docs = do
-  liftIO . infoM logName $ "Saving updated documents for: " <> show ik
+-- | Set the 'Document' in the given 'DataSource' corresponding to an 'InternalKey'.
+setDocument
+    :: Store store
+    => store
+    -> InternalKey
+    -> (DataSource, Document)
+    -> IO (Either ErrorMsg ForeignKey)
+setDocument store ik (ds, doc) = do
+  f <- lookupForeignKey store (sourceName ds) ik
+  case f of
+    Nothing -> return (Left "setDocument: No foreign key found.")
+    Just fk -> fmap (over _Left show) . DS.runDSMonad $ DS.updateDocument ds fk doc
 
 -- | Merge a sequence of 'Patch'es by applying a 'MergePolicy'.
 --
