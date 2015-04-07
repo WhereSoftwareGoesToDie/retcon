@@ -9,6 +9,8 @@
 
 module Synchronise.Network.Server where
 
+import Control.Error.Util
+import qualified Data.Traversable as T
 import Control.Applicative
 import Control.Concurrent
 import Control.Concurrent.Async
@@ -376,7 +378,7 @@ notifyUpdate store datasources ik = do
   infoM logName $ "UPDATE: " <> show ik
 
   -- Fetch documents from all data sources.
-  docs <- getDocuments datasources ik
+  docs <- mapM (getDocument store ik) datasources
   let (_missing, valid) = partitionEithers docs
 
   -- Load (or calculate) the initial document.
@@ -428,15 +430,16 @@ processDiff _ _ = do
 
 -- * Data source functions
 
--- | Get the 'Document' corresponding to an 'InternalKey' from a list of
--- 'DataSource's.
-getDocuments
-    :: MonadIO m
-    => [DataSource]
+-- | Get the 'Document' corresponding to an 'InternalKey' from a 'DataSource'.
+getDocument
+    :: (Store store, MonadIO m)
+    => store
     -> InternalKey
-    -> m [Either String Document]
-getDocuments datasources _ik =
-    return $ map (const (Left "Not found")) datasources
+    -> DataSource
+    -> m (Maybe Document)
+getDocument store ds ik
+  =   lookupForeignKey store (sourceName ds) ik
+  >>= fmap join . T.sequenceA . fmap (fmap hush . DS.runDSMonad . DS.readDocument ds)
 
 setDocuments
     :: MonadIO m
@@ -455,6 +458,7 @@ merge
     :: MergePolicy ()
     -> [Patch ()]
     -> (Patch (), [RejectedOp ()])
+       ugh
 merge pol =
   foldr (\p1 (p2, r) -> (r <>) <$> mergePatches pol p1 p2)
         (Patch () mempty, mempty)
