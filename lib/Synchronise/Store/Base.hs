@@ -131,7 +131,7 @@ class Store store where
   recordDiffs         :: store -> InternalKey -> (Patch (), [RejectedOp ()]) -> IO DiffID
 
   -- | Record that the conflicts in a 'Diff' are resolved.
-  resolveDiffs        :: store -> Int -> IO ()
+  resolveDiffs        :: store -> DiffID -> IO ()
 
   -- | Lookup the list of 'Diff' IDs associated with an 'InternalKey'.
   lookupDiffIDs       :: store -> InternalKey -> IO [DiffID]

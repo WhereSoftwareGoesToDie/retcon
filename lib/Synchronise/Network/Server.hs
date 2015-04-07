@@ -19,6 +19,7 @@ import Control.Monad.Catch
 import Control.Monad.Error.Class
 import Control.Monad.Reader
 import Control.Monad.Trans.Except
+import qualified Data.Aeson.Diff as D
 import Data.Binary
 import qualified Data.ByteString as BS hiding (unpack)
 import qualified Data.ByteString.Char8 as BS (unpack)
@@ -29,9 +30,11 @@ import Data.Either
 import qualified Data.List as L
 import Data.List.NonEmpty hiding (filter, length, map)
 import qualified Data.Map as M
+import Data.Maybe
 import Data.Monoid
 import Data.String
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
 import Data.Traversable ()
 import System.Log.Logger
 import System.ZMQ4
@@ -47,9 +50,10 @@ import Synchronise.Network.Protocol
 import Synchronise.Store
 import Synchronise.Store.PostgreSQL
 
-
-
 type ErrorMsg = String
+
+policy :: MergePolicy ()
+policy = ignoreConflicts
 
 --------------------------------------------------------------------------------
 
@@ -284,7 +288,7 @@ worker store datasources cfg = go
               processNotification store datasources cfg fk
             WorkApplyPatch did a_diff -> do
               liftIO . debugM logName $ "Processing a diff: " <> show did
-              processDiff did a_diff
+              processDiff store cfg did a_diff
           completeWork store work_id
           go
 
@@ -411,7 +415,6 @@ notifyUpdate store datasources ik = do
 
   return ()
   where
-    policy = ignoreConflicts
     calculate :: [Document] -> IO Document
     calculate docs = do
       infoM logName $ "No initial document for " <> show ik <> "."
@@ -419,15 +422,68 @@ notifyUpdate store datasources ik = do
         $ calculateInitialDocument docs
 
 -- | Logs a problem with the notification.
---
 notifyProblem :: SynchroniseError -> IO ()
 notifyProblem = errorM logName . show
 
--- diffs
+-- | Apply a 'Patch' to resolve the conflicts on a previous update.
+--
+-- TODO(thsutton) We need to check the diff hasn't already been resolved.
+processDiff
+    :: (Store store, MonadIO m, Functor m)
+    => store
+    -> Configuration
+    -> DiffID
+    -> D.Patch
+    -> m ()
+processDiff store cfg diff_id a_diff = do
+  res <- runExceptT act
+  case res of
+    Left e -> liftIO . errorM logName $ e
+    Right () -> return ()
+  where
+    act = do
+      liftIO . infoM logName $ "Resolving errors in diff " <> show diff_id
+      conflict <- getConflict
 
-processDiff :: MonadIO m => a -> b -> m ()
-processDiff _ _ = do
-  liftIO $ infoM logName "DIFF"
+      let en = EntityName . T.decodeUtf8 $ conflict ^. diffEntity
+      let ik = InternalKey en $ conflict ^. diffKey
+      let a_patch = Patch () a_diff
+
+      srcs <- getSources en
+
+      -- 0. Load and update the initial document.
+      initial <- liftIO $ fromMaybe (emptyDocument en "<initial>") <$>
+        lookupInitialDocument store ik
+      let initial' = patch policy a_patch initial
+
+      -- 1. Apply the patch to all sources.
+      mapM_ (\src -> liftIO $ do
+        doc <- either (const initial') id <$> getDocument store ik src
+        setDocument store ik (src, (patch policy a_patch doc))
+        ) srcs
+
+      -- 2. Record the updated initial document.
+      liftIO $ recordInitialDocument store ik initial'
+
+      -- 3. Mark the conflicted patch as resolved.
+      liftIO $ resolveDiffs store diff_id
+      return ()
+
+    getConflict = do
+        conf <- liftIO $ lookupDiff store diff_id
+        case conf of
+          Nothing -> throwError $
+            "Cannot resolve diff " <> show diff_id <> " because it doesn't exist."
+          Just v -> return v
+
+    getSources en = do
+      let datasources = map snd . M.toList . entitySources <$>
+            M.lookup en (configEntities cfg)
+      case datasources of
+        Nothing -> throwError $
+            "Cannot resolve diff " <> show diff_id <> " because there are no "
+            <> "sources for " <> show en <> "."
+        Just srcs -> return srcs
 
 --------------------------------------------------------------------------------
 
@@ -477,7 +533,6 @@ extractDiff
     -> Document
     -> Patch ()
 extractDiff = diff ignoreConflicts
-
 
 --------------------------------------------------------------------------------
 
