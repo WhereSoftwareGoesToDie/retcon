@@ -119,12 +119,14 @@ executable json-directory
   main-is:             json-directory.hs
   build-depends:
       base
+    , aeson
     , directory
     , filepath
     , optparse-applicative
     , unix
     , random
     , text
+    , bytestring
     , synchronise
 
 test-suite test-synchronise
