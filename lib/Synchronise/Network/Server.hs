@@ -9,11 +9,10 @@
 
 module Synchronise.Network.Server where
 
-import Control.Error.Util
-import qualified Data.Traversable as T
 import Control.Applicative
 import Control.Concurrent
 import Control.Concurrent.Async
+import Control.Error.Util ()
 import qualified Control.Exception as E
 import Control.Lens hiding (Context, coerce)
 import Control.Monad.Catch
@@ -33,6 +32,7 @@ import qualified Data.Map as M
 import Data.Monoid
 import Data.String
 import qualified Data.Text as T
+import Data.Traversable ()
 import System.Log.Logger
 import System.ZMQ4
 
@@ -398,7 +398,8 @@ notifyUpdate store datasources ik = do
       <> show ik
 
   -- Record changes in history.
-  recordDiffs store ik (merged, rejects)
+  did <- recordDiffs store ik (merged, rejects)
+  infoM logName $ "Recorded diff " <> show did <> " against " <> show ik
 
   -- Update and save the documents.
   let docs' = map (patch policy merged . either (const initial) id) docs
@@ -411,6 +412,7 @@ notifyUpdate store datasources ik = do
   return ()
 
   where
+    policy :: MergePolicy ()
     policy = ignoreConflicts
     calculate :: [Document] -> IO Document
     calculate docs = do
