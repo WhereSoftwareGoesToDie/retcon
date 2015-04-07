@@ -45,7 +45,6 @@ import Synchronise.Network.Protocol
 import Synchronise.Store
 import Synchronise.Store.PostgreSQL
 
-
 --------------------------------------------------------------------------------
 
 -- * Server
@@ -279,7 +278,7 @@ worker store datasources cfg = go
               processNotification store datasources cfg fk
             WorkApplyPatch did a_diff -> do
               liftIO . debugM logName $ "Processing a diff: " <> show did
-              forM_ processDiff did a_diff
+              processDiff did a_diff
           completeWork store work_id
           go
 
@@ -387,14 +386,13 @@ notifyUpdate store datasources ik = do
   -- Extract and merge patches.
   let (merged, rejects) = merge policy $ map (diff policy initial) valid
 
-
   if null rejects
     then debugM logName $ "No rejected changes processing " <> show ik
     else infoM logName $ "Rejected " <> show (length rejects) <> " changes in "
       <> show ik
 
   -- Record changes in history.
-  recordDiffs ik (merged, rejects)
+  recordDiffs store ik (merged, rejects)
 
   -- Update and save the documents.
   let docs' = map (patch policy merged . either (const initial) id) docs

@@ -16,6 +16,7 @@ import Data.Map (Map)
 import qualified Data.Map as M
 import Data.Monoid
 
+import Synchronise.Diff
 import Synchronise.Document
 import Synchronise.Identifier
 import Synchronise.Store.Base
@@ -28,7 +29,7 @@ data MemStore = MemStore
     , _memItoF    :: Map InternalKey (Map SourceName ForeignID)
     , _memFtoI    :: Map ForeignKey InternalID
     , _memInits   :: Map InternalKey Document
-    , _memDiffs   :: Map InternalKey [(D.Patch, [D.Patch])]
+    , _memDiffs   :: Map InternalKey [(D.Patch, [D.Operation])]
     }
 makeLenses ''MemStore
 
@@ -108,10 +109,11 @@ instance Store (IORef MemStore) where
       (st & memInits . at ik .~ Nothing, 0)
 
   recordDiffs ref ik new =
-      atomicModifyIORef' ref $ \st ->
-          -- Slow due to list traversal
-          (st & memDiffs . at ik . non mempty <%~ (++[new]))
-          ^. swapped & _2 %~ length
+    let new' = bimap (^. patchDiff) (^.. traverse . rejectedOperation) new
+    in atomicModifyIORef' ref $ \st ->
+      -- Slow due to list traversal
+      (st & memDiffs . at ik . non mempty <%~ (++[new']))
+      ^. swapped & _2 %~ length
 
   -- TODO Implement
   lookupDiff ref _ =

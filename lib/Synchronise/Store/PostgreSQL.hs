@@ -13,7 +13,7 @@ import Control.Applicative
 import Control.Lens hiding (op)
 import Control.Monad
 import Data.Aeson
-import Data.Aeson.Diff hiding (diff)
+import Data.Aeson.Diff as AD
 import Data.ByteString (ByteString)
 import qualified Data.List as L
 import Data.Maybe
@@ -22,8 +22,9 @@ import Data.String
 import Database.PostgreSQL.Simple
 
 import Synchronise.Identifier
+import Synchronise.Diff hiding (diff)
+import qualified Synchronise.Diff as D
 import Synchronise.Store.Base hiding (ops)
-
 
 data PGStore = PGStore
     { pgconn    :: !Connection
@@ -133,10 +134,11 @@ instance Store PGStore where
       -- the arbitrary, possibly unserialisable, labels.
 
       -- Extract the operations from the conflicting diffs.
-      let ops = fmap toJSON . concatOf (traversed . to patchOperations) $ ds
+      let ops = ds ^.. traverse . rejectedOperation . to toJSON
+      let d' = d ^. patchDiff
 
       -- Record the merged diff in the database.
-      [Only did] <- query conn diffQ (entity, key, not . null $ ops, encode d)
+      [Only did] <- query conn diffQ (entity, key, not . null $ ops, encode d')
 
       -- Record conflicts in the database.
       void . executeMany conn opsQ . fmap (did,) $ ops

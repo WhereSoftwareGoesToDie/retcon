@@ -31,6 +31,7 @@ import System.Process
 import Test.Hspec
 
 import Synchronise.Configuration
+import Synchronise.Diff
 import Synchronise.Document
 import Synchronise.Identifier
 import Synchronise.Monad
@@ -105,7 +106,7 @@ prepareDatabase action = bracket setupSuite teardownSuite (const action)
     setupSuite = do
         _ <- system $ concat [ " dropdb --if-exists ", db, " >/dev/null 2>&1 "
                              , " && createdb ", db
-                             , " && psql --quiet --file=retcon.sql ", db
+                             , " && psql --quiet --file=synchronised.sql ", db
                              ]
         return ()
 
@@ -326,13 +327,13 @@ postgresqlSuite = around_ prepareDatabase .
       -- TODO Put some actual diffs in here.
       let a1  = mempty
           l1  = []
-          ds1 = (a1, l1)
+          ds1 = (Patch () a1, l1)
           a2  = mempty
-          l2  = [mempty]
-          ds2 = (a2, l2)
+          l2  = []
+          ds2 = (Patch () a2, l2)
           a3  = mempty
-          l3  = [mempty]
-          ds3 = (a3, l3)
+          l3  = []
+          ds3 = (Patch () a3, l3)
 
       -- Insert some initial documents.
       Right (ik1, ik2, ik3, _ik4) <- runAction . liftIO $ do
