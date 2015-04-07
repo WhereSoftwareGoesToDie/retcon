@@ -4,8 +4,7 @@
 
 -- * A simple synchronised datasource backed by JSON files in directories.
 --
-module JSONDirectory where
-
+module Main where
 
 import Control.Exception
 import Data.Aeson
@@ -58,8 +57,9 @@ jsonNew dir = do
 
 jsonCreate :: IO ExitCode
 jsonCreate = do
-  dir <- getContents
+  dir <- getLine
   fi  <- jsonNew dir
+  createDirectoryIfMissing True dir
   print fi
   return ExitSuccess
 
@@ -72,7 +72,10 @@ jsonRead filepath = do
          (do BL.putStr (encode doc)
              return ExitSuccess)
 
--- | Update a 'Document'
+-- | Update a 'Document' with input from stdin.
+--   Assuming the input is already in JSON and makes no attempt to check. It
+--   is synchronised's repsonsiblity.
+--
 jsonUpdate :: FilePath -> IO ExitCode
 jsonUpdate filepath = do
   doc <- B.getContents
