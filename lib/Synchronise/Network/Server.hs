@@ -455,12 +455,17 @@ setDocuments
 setDocuments ik docs = do
   liftIO . infoM logName $ "Saving updated documents for: " <> show ik
 
+-- | Merge a sequence of 'Patch'es by applying a 'MergePolicy'.
+--
+-- TODO(thsutton) The label of the policy type is fixed so that we can
+-- create the initial value to fold. We should probably replace this with
+-- case analysis and a foldr1 or something to avoid the need.
 merge
     :: MergePolicy ()
     -> [Patch ()]
     -> (Patch (), [RejectedOp ()])
 merge pol =
-  foldr (\p1 -> \(p2, r) -> (r <>) <$> mergePatches pol p1 p2)
+  foldr (\p1 (p2, r) -> (r <>) <$> mergePatches pol p1 p2)
         (Patch () mempty, mempty)
 
 extractDiff

@@ -13,7 +13,7 @@ import Control.Applicative
 import Control.Lens hiding (op)
 import Control.Monad
 import Data.Aeson
-import Data.Aeson.Diff as AD
+import Data.Aeson.Diff ()
 import Data.ByteString (ByteString)
 import qualified Data.List as L
 import Data.Maybe
@@ -21,9 +21,8 @@ import Data.Monoid
 import Data.String
 import Database.PostgreSQL.Simple
 
-import Synchronise.Identifier
 import Synchronise.Diff hiding (diff)
-import qualified Synchronise.Diff as D
+import Synchronise.Identifier
 import Synchronise.Store.Base hiding (ops)
 
 data PGStore = PGStore
