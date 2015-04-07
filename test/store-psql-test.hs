@@ -394,16 +394,17 @@ postgresqlSuite = around_ prepareDatabase .
         addWork store work1
         addWork store work2
 
-        -- Order should be preserved
-        work1' <- getWork store
-        snd <$> work1' `shouldBe` Just work1
+        -- FIFO not LIFO
+        Just work1' <- getWork store
+        snd work1' `shouldBe` work1
+        ungetWork store $ fst work1'
 
-        -- Work should not be removed unless deleted
-        work1'' <- getWork store
-        snd <$> work1'' `shouldBe` Just work1
+        -- Work we didn't complete should still be there.
+        Just work1'' <- getWork store
+        snd work1'' `shouldBe` work1
 
-        let Just wid1 = fst <$> work1'
-        completeWork store wid1
+        -- When we do complete some work, it's not in the queue any more.
+        completeWork store $ fst work1''
         work2' <- getWork store
         snd <$> work2' `shouldBe` Just work2
 
