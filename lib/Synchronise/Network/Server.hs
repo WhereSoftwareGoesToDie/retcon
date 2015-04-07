@@ -421,7 +421,7 @@ notifyUpdate store datasources ik = do
 -- | Logs a problem with the notification.
 --
 notifyProblem :: SynchroniseError -> IO ()
-notifyProblem = infoM logName . show
+notifyProblem = errorM logName . show
 
 -- diffs
 
