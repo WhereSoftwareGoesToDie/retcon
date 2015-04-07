@@ -27,7 +27,7 @@ import Synchronise.Identifier
 
 
 data JSONCommand
-  = Create FilePath
+  = Create
   | Update FilePath
   | Read   FilePath
   | Delete FilePath
@@ -39,9 +39,9 @@ pCommand
   <> command "update" (info pUpdate (progDesc "Writes a document to the given JSON directory"))
   <> command "read"   (info pRead   (progDesc "Reads a document in the given JSON directory"))
   <> command "delete" (info pDelete (progDesc "Deletes a document in the given JSON directory")))
-  where pCreate = Create <$> strArgument (metavar "FILEPATH")
+  where pCreate = pure Create
         pUpdate = Update <$> strArgument (metavar "FILEPATH")
-        pRead = Read   <$> strArgument (metavar "FILEPATH")
+        pRead   = Read   <$> strArgument (metavar "FILEPATH")
         pDelete = Delete <$> strArgument (metavar "FILEPATH")
 
 jsonEntity = "json-directory"
@@ -56,9 +56,10 @@ jsonNew dir = do
   then jsonNew dir
   else return k
 
-jsonCreate :: FilePath -> IO ExitCode
-jsonCreate dir = do
-  fi <- jsonNew dir
+jsonCreate :: IO ExitCode
+jsonCreate = do
+  dir <- getContents
+  fi  <- jsonNew dir
   print fi
   return ExitSuccess
 
@@ -102,7 +103,7 @@ main :: IO ()
 main = do
   cmd  <- execParser toplevel
   exit <- case cmd of
-    Create f -> jsonCreate f
+    Create   -> jsonCreate
     Read   f -> jsonRead   f
     Update f -> jsonUpdate f
     Delete f -> jsonDelete f
