@@ -7,8 +7,8 @@ import Control.Applicative
 import Data.Monoid
 import qualified Data.Text as T
 import Options.Applicative hiding (command)
-import Options.Applicative.Types
 import qualified Options.Applicative as O
+import Options.Applicative.Types
 import System.Exit
 
 import Synchronise.Identifier
@@ -53,7 +53,7 @@ run Options{..} = do
         Left  e -> do
             print e
             exitFailure
-        Right _ -> do
+        Right _ ->
             exitSuccess
 
 main :: IO ()

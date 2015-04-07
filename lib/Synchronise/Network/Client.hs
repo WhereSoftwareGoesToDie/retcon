@@ -25,9 +25,9 @@ import Data.ByteString.Lazy (fromStrict)
 import Data.List.NonEmpty
 import System.ZMQ4.Monadic
 
-import Synchronise.Store hiding (ops)
 import Synchronise.Network.Protocol
-import Synchronise.Network.Server 
+import Synchronise.Network.Server
+import Synchronise.Store hiding (ops)
 
 -- | Retrieve all documents that are currently marked as being conflicted
 getConflicted
