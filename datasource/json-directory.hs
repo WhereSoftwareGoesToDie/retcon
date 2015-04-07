@@ -36,9 +36,13 @@ pCommand :: Parser JSONCommand
 pCommand
   = subparser
   (  command "create" (info pCreate (progDesc "Create a new unique JSON filename"))
-  <> command "update" (info pUpdate (progDesc "Writes a document to the given JSON directory")))
+  <> command "update" (info pUpdate (progDesc "Writes a document to the given JSON directory"))
+  <> command "read"   (info pRead   (progDesc "Reads a document in the given JSON directory"))
+  <> command "delete" (info pDelete (progDesc "Deletes a document in the given JSON directory")))
   where pCreate = Create <$> strArgument (metavar "FILEPATH")
         pUpdate = Update <$> strArgument (metavar "FILEPATH")
+        pRead = Read   <$> strArgument (metavar "FILEPATH")
+        pDelete = Delete <$> strArgument (metavar "FILEPATH")
 
 jsonEntity = "json-directory"
 jsonSource = "simple"
