@@ -25,11 +25,21 @@ import Synchronise.Document
 import Synchronise.Identifier
 
 
+data JSONOpts = JSONOpts
+  { baseDir :: FilePath
+  , cmmnd   :: JSONCommand }
+
 data JSONCommand
   = Create
   | Update FilePath
   | Read   FilePath
   | Delete FilePath
+
+pOpts :: Parser JSONOpts
+pOpts
+  =   JSONOpts
+  <$> strArgument (metavar "BASE")
+  <*> pCommand
 
 pCommand :: Parser JSONCommand
 pCommand
@@ -43,31 +53,39 @@ pCommand
         pRead   = Read   <$> strArgument (metavar "FILEPATH")
         pDelete = Delete <$> strArgument (metavar "FILEPATH")
 
-jsonEntity = "json-directory"
-jsonSource = "simple"
+main :: IO ()
+main = do
+  JSONOpts{..} <- execParser toplevel
+  createDirectoryIfMissing True baseDir
+  exit <- case cmmnd of
+    Create   -> jsonCreate baseDir
+    Read   f -> jsonRead   baseDir f
+    Update f -> jsonUpdate baseDir f
+    Delete f -> jsonDelete baseDir f
+  exitWith exit
+  where toplevel = info pOpts mempty
 
-jsonNew :: FilePath -> IO ForeignID
-jsonNew dir = do
+--------------------------------------------------------------------------------
+
+-- | Creates a new JSON file under the path specified.
+--   Prints the filename to `stdout`.
+--
+jsonCreate :: FilePath -> IO ExitCode
+jsonCreate base = do
   k      <-  T.pack . take 64 . randomRs ('a', 'z')
          <$> newStdGen
-  exists <- fileExist (buildPath dir (ForeignKey jsonEntity jsonSource k))
-  if exists
-  then jsonNew dir
-  else return k
-
-jsonCreate :: IO ExitCode
-jsonCreate = do
-  dir <- getLine
-  fi  <- jsonNew dir
-  createDirectoryIfMissing True dir
-  print fi
-  return ExitSuccess
+  exists <- fileExist (mkJSONFilename base k)
+  if   exists
+  then jsonCreate base
+  else do print k
+          return ExitSuccess
 
 -- | Read a 'Document' from the given JSON directory.
+--   Prints the content to `stdout`.
 --
-jsonRead :: FilePath -> IO ExitCode
-jsonRead filepath = do
-  doc <- loadDocument filepath
+jsonRead :: FilePath -> FilePath -> IO ExitCode
+jsonRead base filename = do
+  doc <- loadDocument (base </> filename)
   handle (\(_ :: SomeException) -> return (ExitFailure 1))
          (do BL.putStr (encode doc)
              return ExitSuccess)
@@ -76,39 +94,26 @@ jsonRead filepath = do
 --   Assuming the input is already in JSON and makes no attempt to check. It
 --   is synchronised's repsonsiblity.
 --
-jsonUpdate :: FilePath -> IO ExitCode
-jsonUpdate filepath = do
+jsonUpdate :: FilePath -> FilePath -> IO ExitCode
+jsonUpdate base filename = do
   doc <- B.getContents
   handle (\(_ :: SomeException) -> return (ExitFailure 1))
-         (do B.writeFile filepath doc
+         (do B.writeFile (base </> filename )doc
              return ExitSuccess)
 
 -- | Unlink the underlying JSON file corresponding to the directory and 'ForeignKey'.
-jsonDelete :: FilePath -> IO ExitCode
-jsonDelete filepath
+jsonDelete :: FilePath -> FilePath -> IO ExitCode
+jsonDelete base filename
   = handle (\(_ :: SomeException) -> return (ExitFailure 1))
-           (do removeFile filepath
+           (do removeFile (base </> filename)
                return ExitSuccess)
 
--- | Construct a path to a JSON file given the base directory and a 'ForeignKey'.
---
-buildPath :: FilePath -> ForeignKey -> FilePath
-buildPath base ForeignKey{..}
-  = base </> (show fkEntity) </> (show fkSource) </> (show fkID) ++ ".json"
+-- | Construct a path to a JSON file.
+mkJSONFilename :: FilePath -> ForeignID -> FilePath
+mkJSONFilename dir f = dir </> show f </> ".json"
 
 -- | Decode a 'Document' from the JSON file at the given 'FilePath'
 loadDocument :: FilePath -> IO Document
 loadDocument fp
   =  eitherDecode <$> BL.readFile fp
  >>= either (throw . ForeignError 1 . T.pack) return
-
-main :: IO ()
-main = do
-  cmd  <- execParser toplevel
-  exit <- case cmd of
-    Create   -> jsonCreate
-    Read   f -> jsonRead   f
-    Update f -> jsonUpdate f
-    Delete f -> jsonDelete f
-  exitWith exit
-  where toplevel = info pCommand mempty
