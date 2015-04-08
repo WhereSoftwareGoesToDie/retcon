@@ -59,9 +59,9 @@ main = do
   createDirectoryIfMissing True baseDir
   exit <- case cmmnd of
     Create   -> jsonCreate baseDir
-    Read   f -> jsonRead   baseDir f
-    Update f -> jsonUpdate baseDir f
-    Delete f -> jsonDelete baseDir f
+    Read   f -> jsonRead   (baseDir </> f)
+    Update f -> jsonWrite  (baseDir </> f)
+    Delete f -> jsonDelete (baseDir </> f)
   exitWith exit
   where toplevel = info pOpts mempty
 
@@ -74,18 +74,19 @@ jsonCreate :: FilePath -> IO ExitCode
 jsonCreate base = do
   k      <-  T.pack . take 64 . randomRs ('a', 'z')
          <$> newStdGen
-  exists <- fileExist (mkJSONFilename base k)
-  if   exists
-  then jsonCreate base
+  let p  = mkJSONFilename base k
+  exists <- fileExist p
+  if      exists
+  then    jsonCreate base
   else do print k
-          return ExitSuccess
+          jsonWrite p
 
 -- | Read a 'Document' from the given JSON directory.
 --   Prints the content to `stdout`.
 --
-jsonRead :: FilePath -> FilePath -> IO ExitCode
-jsonRead base filename = do
-  doc <- loadDocument (base </> filename)
+jsonRead :: FilePath -> IO ExitCode
+jsonRead path = do
+  doc <- loadDocument path
   handle (\(_ :: SomeException) -> return (ExitFailure 1))
          (do BL.putStr (encode doc)
              return ExitSuccess)
@@ -94,18 +95,18 @@ jsonRead base filename = do
 --   Assuming the input is already in JSON and makes no attempt to check. It
 --   is synchronised's repsonsiblity.
 --
-jsonUpdate :: FilePath -> FilePath -> IO ExitCode
-jsonUpdate base filename = do
+jsonWrite :: FilePath -> IO ExitCode
+jsonWrite path = do
   doc <- B.getContents
   handle (\(_ :: SomeException) -> return (ExitFailure 1))
-         (do B.writeFile (base </> filename )doc
+         (do B.writeFile path doc
              return ExitSuccess)
 
 -- | Unlink the underlying JSON file corresponding to the directory and 'ForeignKey'.
-jsonDelete :: FilePath -> FilePath -> IO ExitCode
-jsonDelete base filename
+jsonDelete :: FilePath -> IO ExitCode
+jsonDelete path
   = handle (\(_ :: SomeException) -> return (ExitFailure 1))
-           (do removeFile (base </> filename)
+           (do removeFile path
                return ExitSuccess)
 
 -- | Construct a path to a JSON file.
