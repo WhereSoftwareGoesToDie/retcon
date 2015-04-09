@@ -43,6 +43,8 @@ instance Show Response where
   show (RespDoc d) = show d
   show (RespUnit _) = ""
 
+--------------------------------------------------------------------------------
+
 -- | Run a single command.
 --
 synchroniseOnce
@@ -80,6 +82,8 @@ synchroniseOnce_ req conf = do
   case result of
     Left  e -> error (show e)
     Right v -> liftIO (print v)
+
+--------------------------------------------------------------------------------
 
 -- | Read JSON from standard input and produce a 'Document'.
 inputDocument

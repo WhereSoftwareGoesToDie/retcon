@@ -7,6 +7,7 @@
 module Main where
 
 import Control.Exception
+import Control.Monad
 import Data.Aeson
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as B
@@ -57,20 +58,29 @@ main :: IO ()
 main = do
   JSONOpts{..} <- execParser toplevel
   createDirectoryIfMissing True baseDir
-  exit <- case cmmnd of
-    Create   -> jsonCreate baseDir
-    Read   f -> jsonRead   (baseDir </> f)
-    Update f -> jsonWrite  (baseDir </> f)
-    Delete f -> jsonDelete (baseDir </> f)
+  exit <- handle catchAll (run baseDir cmmnd)
   exitWith exit
-  where toplevel = info pOpts mempty
+  where
+    toplevel = info pOpts mempty
+
+    run :: FilePath -> JSONCommand -> IO ExitCode
+    run d c = const (return ExitSuccess) =<< case c of
+      Create   -> jsonCreate  d
+      Read   f -> jsonRead   (d </> f)
+      Update f -> jsonWrite  (d </> f)
+      Delete f -> jsonDelete (d </> f)
+
+    catchAll :: SomeException -> IO ExitCode
+    catchAll e = do
+      print e
+      return (ExitFailure 1)
 
 --------------------------------------------------------------------------------
 
 -- | Creates a new JSON file under the path specified.
 --   Prints the filename to `stdout`.
 --
-jsonCreate :: FilePath -> IO ExitCode
+jsonCreate :: FilePath -> IO ()
 jsonCreate base = do
   k      <-  T.pack . take 64 . randomRs ('a', 'z')
          <$> newStdGen
@@ -78,40 +88,33 @@ jsonCreate base = do
   exists <- fileExist p
   if      exists
   then    jsonCreate base
-  else do print k
+  else do putStrLn (T.unpack k)
           jsonWrite p
 
 -- | Read a 'Document' from the given JSON directory.
 --   Prints the content to `stdout`.
 --
-jsonRead :: FilePath -> IO ExitCode
+jsonRead :: FilePath -> IO ()
 jsonRead path = do
   doc <- loadDocument path
-  handle (\(_ :: SomeException) -> return (ExitFailure 1))
-         (do BL.putStr (encode doc)
-             return ExitSuccess)
+  BL.putStr (encode doc)
 
 -- | Update a 'Document' with input from stdin.
 --   Assuming the input is already in JSON and makes no attempt to check. It
 --   is synchronised's repsonsiblity.
 --
-jsonWrite :: FilePath -> IO ExitCode
+jsonWrite :: FilePath -> IO ()
 jsonWrite path = do
   doc <- B.getContents
-  handle (\(_ :: SomeException) -> return (ExitFailure 1))
-         (do B.writeFile path doc
-             return ExitSuccess)
+  do B.writeFile path doc
 
 -- | Unlink the underlying JSON file corresponding to the directory and 'ForeignKey'.
-jsonDelete :: FilePath -> IO ExitCode
-jsonDelete path
-  = handle (\(_ :: SomeException) -> return (ExitFailure 1))
-           (do removeFile path
-               return ExitSuccess)
+jsonDelete :: FilePath -> IO ()
+jsonDelete = removeFile
 
 -- | Construct a path to a JSON file.
 mkJSONFilename :: FilePath -> ForeignID -> FilePath
-mkJSONFilename dir f = dir </> show f </> ".json"
+mkJSONFilename dir f = dir </> T.unpack f <> ".json"
 
 -- | Decode a 'Document' from the JSON file at the given 'FilePath'
 loadDocument :: FilePath -> IO Document
