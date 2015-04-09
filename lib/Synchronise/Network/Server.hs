@@ -90,7 +90,7 @@ spawnServer cfg n = do
     noticeM logName "Finished server"
   where
     spawnServerAPI :: ServerState -> IO (Async ())
-    spawnServerAPI           = async . flip runProtocol protocol
+    spawnServerAPI = async . flip runProtocol protocol
 
     spawnServerWorkers :: ServerState -> IO [Async ()]
     spawnServerWorkers state

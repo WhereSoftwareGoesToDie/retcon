@@ -117,8 +117,9 @@ runSynchroniseZMQ
 runSynchroniseZMQ target action = runZMQ $ do
         soc <- socket Req
         connect soc target
-        let action' = runExceptT $ unSynchroniseClientZMQ action
-        x <- runReaderT action' soc
+        x <- flip runReaderT soc
+           $ runExceptT
+           $ unSynchroniseClientZMQ action
         disconnect soc target
         close soc
         return x
