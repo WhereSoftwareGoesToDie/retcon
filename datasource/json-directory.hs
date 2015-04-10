@@ -7,9 +7,7 @@
 module Main where
 
 import Control.Exception
-import Control.Monad
 import Data.Aeson
-import Data.ByteString (ByteString)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as BL
 import Data.Monoid
@@ -20,7 +18,6 @@ import System.Exit
 import System.FilePath.Posix
 import System.Posix.Files
 import System.Random
-import System.Environment
 
 import Synchronise.DataSource
 import Synchronise.Document
@@ -32,10 +29,10 @@ data JSONOpts = JSONOpts
   , cmmnd   :: JSONCommand }
 
 data JSONCommand
-  = Create EntityName SourceName
-  | Update ForeignKey
-  | Read   ForeignKey
-  | Delete ForeignKey
+  = Create
+  | Update ForeignID
+  | Read   ForeignID
+  | Delete ForeignID
 
 pOpts :: Parser JSONOpts
 pOpts
@@ -50,16 +47,11 @@ pCommand
   <> command "update" (info pUpdate (progDesc "Writes a document to the given JSON directory"))
   <> command "read"   (info pRead   (progDesc "Reads a document in the given JSON directory"))
   <> command "delete" (info pDelete (progDesc "Deletes a document in the given JSON directory")))
-  where pCreate = Create <$> pEntity <*> pSource
+  where pCreate = pure Create
         pUpdate = Update <$> pFK
         pRead   = Read   <$> pFK
         pDelete = Delete <$> pFK
-        pFK     =   ForeignKey
-                <$> pEntity
-                <*> pSource
-                <*> (T.pack <$> strArgument (metavar "KEY"))
-        pEntity = EntityName . T.pack <$> strArgument (metavar "ENTITY")
-        pSource = SourceName . T.pack <$> strArgument (metavar "SOURCE")
+        pFK     = T.pack <$> strArgument (metavar "KEY")
 
 main :: IO ()
 main = do
@@ -73,7 +65,7 @@ main = do
 
     run :: FilePath -> JSONCommand -> IO ExitCode
     run d c = const (return ExitSuccess) =<< case c of
-      Create e s -> jsonCreate  d e s
+      Create     -> jsonCreate  d
       Read   f   -> jsonRead    (mkJSONFilename d f)
       Update f   -> jsonWrite   (mkJSONFilename d f)
       Delete f   -> jsonDelete  (mkJSONFilename d f)
@@ -88,14 +80,14 @@ main = do
 -- | Creates a new JSON file under the path specified.
 --   Prints the filename to `stdout`.
 --
-jsonCreate :: FilePath -> EntityName -> SourceName -> IO ()
-jsonCreate base e s = do
+jsonCreate :: FilePath -> IO ()
+jsonCreate base = do
   k      <-  T.pack . take 64 . randomRs ('a', 'z')
          <$> newStdGen
-  let p  = mkJSONFilename base (ForeignKey e s k)
+  let p  = mkJSONFilename base k
   exists <- fileExist p
   if      exists
-  then    jsonCreate base e s
+  then    jsonCreate base
   else do putStrLn (T.unpack k)
           jsonWrite p
 
@@ -121,9 +113,9 @@ jsonDelete :: FilePath -> IO ()
 jsonDelete = removeFile
 
 -- | Construct a path to a JSON file.
-mkJSONFilename :: FilePath -> ForeignKey -> FilePath
-mkJSONFilename dir ForeignKey{..}
-  = dir </> T.unpack (ename fkEntity) </> T.unpack (sname fkSource) </> T.unpack fkID <> ".json"
+mkJSONFilename :: FilePath -> ForeignID -> FilePath
+mkJSONFilename dir f
+  = dir </> T.unpack f <> ".json"
 
 -- | Decode a 'Document' from the JSON file at the given 'FilePath'
 loadDocument :: FilePath -> IO Document

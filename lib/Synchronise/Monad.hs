@@ -24,6 +24,7 @@ import Data.Typeable
 import Synchronise.Configuration
 import Synchronise.DataSource
 
+
 data SynchroniseError
     = SynchroniseFailed
     | SynchroniseDBError String      -- ^ Describes an error with the synchronise database.
@@ -34,33 +35,28 @@ data SynchroniseError
 
 instance Exception SynchroniseError
 
--- | Monad transformer stack used in the 'SynchroniseHandler' monad.
-type SynchroniseHandlerStack =
-    ReaderT SynchroniseMonadState
-            (ExceptT SynchroniseError IO)
+--------------------------------------------------------------------------------
 
--- | Product type wrapper for state components.
-data SynchroniseMonadState = SynchroniseMonadState
+-- | Environment for synchronise to work in.
+--
+data SynchroniseEnv = SynchroniseEnv
     { _synchroniseConfig :: Configuration }
-makeLenses ''SynchroniseMonadState
+makeLenses ''SynchroniseEnv
 
 -- | Monad for the Synchronise system.
 --
 -- This monad provides access to an environment containing the state
 -- of the synchronise system and the state of the current action; error
 -- handling through exceptions; and I/O.
-newtype SynchroniseMonad a =
-    SynchroniseMonad {
-        unSynchroniseMonad :: SynchroniseHandlerStack a
-    }
+newtype SynchroniseMonad a = SynchroniseMonad
+  { _sync :: ReaderT SynchroniseEnv (ExceptT SynchroniseError IO) a }
   deriving (Functor, Applicative, Monad, MonadIO,
-            MonadReader SynchroniseMonadState,
+            MonadReader SynchroniseEnv,
             MonadError SynchroniseError)
 
 -- | Execute an action in the 'SynchroniseMonad' monad.
-runSynchroniseMonad :: SynchroniseMonadState
-               -> SynchroniseMonad a
-               -> IO (Either SynchroniseError a)
-runSynchroniseMonad state =
-    runExceptT .
-    flip runReaderT state . unSynchroniseMonad
+runSynchroniseMonad
+  :: SynchroniseEnv
+  -> SynchroniseMonad a
+  -> IO (Either SynchroniseError a)
+runSynchroniseMonad env = runExceptT . flip runReaderT env . _sync

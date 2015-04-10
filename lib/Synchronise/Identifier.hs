@@ -35,17 +35,23 @@ import Database.PostgreSQL.Simple.ToRow
 
 -- | Unique name for an entity.
 newtype EntityName = EntityName { ename :: Text }
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord)
 
 instance IsString EntityName where
     fromString = EntityName . T.pack
+
+instance Show EntityName where
+    show = T.unpack . ename
 
 instance Read EntityName where
     readsPrec _ s = [(EntityName (T.pack s), "")]
 
 -- | Unique name for a data source.
 newtype SourceName = SourceName { sname :: Text }
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord)
+
+instance Show SourceName where
+    show = T.unpack . sname
 
 instance IsString SourceName where
     fromString = SourceName . T.pack
