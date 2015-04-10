@@ -16,44 +16,49 @@
 --
 -- /Synchronise/ interacts with external systems and propagates changes to
 -- duplicated data between them; these external systems are 'DataSource's.
-module Synchronise.DataSource (
-    DataSource(..),
-    Command,
-    DataSourceError(..),
-    DSMonad,
-    runDSMonad,
+--
+module Synchronise.DataSource
+  ( -- * Definitions
+    DataSource(..)
+  , Command
+  , DataSourceError(..)
+  , DSMonad
+  , runDSMonad
+
     -- * Operations
-    createDocument,
-    readDocument,
-    updateDocument,
-    deleteDocument,
-) where
+  , createDocument
+  , readDocument
+  , updateDocument
+  , deleteDocument
 
-import Control.Applicative
-import Control.Exception (Exception)
-import Control.Monad
-import Control.Monad.Error.Class
-import Control.Monad.IO.Class
-import Control.Monad.Trans.Except
-import Data.Aeson
-import qualified Data.ByteString.Char8 as BS
+  ) where
+
+import           Control.Applicative
+import           Control.Exception          (Exception)
+import           Control.Monad
+import           Control.Monad.Error.Class
+import           Control.Monad.IO.Class
+import           Control.Monad.Trans.Except
+import           Data.Aeson
+import qualified Data.ByteString.Char8      as BS
 import qualified Data.ByteString.Lazy.Char8 as BSL
-import Data.Char
-import Data.Monoid
-import Data.String ()
-import Data.Text (Text)
-import qualified Data.Text as T
-import qualified Data.Text.Encoding as T
-import Data.Typeable (Typeable)
-import System.Exit
-import System.IO
-import System.Log.Logger
-import System.Process
-import Text.Regex
+import           Data.Char
+import           Data.Monoid
+import           Data.String                ()
+import           Data.Text                  (Text)
+import qualified Data.Text                  as T
+import qualified Data.Text.Encoding         as T
+import           Data.Typeable              (Typeable)
+import           System.Exit
+import           System.IO
+import           System.Log.Logger
+import           System.Process
+import           Text.Regex
 
-import Synchronise.Configuration
-import Synchronise.Document
-import Synchronise.Identifier
+import           Synchronise.Configuration
+import           Synchronise.Document
+import           Synchronise.Identifier
+
 
 -- TODO(thsutton): Remove this
 {-# ANN module ("HLint: ignore Reduce duplication" :: String) #-}
@@ -61,10 +66,12 @@ import Synchronise.Identifier
 logName :: String
 logName = "Synchronise.DataSource"
 
+type ErrorMsg = String
+
 data DataSourceError
-    = DecodeError String
-    | ForeignError Int Text
-    | IncompatibleDataSource
+  = DecodeError            ErrorMsg
+  | ForeignError           Int Text
+  | IncompatibleDataSource ErrorMsg
   deriving (Eq, Show, Typeable)
 
 instance Exception DataSourceError
@@ -99,12 +106,15 @@ prepareCommand _ds fk cmd =
 -- | Check that a 'DataSource' and a 'ForeignKey' are compatible, otherwise
 -- raise an error in the monad.
 checkCompatibility
-    :: (Synchronisable a, Synchronisable b, MonadIO m)
+    :: ( Synchronisable a, Synchronisable b
+       , Show a, Show b
+       , MonadIO m)
     => a
     -> b
     -> DSMonad m ()
-checkCompatibility a b =
-    unless (compatibleSource a b) $ throwError IncompatibleDataSource
+checkCompatibility a b
+  = unless (compatibleSource a b)
+  $ throwError (IncompatibleDataSource $ show a <> " is not compatible with " <> show b)
 
 -- | Access a 'DataSource' and create a new 'Document' returning the
 -- 'ForeignKey' which, in that source, identifies the document.
@@ -123,7 +133,7 @@ createDocument src doc = do
     -- 2. Spawn process.
     let cmd = prepareCommand src Nothing . commandCreate $ src
         process = (shell cmd) { std_out = CreatePipe, std_in = CreatePipe }
-    liftIO . debugM logName $ "CREATE command: " <> show cmd
+    liftIO .debugM logName $ "CREATE command: " <> show cmd
     (Just hin, Just hout, Nothing, hproc) <- liftIO $ createProcess process
 
     -- 3. Write input.
@@ -144,7 +154,7 @@ createDocument src doc = do
     liftIO $ hClose hout
 
     -- 7. Parse response.
-    return $ ForeignKey "entity" "source" output
+    return $ ForeignKey (sourceEntity src) (sourceName src) output
 
 -- | Access a 'DataSource' and retrieve the 'Document' identified, in that source,
 -- by the given 'ForeignKey'.
@@ -225,7 +235,7 @@ updateDocument src fk doc = do
     liftIO $ hClose hout
 
     -- 7. Parse response.
-    return $ ForeignKey "entity" "source" output
+    return $ ForeignKey (fkEntity fk) (fkSource fk) output
 
 -- | Access a 'DataSource' and delete the 'Document' identified in that source
 -- by the given 'ForeignKey'.
