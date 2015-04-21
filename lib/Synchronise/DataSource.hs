@@ -7,6 +7,7 @@
 -- the 3-clause BSD licence.
 --
 
+{-# LANGUAGE DeriveDataTypeable         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
@@ -29,6 +30,7 @@ module Synchronise.DataSource (
 ) where
 
 import Control.Applicative
+import Control.Exception (Exception)
 import Control.Monad
 import Control.Monad.Error.Class
 import Control.Monad.IO.Class
@@ -42,6 +44,7 @@ import Data.String ()
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
+import Data.Typeable (Typeable)
 import System.Exit
 import System.IO
 import System.Log.Logger
@@ -62,7 +65,9 @@ data DataSourceError
     = DecodeError String
     | ForeignError Int Text
     | IncompatibleDataSource
-  deriving (Eq, Show)
+  deriving (Eq, Show, Typeable)
+
+instance Exception DataSourceError
 
 newtype DSMonad m a = DSMonad { unDSMonad :: ExceptT DataSourceError m a }
   deriving (Applicative, Functor, Monad, MonadIO, MonadError DataSourceError)
