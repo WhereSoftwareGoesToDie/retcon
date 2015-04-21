@@ -50,7 +50,7 @@ config :: Configuration
 config = emptyConfiguration
 
 runAction :: SynchroniseMonad a -> IO (Either SynchroniseError a)
-runAction = runSynchroniseMonad (SynchroniseMonadState config)
+runAction = runSynchroniseMonad (SynchroniseEnv config)
 
 -- | Check that a SqlError exception is about a disconnected connection.
 isDisconnected :: SqlError -> Bool
