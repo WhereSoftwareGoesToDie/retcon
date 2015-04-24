@@ -19,7 +19,6 @@ import           Control.Monad.Catch
 import           Control.Monad.Error.Class
 import           Control.Monad.Reader
 import           Control.Monad.Trans.Except
-import qualified Data.Aeson.Diff              as D
 import           Data.Binary
 import qualified Data.ByteString              as BS hiding (unpack)
 import qualified Data.ByteString.Char8        as BS (unpack)
@@ -30,11 +29,9 @@ import           Data.Either
 import qualified Data.List                    as L
 import           Data.List.NonEmpty           hiding (filter, length, map)
 import qualified Data.Map                     as M
-import           Data.Maybe
 import           Data.Monoid
 import           Data.String
 import qualified Data.Text                    as T
-import qualified Data.Text.Encoding           as T
 import           Data.Traversable             ()
 import           System.Log.Logger
 import           System.ZMQ4
@@ -50,10 +47,9 @@ import           Synchronise.Network.Protocol
 import           Synchronise.Store
 import           Synchronise.Store.PostgreSQL
 
-type ErrorMsg = String
 
-policy :: MergePolicy ()
-policy = ignoreConflicts
+
+type ErrorMsg = String
 
 --------------------------------------------------------------------------------
 
@@ -76,17 +72,18 @@ logName = "Synchronise.Server"
 --
 spawnServer :: Configuration -> Int -> IO ()
 spawnServer cfg n = do
-    noticeM logName "Starting server"
-    _ <- bracket start stop $ \state -> do
+  _ <- bracket start stop $ \state -> do
 
       -- Spawn a server implementing the protocol and some workers
       api      <- spawnServerAPI state
       peasants <- spawnServerWorkers state
 
-      -- Wait for any of the API server or worker threads to finish.
+      -- Ensures workers die if the API server does.
       mapM_ (link2 api) peasants
-      waitAny (api:peasants)
-    noticeM logName "Finished server"
+
+      -- Wait for all of the API server or worker threads to finish.
+      mapM_ wait (api:peasants)
+  return ()
   where
     spawnServerAPI :: ServerState -> IO (Async ())
     spawnServerAPI = async . flip runProtocol protocol
@@ -97,6 +94,7 @@ spawnServer cfg n = do
 
     start :: IO ServerState
     start = do
+        noticeM logName "Starting Server"
         let (zmq_conn, _, pg_conn) = configServer cfg
         ctx    <- context
         sock   <- socket ctx Rep
@@ -106,8 +104,10 @@ spawnServer cfg n = do
 
     stop :: ServerState -> IO ()
     stop state = do
-        close $ state ^. serverSocket
-        term  $ state ^. serverContext
+        closeBackend $ state ^. serverStore
+        close        $ state ^. serverSocket
+        term         $ state ^. serverContext
+        noticeM logName "Stopped Server"
 
 --------------------------------------------------------------------------------
 
@@ -405,6 +405,7 @@ notifyUpdate store datasources ik = do
   recordInitialDocument store ik initial'
 
   where
+    policy = acceptAll
     calculate :: [Document] -> IO Document
     calculate docs = do
       infoM logName $ "No initial document for " <> show ik <> "."
@@ -523,6 +524,7 @@ extractDiff
     -> Document
     -> Patch ()
 extractDiff = diff ignoreConflicts
+
 
 --------------------------------------------------------------------------------
 
