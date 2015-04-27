@@ -90,7 +90,7 @@ data ResponseConflictedItem = ResponseConflictedItem
     { _conflictDocument :: Document
     , _conflictPatch    :: Diff.Patch
     , _conflictDiffID   :: DiffID
-    , _conflictOps      :: [(OpID, BS.ByteString)]
+    , _conflictOps      :: [(OpID, Diff.Operation)]
     } deriving (Eq, Show)
 
 instance Binary ResponseConflictedItem where

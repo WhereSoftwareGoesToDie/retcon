@@ -66,7 +66,9 @@ data MergePolicy l = MergePolicy
 
 --------------------------------------------------------------------------------
 
--- | Accept all changes, and let them stomp all over each other.
+-- | Policy: accept all changes.
+--
+--   All changes will be applied in whatever arbitrary order they are encountered.
 acceptAll :: MergePolicy ()
 acceptAll = MergePolicy{..}
   where
@@ -76,7 +78,9 @@ acceptAll = MergePolicy{..}
             r = []
         in (p,r)
 
--- | Reject all changes.
+-- | Policy: reject all changes.
+--
+--   All input are rejected and the merged diff is empty.
 rejectAll :: MergePolicy ()
 rejectAll = MergePolicy{..}
   where
@@ -102,17 +106,24 @@ trustOnlySource name = MergePolicy {..}
                 r = reject p1 <> reject p2
             in (p,r)
 
--- | Merge diffs, ignoring all changes which conflict.
+-- | Policy: reject all conflicting changes.
 --
--- TODO(thsutton) Implement logic here.
+--   Changes will be applied iff they are the sole change affecting that key; all
+--   other changes will be rejected.
 ignoreConflicts :: MergePolicy ()
 ignoreConflicts = MergePolicy{..}
   where
-    extractLabel = const ()
-    mergePatch p1 p2 =
-        let p = Patch () mempty
-            r = reject p1 <> reject p2
-        in (p,r)
+    extractLabel
+      = const ()
+    mergePatch p1 p2
+      = bimap fromMap justOps
+      $ M.partition ((>1) . length)
+      $ M.unionWith (++) (toMap p1) (toMap p2)
+
+    justOps = map (RejectedOp ()) . concat . M.elems
+    fromMap = foldr addOperation (Patch () mempty) . concat . M.elems
+    toMap   = foldr count M.empty . D.patchOperations . _patchDiff
+    count o = M.insertWith (++) (D.changePath o) [o]
 
 --------------------------------------------------------------------------------
 
@@ -160,4 +171,8 @@ mergePatches MergePolicy{..} = mergePatch
 reject :: Patch l -> [RejectedOp l]
 reject p = fmap (RejectedOp (p ^. patchLabel)) . D.patchOperations $ p ^. patchDiff
 
--- | Convert all 'RejectedOp's back into 'D.Patch'.
+addOperation :: D.Operation -> Patch l -> Patch l
+addOperation x p = p & patchDiff . patchOperations <>~ [x]
+
+patchOperations :: Lens' D.Patch [D.Operation]
+patchOperations f (D.Patch os) = D.Patch <$> f os

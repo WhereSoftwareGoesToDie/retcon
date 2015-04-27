@@ -19,6 +19,7 @@ import           Control.Monad.Catch
 import           Control.Monad.Error.Class
 import           Control.Monad.Reader
 import           Control.Monad.Trans.Except
+import qualified Data.Aeson.Diff              as D
 import           Data.Binary
 import qualified Data.ByteString              as BS hiding (unpack)
 import qualified Data.ByteString.Char8        as BS (unpack)
@@ -29,9 +30,11 @@ import           Data.Either
 import qualified Data.List                    as L
 import           Data.List.NonEmpty           hiding (filter, length, map)
 import qualified Data.Map                     as M
+import           Data.Maybe
 import           Data.Monoid
 import           Data.String
 import qualified Data.Text                    as T
+import qualified Data.Text.Encoding           as T
 import           Data.Traversable             ()
 import           System.Log.Logger
 import           System.ZMQ4
@@ -48,6 +51,8 @@ import           Synchronise.Store
 import           Synchronise.Store.PostgreSQL
 
 
+-- TODO put in config
+policy = ignoreConflicts
 
 type ErrorMsg = String
 
@@ -405,7 +410,6 @@ notifyUpdate store datasources ik = do
   recordInitialDocument store ik initial'
 
   where
-    policy = acceptAll
     calculate :: [Document] -> IO Document
     calculate docs = do
       infoM logName $ "No initial document for " <> show ik <> "."
