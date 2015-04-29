@@ -23,6 +23,7 @@ import Data.Configurator as C
 import Data.Configurator.Types
 import Data.Map (Map)
 import qualified Data.Map as M
+import qualified Data.List as L
 import Data.Monoid
 import Data.String
 import Data.Text (Text)
@@ -30,6 +31,8 @@ import qualified Data.Text as T
 import System.Log.Logger
 
 import Synchronise.Identifier
+import Synchronise.Diff
+
 
 -- | Command template.
 newtype Command = Command { unCommand :: Text }
@@ -37,6 +40,8 @@ newtype Command = Command { unCommand :: Text }
 
 instance IsString Command where
     fromString = Command . T.pack
+
+--------------------------------------------------------------------------------
 
 -- | Record describing an external data source and how we interact with it.
 data DataSource = DataSource
@@ -54,20 +59,31 @@ instance Synchronisable DataSource where
     getEntityName = sourceEntity
     getSourceName = sourceName
 
+--------------------------------------------------------------------------------
+
 data Entity = Entity
     { entityName        :: EntityName
     , entityDescription :: Maybe Text
     , entitySchema      :: Maybe FilePath
-    , entityPolicy      :: Maybe FilePath
+    , entityPolicy      :: MergePolicy
     , entitySources     :: Map SourceName DataSource
     }
-  deriving (Eq, Ord, Show)
+
+instance Eq Entity where
+  (==) (Entity n1 d1 s1 _ c1) (Entity n2 d2 s2 _ c2)
+    = n1 == n2 && d1 == d2 && s1 == s2 && c1 == c2
+
+instance Show Entity where
+  show (Entity n d s _ c)
+    = L.intercalate "," [show n, show d, show s, show c]
 
 -- | Construct an 'Entity' with only a name.
 emptyEntity
     :: Text
     -> Entity
-emptyEntity name = Entity (EntityName name) mempty mempty mempty mempty
+emptyEntity name = Entity (EntityName name) mempty mempty doNothing mempty
+
+--------------------------------------------------------------------------------
 
 -- | Configuration of entities and data sources.
 data Configuration = Configuration
@@ -114,14 +130,26 @@ parseEntity name cfg' = do
     Entity
         <$> parseName cfg
         <*> parseDescription cfg
-        <*> parsePath "schema" cfg
-        <*> parsePath "merge-policy" cfg
+        <*> parseSchema cfg
+        <*> (parsePolicy cfg >>= mkPolicy)
         <*> parseSources cfg
   where
     parseName :: Parser EntityName
     parseName _ = EntityName <$> pure name
-    parseDescription :: Parser (Maybe Text)
-    parseDescription cfg = liftIO $ C.lookup cfg (name <> ".description")
+
+    parseDescription cfg = liftIO $ C.lookup cfg "description"
+    parseSchema      cfg = liftIO $ C.lookup cfg "schema"
+    parsePolicy      cfg = liftIO $ C.lookup cfg "merge-policy"
+
+    mkPolicy n
+      | n == Just "accept-all"       = return acceptAll
+      | n == Just "reject-all"       = return rejectAll
+      | n == Just "ignore-conflicts" = return ignoreConflicts
+      | Just thing   <- n
+      , Just trusted <- L.stripPrefix "trust-only:" thing
+      = return (trustOnlySource $ SourceName $ T.pack trusted)
+      | otherwise = throwError $ "Unrecognised merge policy " <> T.pack (show n)
+
     parsePath n cfg = liftIO $ C.lookup cfg (name <> "." <> n)
     parseSources :: Parser (Map SourceName DataSource)
     parseSources cfg = do

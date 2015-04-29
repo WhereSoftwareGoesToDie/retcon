@@ -128,7 +128,7 @@ class Store store where
 
   -- | Record the success 'Diff' and a list of failed 'Diff's associated with a
   --   processed 'InternalKey'.
-  recordDiffs         :: store -> InternalKey -> (Patch (), [RejectedOp ()]) -> IO DiffID
+  recordDiffs         :: store -> InternalKey -> (Patch, [RejectedOp]) -> IO DiffID
 
   -- | Record that the conflicts in a 'Diff' are resolved.
   resolveDiffs        :: store -> DiffID -> IO ()
