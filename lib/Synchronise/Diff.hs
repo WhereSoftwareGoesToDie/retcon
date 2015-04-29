@@ -8,9 +8,9 @@
 --
 
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE RecordWildCards   #-}
 {-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE ViewPatterns      #-}
 
 -- | Description: Diff and patch /Synchronise/ documents.
 module Synchronise.Diff
@@ -39,14 +39,14 @@ module Synchronise.Diff
      , rejectedOperation
      ) where
 
-import Control.Applicative
-import qualified Data.Map as M
-import Control.Lens hiding ((.=))
-import qualified Data.Aeson.Diff as D
-import Data.Monoid
+import           Control.Applicative
+import           Control.Lens           hiding ((.=))
+import qualified Data.Aeson.Diff        as D
+import qualified Data.Map               as M
+import           Data.Monoid
 
-import Synchronise.Document
-import Synchronise.Identifier
+import           Synchronise.Document
+import           Synchronise.Identifier
 
 
 data PatchLabel

@@ -13,25 +13,25 @@
 -- | Description: Configuration for the system.
 module Synchronise.Configuration where
 
-import Control.Applicative
-import Control.Monad.Error.Class
-import Control.Monad.IO.Class
-import Control.Monad.Trans.Except
-import Data.ByteString
-import qualified Data.ByteString.Char8 as BS
-import Data.Configurator as C
-import Data.Configurator.Types
-import Data.Map (Map)
-import qualified Data.Map as M
-import qualified Data.List as L
-import Data.Monoid
-import Data.String
-import Data.Text (Text)
-import qualified Data.Text as T
-import System.Log.Logger
+import           Control.Applicative
+import           Control.Monad.Error.Class
+import           Control.Monad.IO.Class
+import           Control.Monad.Trans.Except
+import           Data.ByteString
+import qualified Data.ByteString.Char8      as BS
+import           Data.Configurator          as C
+import           Data.Configurator.Types
+import qualified Data.List                  as L
+import           Data.Map                   (Map)
+import qualified Data.Map                   as M
+import           Data.Monoid
+import           Data.String
+import           Data.Text                  (Text)
+import qualified Data.Text                  as T
+import           System.Log.Logger
 
-import Synchronise.Identifier
-import Synchronise.Diff
+import           Synchronise.Diff
+import           Synchronise.Identifier
 
 
 -- | Command template.
