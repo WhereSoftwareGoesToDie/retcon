@@ -327,13 +327,13 @@ postgresqlSuite = around_ prepareDatabase .
       -- TODO Put some actual diffs in here.
       let a1  = mempty
           l1  = []
-          ds1 = (Patch () a1, l1)
+          ds1 = (Patch Unamed a1, l1)
           a2  = mempty
           l2  = []
-          ds2 = (Patch () a2, l2)
+          ds2 = (Patch Unamed a2, l2)
           a3  = mempty
           l3  = []
-          ds3 = (Patch () a3, l3)
+          ds3 = (Patch Unamed a3, l3)
 
       -- Insert some initial documents.
       Right (ik1, ik2, ik3, _ik4) <- runAction . liftIO $ do

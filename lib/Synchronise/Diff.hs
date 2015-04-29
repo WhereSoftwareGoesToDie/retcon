@@ -127,7 +127,7 @@ ignoreConflicts = MergePolicy {..}
     extractLabel = const Unamed
     merge p1 p2
       = bimap fromMap justOps
-      $ M.partition ((>1) . length)
+      $ M.partition ((<2) . length)
       $ M.unionWith (++) (toMap p1) (toMap p2)
 
     justOps = map (RejectedOp Unamed)       . concat . M.elems

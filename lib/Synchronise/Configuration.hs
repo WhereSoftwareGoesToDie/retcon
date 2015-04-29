@@ -150,7 +150,6 @@ parseEntity name cfg' = do
       = return (trustOnlySource $ SourceName $ T.pack trusted)
       | otherwise = throwError $ "Unrecognised merge policy " <> T.pack (show n)
 
-    parsePath n cfg = liftIO $ C.lookup cfg (name <> "." <> n)
     parseSources :: Parser (Map SourceName DataSource)
     parseSources cfg = do
         enabled <- liftIO $ C.lookup cfg "enabled"
