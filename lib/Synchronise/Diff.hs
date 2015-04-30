@@ -126,12 +126,17 @@ ignoreConflicts = MergePolicy {..}
   where
     extractLabel = const Unamed
     merge p1 p2
-      = bimap fromMap justOps
-      $ M.partition ((<2) . length)
-      $ M.unionWith (++) (toMap p1) (toMap p2)
+      = let m1 = toMap p1
+            m2 = toMap p2
+            allOps    = M.unionWith (++) m1 m2
+            conflicts = M.intersectionWith (++) m1 m2
+            accepts   = M.difference allOps conflicts
+        in  (fromMap accepts, justOps conflicts)
 
     justOps = map (RejectedOp Unamed)       . concat . M.elems
     fromMap = foldr addOperation emptyPatch . concat . M.elems
+
+    -- Groups changes in a patch by the change path.
     toMap   = foldr count M.empty . D.patchOperations . _patchDiff
     count o = M.insertWith (++) (D.changePath o) [o]
 
