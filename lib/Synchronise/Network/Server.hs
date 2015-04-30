@@ -211,11 +211,16 @@ listConflicts RequestConflicted = do
 resolveConflict
     :: RequestResolve
     -> Protocol ResponseResolve
-resolveConflict (RequestResolve conflict_id _ops) = do
-    liftIO . infoM logName $ "Resolving conflict: " <> show conflict_id
-    -- TODO(thsutton) Implement
-    liftIO . emergencyM logName $ "Unimplemented: resolveConflict"
+resolveConflict (RequestResolve diffID opIDs) = do
+    store <- view serverStore
+    liftIO . infoM logName $ "Resolving conflict: " <> show diffID
+    new <- composeNewDiff store
+    liftIO $ addWork store (WorkApplyPatch diffID $ new ^. patchDiff)
     return ResponseResolve
+    where
+      composeNewDiff store = do
+        things <- liftIO $ lookupDiffConflicts store opIDs
+        return $ Patch Unamed $ D.Patch $ map _ops things
 
 -- | Notification of a change to be queued for processing.
 notify
@@ -271,7 +276,9 @@ worker store cfg = go
         -- If all goes well, mark the work as finished when done, otherwise signal
         -- it as free.
         --
-        go      = bracketOnError getIt ungetIt completeIt
+        go      = do
+          bracketOnError getIt ungetIt completeIt
+          go
 
         getIt   = liftIO $ getWorkBackoff store
         ungetIt = ungetWork store . fst
@@ -285,7 +292,6 @@ worker store cfg = go
               liftIO . debugM logName $ "Processing a diff: " <> show did
               processDiff store cfg did a_diff
           completeWork store work_id
-          go
 
 -- notifications
 
