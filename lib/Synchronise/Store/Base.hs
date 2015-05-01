@@ -46,7 +46,7 @@ data ConflictResp = ConflictResp
   , _conflictRawDiff :: ByteString
   , _conflictDiffID  :: DiffID
   , _conflictRawOps  :: [(OpID, ByteString)]
-  }
+  } deriving (Show)
 makeLenses ''ConflictResp
 
 data DiffResp = DiffResp
@@ -54,14 +54,14 @@ data DiffResp = DiffResp
   , _diffKey       :: Int
   , _diffPatch     :: D.Patch
   , _diffConflicts :: [D.Operation]
-  }
+  } deriving (Show)
 makeLenses ''DiffResp
 
 data OpResp = OpResp
   { _opDiffID :: DiffID
   , _opID     :: OpID
   , _ops      :: D.Operation
-  }
+  } deriving (Show)
 makeLenses ''OpResp
 
 -- | The internal store "module".
