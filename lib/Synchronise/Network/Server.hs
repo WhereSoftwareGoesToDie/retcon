@@ -50,10 +50,8 @@ import           Synchronise.Network.Protocol
 import           Synchronise.Store
 import           Synchronise.Store.PostgreSQL
 
-type ErrorMsg = String
 
-policy :: MergePolicy ()
-policy = ignoreConflicts
+type ErrorMsg = String
 
 --------------------------------------------------------------------------------
 
@@ -76,17 +74,18 @@ logName = "Synchronise.Server"
 --
 spawnServer :: Configuration -> Int -> IO ()
 spawnServer cfg n = do
-    noticeM logName "Starting server"
-    _ <- bracket start stop $ \state -> do
+  _ <- bracket start stop $ \state -> do
 
       -- Spawn a server implementing the protocol and some workers
       api      <- spawnServerAPI state
       peasants <- spawnServerWorkers state
 
-      -- Wait for any of the API server or worker threads to finish.
+      -- Ensures workers die if the API server does.
       mapM_ (link2 api) peasants
-      waitAny (api:peasants)
-    noticeM logName "Finished server"
+
+      -- Wait for all of the API server or worker threads to finish.
+      mapM_ wait (api:peasants)
+  return ()
   where
     spawnServerAPI :: ServerState -> IO (Async ())
     spawnServerAPI = async . flip runProtocol protocol
@@ -97,6 +96,7 @@ spawnServer cfg n = do
 
     start :: IO ServerState
     start = do
+        noticeM logName "Starting Server"
         let (zmq_conn, _, pg_conn) = configServer cfg
         ctx    <- context
         sock   <- socket ctx Rep
@@ -106,8 +106,10 @@ spawnServer cfg n = do
 
     stop :: ServerState -> IO ()
     stop state = do
-        close $ state ^. serverSocket
-        term  $ state ^. serverContext
+        closeBackend $ state ^. serverStore
+        close        $ state ^. serverSocket
+        term         $ state ^. serverContext
+        noticeM logName "Stopped Server"
 
 --------------------------------------------------------------------------------
 
@@ -209,11 +211,16 @@ listConflicts RequestConflicted = do
 resolveConflict
     :: RequestResolve
     -> Protocol ResponseResolve
-resolveConflict (RequestResolve conflict_id _ops) = do
-    liftIO . infoM logName $ "Resolving conflict: " <> show conflict_id
-    -- TODO(thsutton) Implement
-    liftIO . emergencyM logName $ "Unimplemented: resolveConflict"
+resolveConflict (RequestResolve diffID opIDs) = do
+    store <- view serverStore
+    liftIO . infoM logName $ "Resolving conflict: " <> show diffID
+    new <- composeNewDiff store
+    liftIO $ addWork store (WorkApplyPatch diffID $ new ^. patchDiff)
     return ResponseResolve
+    where
+      composeNewDiff store = do
+        things <- liftIO $ lookupDiffConflicts store opIDs
+        return $ Patch Unamed $ D.Patch $ map _ops things
 
 -- | Notification of a change to be queued for processing.
 notify
@@ -269,7 +276,9 @@ worker store cfg = go
         -- If all goes well, mark the work as finished when done, otherwise signal
         -- it as free.
         --
-        go      = bracketOnError getIt ungetIt completeIt
+        go      = do
+          bracketOnError getIt ungetIt completeIt
+          go
 
         getIt   = liftIO $ getWorkBackoff store
         ungetIt = ungetWork store . fst
@@ -283,7 +292,6 @@ worker store cfg = go
               liftIO . debugM logName $ "Processing a diff: " <> show did
               processDiff store cfg did a_diff
           completeWork store work_id
-          go
 
 -- notifications
 
@@ -305,7 +313,7 @@ processNotification store cfg fk@(ForeignKey{..}) = do
         (Nothing, Left  e) -> notifyProblem (SynchroniseUnknown $ show e)
         (Nothing, Right d) -> notifyCreate  store sources fk d
         (Just i,  Left  _) -> notifyDelete  store sources i
-        (Just i,  Right _) -> notifyUpdate  store allSources i
+        (Just i,  Right _) -> notifyUpdate  store allSources i (entityPolicy entity)
 
 -- | Creates a new internal document to reflect a new foreign change. Update
 --   all given data sources of the change.
@@ -373,8 +381,9 @@ notifyUpdate
   :: Store store => store
   -> [DataSource]
   -> InternalKey
+  -> MergePolicy
   -> IO ()
-notifyUpdate store datasources ik = do
+notifyUpdate store datasources ik policy = do
   infoM logName $ "UPDATE: " <> show ik
 
   -- Fetch documents from all data sources.
@@ -386,7 +395,7 @@ notifyUpdate store datasources ik = do
       maybe (calculate valid) return
 
   -- Extract and merge patches.
-  let (merged, rejects) = merge policy $ map (diff policy initial) valid
+  let (merged, rejects) = mergeAll policy $ map (diff policy initial) valid
 
   if   null rejects
   then debugM logName $ "No rejected changes processing " <> show ik
@@ -436,10 +445,10 @@ processDiff store cfg diff_id a_diff = do
       conflict <- getConflict
 
       let en = EntityName . T.decodeUtf8 $ conflict ^. diffEntity
-      let ik = InternalKey en $ conflict ^. diffKey
-      let a_patch = Patch () a_diff
+          ik = InternalKey en $ conflict ^. diffKey
+          a_patch = Patch Unamed a_diff
 
-      srcs <- getSources en
+      (policy, srcs) <- getSources en
 
       -- 0. Load and update the initial document.
       initial <- liftIO $ fromMaybe (emptyDocument en "<initial>") <$>
@@ -449,7 +458,7 @@ processDiff store cfg diff_id a_diff = do
       -- 1. Apply the patch to all sources.
       mapM_ (\src -> liftIO $ do
         doc <- either (const initial') id <$> getDocument store ik src
-        setDocument store ik (src, (patch policy a_patch doc))
+        setDocument store ik (src, patch policy a_patch doc)
         ) srcs
 
       -- 2. Record the updated initial document.
@@ -467,13 +476,15 @@ processDiff store cfg diff_id a_diff = do
           Just v -> return v
 
     getSources en = do
-      let datasources = map snd . M.toList . entitySources <$>
-            M.lookup en (configEntities cfg)
-      case datasources of
+      let things = do
+            e    <- M.lookup en (configEntities cfg)
+            return ( entityPolicy e
+                   , map snd . M.toList . entitySources $ e)
+      case things of
         Nothing -> throwError $
             "Cannot resolve diff " <> show diff_id <> " because there are no "
             <> "sources for " <> show en <> "."
-        Just srcs -> return srcs
+        Just x  -> return x
 
 --------------------------------------------------------------------------------
 
@@ -507,22 +518,20 @@ setDocument store ik (ds, doc) = do
 
 -- | Merge a sequence of 'Patch'es by applying a 'MergePolicy'.
 --
--- TODO(thsutton) The label of the policy type is fixed so that we can
--- create the initial value to fold. We should probably replace this with
--- case analysis and a foldr1 or something to avoid the need.
-merge
-    :: MergePolicy ()
-    -> [Patch ()]
-    -> (Patch (), [RejectedOp ()])
-merge pol =
-  foldr (\p1 (p2, r) -> (r <>) <$> mergePatches pol p1 p2)
-        (Patch () mempty, mempty)
+mergeAll
+    :: MergePolicy
+    -> [Patch]
+    -> (Patch, [RejectedOp])
+mergeAll pol =
+  foldr (\p1 (p2, r) -> (r <>) <$> merge pol p1 p2)
+        (emptyPatch, mempty)
 
 extractDiff
     :: Document
     -> Document
-    -> Patch ()
+    -> Patch
 extractDiff = diff ignoreConflicts
+
 
 --------------------------------------------------------------------------------
 

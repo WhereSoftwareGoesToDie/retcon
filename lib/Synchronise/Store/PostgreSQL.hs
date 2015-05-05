@@ -4,6 +4,8 @@
 {-# LANGUAGE TypeFamilies      #-}
 {-# LANGUAGE ViewPatterns      #-}
 
+{-# LANGUAGE ScopedTypeVariables #-}
+
 module Synchronise.Store.PostgreSQL
      ( PGStore(..)
      , StoreOpts(..)
@@ -159,12 +161,12 @@ instance Store PGStore where
       let diff' = fmap (\(entity, key, c) -> (entity,key,) <$> fromJSON c) diff
 
       -- Load the conflicting fragments.
-      conflicts <- query' "SELECT content FROM retcon_diff_conflicts WHERE diff_id = ?"
-      let conflicts' = fmap fromSuccess . filter isSuccess . fmap (fromJSON . _3) $ conflicts
+      conflicts <- query conn "SELECT content FROM retcon_diff_conflicts WHERE diff_id = ?" (Only diff_id)
+      let conflicts' = map fromSuccess $ filter isSuccess $ map (fromJSON . fromOnly) conflicts
 
       return $ case diff' of
           Success (entity,key,d):_ -> Just $ DiffResp entity key d conflicts'
-          _           -> Nothing
+          _ -> Nothing
     where
       _3 (_,_,z) = z
       fromSuccess (Success a) = a

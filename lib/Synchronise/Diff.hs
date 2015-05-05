@@ -10,119 +10,145 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
 {-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE ViewPatterns      #-}
 
 -- | Description: Diff and patch /Synchronise/ documents.
 module Synchronise.Diff
      ( -- * Operations
        diff
      , patch
-     , mergePatches
+     , merge
+     , extractLabel
 
        -- * Merge policies
-     , MergePolicy(..)
+     , MergePolicy
+     , doNothing
      , acceptAll
      , rejectAll
      , ignoreConflicts
      , trustOnlySource
 
        -- * Representing patches
+     , PatchLabel(..)
      , Patch(..)
      , patchLabel
      , patchDiff
+     , emptyPatch
      , RejectedOp(..)
      , rejectedLabel
      , rejectedOperation
      ) where
 
-import Control.Lens hiding ((.=))
-import qualified Data.Aeson.Diff as D
-import Data.Monoid
+import           Control.Applicative
+import           Control.Lens           hiding ((.=))
+import qualified Data.Aeson.Diff        as D
+import qualified Data.Map               as M
+import           Data.Monoid
 
-import Synchronise.Document
-import Synchronise.Identifier
+import           Synchronise.Document
+import           Synchronise.Identifier
 
 
--- | A /synchronised/ 'Patch' is an @aeson-diff@ patch together with a label.
-data Patch l = Patch
-    { _patchLabel :: l
-    , _patchDiff  :: D.Patch
-    }
+data PatchLabel
+  = Unamed           -- ^ ()
+  | Name SourceName  -- ^ Named after its origin.
   deriving (Eq, Show)
+
+data Patch = Patch
+  { _patchLabel :: PatchLabel
+  , _patchDiff  :: D.Patch
+  } deriving (Eq, Show)
 makeLenses ''Patch
 
--- | An @aeson-diff@ patch operation which was excluded be a 'MergePolicy'.
-data RejectedOp l = RejectedOp
-    { _rejectedLabel     :: l
-    , _rejectedOperation :: D.Operation
-    }
-  deriving (Eq, Show)
+data RejectedOp = RejectedOp
+  { _rejectedLabel     :: PatchLabel
+  , _rejectedOperation :: D.Operation
+  } deriving (Eq, Show)
 makeLenses ''RejectedOp
 
 -- | Describes the way we merge diffs.
-data MergePolicy l = MergePolicy
-    { extractLabel :: Document -> l
-    , mergePatch   :: Patch l -> Patch l -> (Patch l, [RejectedOp l])
-    }
+--
+data MergePolicy = MergePolicy
+  { extractLabel :: Document -> PatchLabel
+  , merge        :: Patch    -> Patch -> MergeResult }
+
+type MergeResult = (Patch, [RejectedOp])
+
+emptyPatch = Patch Unamed mempty
 
 --------------------------------------------------------------------------------
 
--- | Accept all changes, and let them stomp all over each other.
-acceptAll :: MergePolicy ()
-acceptAll = MergePolicy{..}
+-- | Policy: do nothing.
+--
+--   Be a lazy bum.
+doNothing :: MergePolicy
+doNothing = MergePolicy {..}
   where
-    extractLabel = const ()
-    mergePatch p1 p2 =
-        let p = Patch () $ (p1 ^. patchDiff) <> (p2 ^. patchDiff)
-            r = []
-        in (p,r)
+    extractLabel   = const Unamed
+    merge      _ _ = (emptyPatch, mempty)
 
--- | Reject all changes.
-rejectAll :: MergePolicy ()
-rejectAll = MergePolicy{..}
+-- | Policy: accept all changes.
+--
+--   All changes will be applied in whatever arbitrary order they are encountered.
+acceptAll :: MergePolicy
+acceptAll = MergePolicy {..}
   where
-    extractLabel = const ()
-    mergePatch p1 p2 =
-        let p = Patch () mempty
-            r1 = reject p1
-            r2 = reject p2
-        in (p, r1 <> r2)
+    extractLabel = const Unamed
+    merge p1 p2  = (Patch Unamed $ (p1 ^. patchDiff) <> (p2 ^. patchDiff), mempty)
+
+-- | Policy: reject all changes.
+--
+--   All input are rejected and the merged diff is empty.
+rejectAll :: MergePolicy
+rejectAll = MergePolicy {..}
+  where
+    extractLabel = const Unamed
+    merge p1 p2  = (Patch Unamed mempty, reject p1 <> reject p2)
 
 -- | Trust only patches from a particular 'DataSource', discarding all other
 -- changes.
-trustOnlySource :: SourceName -> MergePolicy SourceName
-trustOnlySource name = MergePolicy {..}
+trustOnlySource :: SourceName -> MergePolicy
+trustOnlySource (Name -> name) = MergePolicy {..}
   where
-    extractLabel d = d ^. documentSource
-    mergePatch p1 p2
-        | name == (p2 ^. patchLabel) = (p2, reject p1)
-        | name == (p1 ^. patchLabel) = (p1, reject p2)
-        | otherwise =
-            let
-                p = Patch name mempty
-                r = reject p1 <> reject p2
-            in (p,r)
+    extractLabel d = Name $ d ^. documentSource
+    merge p1 p2
+      | name == (p2 ^. patchLabel) = (p2, reject p1)
+      | name == (p1 ^. patchLabel) = (p1, reject p2)
+      | otherwise = ( Patch name mempty
+                    , reject p1 <> reject p2 )
 
--- | Merge diffs, ignoring all changes which conflict.
+-- | Policy: reject all conflicting changes.
 --
--- TODO(thsutton) Implement logic here.
-ignoreConflicts :: MergePolicy ()
-ignoreConflicts = MergePolicy{..}
+--   Changes will be applied iff they are the sole change affecting that key; all
+--   other changes will be rejected.
+ignoreConflicts :: MergePolicy
+ignoreConflicts = MergePolicy {..}
   where
-    extractLabel = const ()
-    mergePatch p1 p2 =
-        let p = Patch () mempty
-            r = reject p1 <> reject p2
-        in (p,r)
+    extractLabel = const Unamed
+    merge p1 p2
+      = let m1 = toMap p1
+            m2 = toMap p2
+            allOps    = M.unionWith (++) m1 m2
+            conflicts = M.intersectionWith (++) m1 m2
+            accepts   = M.difference allOps conflicts
+        in  (fromMap accepts, justOps conflicts)
+
+    justOps = map (RejectedOp Unamed)       . concat . M.elems
+    fromMap = foldr addOperation emptyPatch . concat . M.elems
+
+    -- Groups changes in a patch by the change path.
+    toMap   = foldr count M.empty . D.patchOperations . _patchDiff
+    count o = M.insertWith (++) (D.changePath o) [o]
 
 --------------------------------------------------------------------------------
 
 -- | Use a 'MergePolicy' to compare two versions of a document and extract a
 -- 'Patch' describing changes.
 diff
-    :: MergePolicy l
+    :: MergePolicy
     -> Document
     -> Document
-    -> Patch l
+    -> Patch
 diff MergePolicy{..} d1 d2 =
     let j1 = d1 ^. documentContent
         j2 = d2 ^. documentContent
@@ -132,32 +158,22 @@ diff MergePolicy{..} d1 d2 =
 
 -- | Use a 'MergePolicy' to apply a 'Patch' to a 'Document'.
 patch
-    :: MergePolicy l
-    -> Patch l
+    :: MergePolicy
+    -> Patch
     -> Document
     -> Document
 patch MergePolicy{} p d = d & documentContent %~ D.patch (p ^. patchDiff)
-
--- | Combine two 'Patch'es according to the rules of a 'MergePolicy'.
---
--- This allows case-specific criteria to be used in resolving ambiguities which
--- might arise when resolving conflicts between patches.
---
--- TODO(thsutton) Rename the record field and delete this?
-mergePatches
-    :: Monoid l
-    => MergePolicy l
-    -> Patch l
-    -> Patch l
-    -> (Patch l, [RejectedOp l])
-mergePatches MergePolicy{..} = mergePatch
 
 --------------------------------------------------------------------------------
 
 -- * Utility
 
 -- | Convert all the 'D.Operation's in a 'D.Patch' into 'RejectedOp's.
-reject :: Patch l -> [RejectedOp l]
+reject :: Patch -> [RejectedOp]
 reject p = fmap (RejectedOp (p ^. patchLabel)) . D.patchOperations $ p ^. patchDiff
 
--- | Convert all 'RejectedOp's back into 'D.Patch'.
+addOperation :: D.Operation -> Patch -> Patch
+addOperation x p = p & patchDiff . patchOperations <>~ [x]
+
+patchOperations :: Lens' D.Patch [D.Operation]
+patchOperations f (D.Patch os) = D.Patch <$> f os
