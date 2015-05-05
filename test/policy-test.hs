@@ -20,35 +20,55 @@ import Synchronise.Diff
 suite :: Spec
 suite = do
     describe "ignoreConflicts merge policy" $ do
-        let d1 = mkPatch [ Ins [D.OKey "value"] "one"
-                         , Ins [D.OKey "pet"] "cat"]
-        let d2 = mkPatch [ Ins [D.OKey "value"] "two"
-                         , Del [D.OKey "food"] ""]
+        let d1 = mkPatch
+                 [ Ins [D.OKey "value"] "one"
+                 , Ins [D.OKey "pet"] "cat"]
 
-        it "should ignore all changes which conflict" $ do
-            let (d',c) = merge ignoreConflicts d1 d2
-            d' `shouldBe` mkPatch [ Ins [D.OKey "pet"] "cat"
-                                  , Del [D.OKey "food"] ""]
-            c  `shouldBe` map mkRej [ Ins [D.OKey "value"] "one"
-                                    , Ins [D.OKey "value"] "two" ]
+            d2 = mkPatch
+                 [ Ins [D.OKey "value"] "two"
+                 , Del [D.OKey "food"] ""]
+
+            (accepted, rejected) = merge ignoreConflicts d1 d2
+
+        it "should accept changes that do not conflict" $
+            accepted `shouldBe` mkPatch [ Ins [D.OKey "pet"] "cat"
+                                        , Del [D.OKey "food"] ""]
+
+        it "should ignore all changes which conflict" $
+            rejected `shouldBe` map mkRej [ Ins [D.OKey "value"] "one"
+                                          , Ins [D.OKey "value"] "two" ]
 
     describe "rejectAll merge policy" $ do
-        let d1 = mkPatch [Ins [D.OKey "value"] "one"]
-        let d2 = mkPatch [Ins [D.OKey "value"] "two"]
+        let d1    = mkPatch [Ins [D.OKey "value"] "one"]
+            d2    = mkPatch [Ins [D.OKey "value"] "two"]
+            (d,c) = merge rejectAll d1 d2
 
         it "should ignore all changes" $ do
-            let (d',_) = merge rejectAll d1 d2
-            d' `shouldBe` emptyPatch
+            d `shouldBe` emptyPatch
+            c `shouldBe` map mkRej [ Ins [D.OKey "value"] "one"
+                                   , Ins [D.OKey "value"] "two" ]
 
     describe "acceptAll merge policy" $ do
-        let d1 = mkPatch [Ins [D.OKey "value"] "one"]
-        let d2 = mkPatch [Ins [D.OKey "value"] "two"]
+        let d1    = mkPatch [Ins [D.OKey "value"] "one"]
+            d2    = mkPatch [Ins [D.OKey "value"] "two"]
+            (d,c) = merge acceptAll d1 d2
 
-        it "should include all changes" $ do
-            let (d',_) = merge acceptAll d1 d2
-            d' `shouldBe` mkPatch [ Ins [D.OKey "value"] "one"
-                                  , Ins [D.OKey "value"] "two"
-                                  ]
+        it "should accept all changes" $ do
+            d `shouldBe` mkPatch [ Ins [D.OKey "value"] "one"
+                                 , Ins [D.OKey "value"] "two" ]
+            c `shouldBe` []
+
+    describe "trustOnly merge policy" $ do
+        let d1    = Patch (Name "lord")
+                  $ D.Patch [Ins [D.OKey "value"] "one"]
+            d2    = Patch (Name "peasant")
+                  $ D.Patch [Ins [D.OKey "value"] "two"]
+            (d,c) = merge (trustOnlySource "lord") d1 d2
+
+        it "should only accept changes from the specified source" $ do
+            d `shouldBe` d1
+            c `shouldBe` [ RejectedOp (Name "peasant") $ Ins [D.OKey "value"] "two" ]
+
 
 mkPatch = Patch Unamed . D.Patch
 mkRej   = RejectedOp Unamed
