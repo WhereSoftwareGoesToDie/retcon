@@ -1,5 +1,5 @@
 name:                retcon
-version:             0.0.2.0
+version:             2.0.0.0
 synopsis:            Daemon to propagate changes between JSON stores.
 description:
   Retcon is a library and program to detect, extract, merge and propagate
