@@ -1,5 +1,5 @@
 --
--- Copyright © 2013-2014 Anchor Systems, Pty Ltd and Others
+-- Copyright © 2014-2015 Anchor Systems, Pty Ltd and Others
 --
 -- The code in this file, and the program it is a part of, is
 -- made available to you by its authors as open source software:
@@ -7,142 +7,84 @@
 -- the 3-clause BSD licence.
 --
 
--- | Description : Represent documents which will be processed by retcon.
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell   #-}
+
+-- | Description: Represent and operate on retcond documents.
 --
--- This module implements the 'Document' data type which the retcon
--- system manipulates. Documents are, essentially, nested key/value
--- maps.
-
-{-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE MultiParamTypeClasses      #-}
-{-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE StandaloneDeriving         #-}
-{-# LANGUAGE TemplateHaskell            #-}
-{-# LANGUAGE TupleSections              #-}
-{-# LANGUAGE TypeFamilies               #-}
-
+-- A 'Document' is, essentially, a JSON 'Value' together with some metadata
+-- describing its type, system of origin, etc.
 module Retcon.Document (
-    Document (..),
-    DocumentKey,
-    DocumentValue,
-    FromJSON,
-    ToJSON,
-    mkNode,
-    calculateInitialDocument
+    Document(..),
+    documentEntity,
+    documentSource,
+    documentContent,
+
+    emptyDocument,
+    calculateInitialDocument,
 ) where
 
-import Control.Applicative
-import Control.Lens hiding ((.=))
+import Control.Lens
 import Control.Monad
 import Data.Aeson
-import Data.Aeson.Types (Parser)
-import qualified Data.HashMap.Lazy as H hiding (lookup)
-import Data.HashMap.Strict (lookup)
-import Data.List hiding (lookup)
-import qualified Data.Map as M
+import Data.List
 import Data.Monoid
-import Data.Text (Text)
-import qualified Data.Text as T
-import Data.Tree.GenericTrie (Tree (..))
-import GHC.Exts (IsList (..))
-import Prelude hiding (lookup)
 
-type DocumentKey =  Text
-type DocumentValue = Text
+import Retcon.Identifier
 
--- | A retcon 'Document' is an edge-labelled tree with 'Text' labels on
--- both nodes and edges.
-newtype Document
-    = Document { unDocument :: Tree DocumentKey DocumentValue }
-  deriving (Monoid, Eq, Show)
-makeWrapped ''Document
+-- | A JSON 'Value' from a particular 'Entity'.
+data Document = Document
+    { _documentEntity  :: EntityName -- ^ Type of data.
+    , _documentSource  :: SourceName -- ^ System of origin.
+    , _documentContent :: Value      -- ^ Document content.
+    }
+  deriving (Eq, Show)
+makeLenses ''Document
 
-
-mkNode
-    :: Applicative f
-    => Maybe DocumentValue
-    -> f Document
-mkNode x = pure . Document $ Node x mempty
-
--- | Translates any kind of JSON object to a Document.
-instance FromJSON Document where
-    parseJSON (String str) = mkNode $ Just str
-    parseJSON (Number num) = mkNode . Just . T.pack $ show num
-    parseJSON (Bool True)  = mkNode $ Just "TRUE"
-    parseJSON (Bool False) = mkNode $ Just "FALSE"
-    parseJSON (Null)       = mkNode Nothing
-    parseJSON (Array _)    = mzero -- TODO Maybe convert into a map?
-    parseJSON (Object v)   = docFromJsonObject (Object v)
-
--- | Translates a top-level document to JSON.
 instance ToJSON Document where
-    toJSON doc = docToJSON doc 0
+  toJSON = _documentContent
 
--- | Translate a JSON Object to a Document.
-docFromJsonObject
-    :: Value
-    -> Parser Document
-docFromJsonObject (Object v) =
-    case identKey "_topLevelValue" of
-        Nothing  -> standardObj v
-        Just tlv ->
-            case identKey "_contents" of
-                Nothing          -> standardObj v
-                Just (Object v') -> specialObj tlv v'
-                Just (Array _) -> error $ "Retcon.Document.docFromJsonObject: "
-                    <> "Unexpected Array for _contents"
-                Just val -> error $ "Retcon.Document.docFromJsonObject: "
-                    <> "Unexpected _contents " <> show val
-  where
-    identKey s = lookup s v
-    standardObj v' = Document . Node Nothing . M.fromList . H.toList <$>
-        traverse (\x -> unDocument <$> parseJSON x) v'
-    specialObj Null v' = Document . Node Nothing . M.fromList . H.toList <$>
-        traverse (\x -> unDocument <$> parseJSON x) v'
-    specialObj (String tlv) v' = Document . Node (Just tlv) . M.fromList . H.toList <$>
-        traverse (\x -> unDocument <$> parseJSON x) v'
-    specialObj _ _ = error "Retcon.Document.specialObj: "
-docFromJsonObject (Array _) =
-    error "Retcon.Document.docFromJsonObject: Given an Array not an Object."
-docFromJsonObject val =
-    error $ "Retcon.Document.docFromJsonObject: " <> "Given " <> show val
-        <> " not an Object."
+instance FromJSON Document where
+  parseJSON x = return $ Document "" "" x
 
--- | Translate a document to JSON
--- Allowing different behaviours at top level than subsequent levels.
--- Top level documents contain its value in a _topLevelValue element,
--- and any children in a _contents list.
-docToJSON
-    :: Document
-    -> Int
-    -> Value
-docToJSON (Document (Node nv childs)) 0 = object [
-    "_topLevelValue" .= tlVal,
-    "_contents"      .= contents ]
-  where
-    tlVal = case nv of
-        Nothing -> Null
-        Just v' -> String v'
-    contents = object $ map (\(k,v) -> k .= docToJSON (Document v) 1) $ M.toAscList childs
-docToJSON (Document (Node Nothing childs)) l = object $ map (\(k,v) -> k .= d' v) $ M.toAscList childs
-  where
-    d' v = docToJSON (Document v) (l + 1)
-docToJSON (Document (Node (Just val) childs)) l
-    | M.null childs = toJSON val
-    | otherwise     = object $ map (\(k,v) -> k .= d' v) $ M.toAscList childs
-  where
-    d' v = docToJSON (Document v) (l + 1)
+instance Synchronisable Document where
+    getEntityName = _documentEntity
+    getSourceName = _documentSource
 
--- | Calulate an "initial" document from a collection of input documents.
+--------------------------------------------------------------------------------
+
+-- | Construct an empty 'Document'.
+emptyDocument
+    :: EntityName
+    -> SourceName
+    -> Document
+emptyDocument e s = Document e s Null
+
+-- | Construct an initial 'Document' for use in identifying and processing
+-- changes.
 --
--- Currently takes the keys and values upon which all input documents agree.
+-- Reports an error when some or all documents have conflicting entities or
+-- sources.
 calculateInitialDocument
     :: [Document]
-    -> Document
-calculateInitialDocument docs =
-    let count = length docs
-        pairs = sort . concatMap (toList . unDocument) $ docs
-        common = map head . filter (\l -> length l == count) . group $ pairs
-    in Document $ fromList common
-
+    -> Either String Document
+calculateInitialDocument docs = do
+    entity <- determineEntity docs
+    checkSources docs
+    case docs of
+        []  -> bail "No documents provided."
+        [d] -> Right $ d & documentEntity .~ entity
+                         & documentSource .~ "<initial>"
+        _   -> bail "Too many documents provided."
+  where
+    bail m = Left $ "Cannot calculate initial document: " <> m
+    determineEntity ds = case nub . fmap (view documentEntity) $ ds of
+        [] -> bail "No documents"
+        [e] -> Right e
+        l -> bail $ "Types do not match (" <> show l <> ")"
+    -- Check that the documents all come from different sources
+    checkSources ds =
+        let all_sources = fmap (view documentSource) ds
+            uniq_sources = group . sort $ all_sources
+        in when (any (\x -> length x > 1) uniq_sources) $
+            bail "Multiple documents from same data source."

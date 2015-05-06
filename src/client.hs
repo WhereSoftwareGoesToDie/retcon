@@ -1,15 +1,21 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
+
 module Main where
 
 import Control.Applicative
 import Data.Monoid
+import qualified Data.Text as T
 import Options.Applicative hiding (command)
 import qualified Options.Applicative as O
+import Options.Applicative.Types
 import System.Exit
 
+import Retcon.Identifier
 import Retcon.Network.Client
+import Retcon.Network.Protocol
 import Retcon.Network.Server
+
 
 data Options = Options
     { connection :: String
@@ -18,9 +24,9 @@ data Options = Options
 
 data Command
     = Notify
-        { entity :: String
-        , source :: String
-        , key    :: String
+        { entity :: EntityName
+        , source :: SourceName
+        , key    :: ForeignID
         }
 
 optionsParser :: Parser Options
@@ -32,9 +38,10 @@ optionsParser = Options
         )
   where
     pNotify = Notify
-        <$> strArgument (metavar "ENTITY")
-        <*> strArgument (metavar "SOURCE")
-        <*> strArgument (metavar "FK")
+        <$> argument auto (metavar "ENTITY")
+        <*> argument auto (metavar "SOURCE")
+        <*> argument f    (metavar "FK")
+    f = readerAsk >>= return . T.pack
 
 run :: Options -> IO ()
 run Options{..} = do
@@ -43,8 +50,11 @@ run Options{..} = do
         Notify{..} -> enqueueChangeNotification $
             ChangeNotification entity source key
     case val of
-        Left  e -> print e >> exitFailure
-        Right _ -> exitSuccess
+        Left  e -> do
+            print e
+            exitFailure
+        Right _ ->
+            exitSuccess
 
 main :: IO ()
 main = execParser opts >>= run

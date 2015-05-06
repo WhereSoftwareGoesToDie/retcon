@@ -1,4 +1,4 @@
-SOURCES=$(shell find lib tests -name '*.hs' -type f)
+SOURCES=$(shell find src lib test -name '*.hs' -type f)
 
 HOTHASKTAGS=$(shell which hothasktags 2>/dev/null)
 CTAGS=$(if $(HOTHASKTAGS),$(HOTHASKTAGS),/bin/false)
@@ -6,28 +6,19 @@ CTAGS=$(if $(HOTHASKTAGS),$(HOTHASKTAGS),/bin/false)
 STYLISHHASKELL=$(shell which stylish-haskell 2>/dev/null)
 STYLISH=$(if $(STYLISHHASKELL),$(STYLISHHASKELL),/bin/false)
 
-all: tags
+HLINT=$(shell which hlint 2>/dev/null)
+LINT=$(if $(HLINT),$(HLINT),/bin/false)
 
-.PHONY: all test clean
+.PHONY: all format lint
+
+all: lint format tags
+
+lint: HLint.hs $(SOURCES)
+	@$(LINT) -h $< $(filter-out $<,$^)
+
+format: .stylish-haskell.yaml $(SOURCES)
+	@$(STYLISH) -c $< -i $(filter-out $<,$^)
 
 tags: $(SOURCES)
 	@if [ "$(HOTHASKTAGS)" ] ; then /bin/echo -e "CTAGS\ttags" ; fi
 	@$(CTAGS) $^ > tags $(REDIRECT)
-
-clean:
-	@/bin/echo -e "CLEAN"
-	@cabal clean >/dev/null
-	@rm -f tags
-
-lint: $(SOURCES)
-	for i in $^; do hlint $$i; done
-
-test:
-	@/bin/echo -e "TEST"
-	cabal test
-
-build:
-	cabal build
-
-format: $(SOURCES)
-	for i in $^; do stylish-haskell -i $$i; done
