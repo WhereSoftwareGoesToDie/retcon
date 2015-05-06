@@ -1,13 +1,5 @@
-dist/
-cabal-dev/
-.cabal-sandbox/
-*.o
-*.hi
-*.chi
-*.chs.h
-cabal.sandbox.config
-cabal.config
-tags
-# Generated files in tests
-/tests/test-results/
-/tests/data/json/acceptance-user/
+/dist/
+/entity/
+/tags
+# Ignore the checked-out aeson-schema repo
+/aeson-schema/

@@ -14,42 +14,18 @@
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 
--- | A typeclass and IO implementation of a client API for Retcon
---
--- With this API you will be able to:
--- * List conflicted diffs
--- * Force a conflicted diff to resolve with any operations you chose
---   pushed upstream.
--- * Notfiy retcon of datasources that need to be updated
---
--- Example usage:
---
--- @
---      main :: IO ()
---      main = do
---          runRetconZMQ "tcp://10.2.3.4:1234" $ do
---              conflicts <- getConflicted
---              liftIO . putStrLn $
---                  "Got " ++ show (length conflicts) ++ " conflicts."
---
---              \-\- This is probably a terrible idea
---              forM_ conflicts $ \\(_, _, diff_id, _) ->
---                  enqueueResolveDiff diff_id []
---
---              liftIO $ putStrLn "Marked them all resolved."
---          >>= either throwIO return
---
---
--- @
 module Retcon.Network.Client
-(
-    -- * Operations
-    getConflicted,
-    enqueueResolveDiff,
-    enqueueChangeNotification,
+  ( -- * Interface
+    getConflicted
+  , enqueueResolvePatch
+  , enqueueChangeNotification
 
-    runRetconZMQ,
-) where
+    -- * Running
+  , runRetconZMQ
+
+    -- * Utils
+  , mkChangeNotification
+  ) where
 
 import Control.Applicative
 import Control.Monad.Except
@@ -59,49 +35,54 @@ import Data.ByteString.Lazy (fromStrict)
 import Data.List.NonEmpty
 import System.ZMQ4.Monadic
 
-import Retcon.Diff
-import Retcon.Document
-import Retcon.Network.Server hiding (liftZMQ)
+import Retcon.Identifier
+import Retcon.Network.Protocol
+import Retcon.Network.Server
+import Retcon.Store hiding (ops)
+
 
 -- | Retrieve all documents that are currently marked as being conflicted
 getConflicted
-    :: (RetconClientConnection m, MonadError RetconAPIError m)
-    =>  m [( Document
-           , Diff ()
-           , DiffID
-           , [(ConflictedDiffOpID, DiffOp ())]
-          )]
+    :: (RetconClientConnection m, MonadError APIError m)
+    =>  m [ResponseConflictedItem]
 getConflicted = do
     ResponseConflicted response <- performRequest HeaderConflicted RequestConflicted
     return response
 
 -- | Tell Retcon to apply the given operations upstream at some point
-enqueueResolveDiff
-    :: (RetconClientConnection m, MonadError RetconAPIError m)
+enqueueResolvePatch
+    :: (RetconClientConnection m, MonadError APIError m)
     => DiffID
-    -> [ConflictedDiffOpID]
+    -> [OpID]
     -> m ()
-enqueueResolveDiff did ops =
+enqueueResolvePatch did ops =
     void $ performRequest HeaderResolve (RequestResolve did ops)
 
 -- | Notify Retcon of an external change
 enqueueChangeNotification
-    :: (RetconClientConnection m, MonadError RetconAPIError m)
+    :: (RetconClientConnection m, MonadError APIError m)
     => ChangeNotification
     -> m ()
 enqueueChangeNotification notification =
     void $ performRequest HeaderChange (RequestChange notification)
 
+--------------------------------------------------------------------------------
+
+mkChangeNotification :: ForeignKey -> ChangeNotification
+mkChangeNotification k = ChangeNotification (fkEntity k) (fkSource k) (fkID k)
+
+--------------------------------------------------------------------------------
+
 newtype RetconClientZMQ z a =
     RetconClientZMQ {
-        unRetconClientZMQ :: ExceptT RetconAPIError (ReaderT (Socket z Req) (ZMQ z)) a
-      } deriving ( Functor, Applicative, Monad, MonadError RetconAPIError
+        unRetconClientZMQ :: ExceptT APIError (ReaderT (Socket z Req) (ZMQ z)) a
+      } deriving ( Functor, Applicative, Monad, MonadError APIError
                  , MonadReader (Socket z Req), MonadIO)
 
 
 -- | This typeclass provides an abstraction for sending messages to and
 -- recieving messages from a Retcon server.
-class (MonadError RetconAPIError m, Functor m)
+class (MonadError APIError m, Functor m)
         => RetconClientConnection m where
     performRequest :: (Binary request, Binary response)
                    => Header request response -> request -> m response
@@ -132,12 +113,13 @@ runRetconZMQ
     :: forall a.
        String -- ^ ZMQ connection target, e.g. \"tcp://127.0.0.1:1234\"
     -> (forall z. RetconClientZMQ z a)
-    -> IO (Either RetconAPIError a)
+    -> IO (Either APIError a)
 runRetconZMQ target action = runZMQ $ do
         soc <- socket Req
         connect soc target
-        let action' = runExceptT $ unRetconClientZMQ action
-        x <- runReaderT action' soc
+        x <- flip runReaderT soc
+           $ runExceptT
+           $ unRetconClientZMQ action
         disconnect soc target
         close soc
         return x

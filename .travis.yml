@@ -1,7 +1,7 @@
 language: haskell
 ghc: 7.8
 addons:
-      postgresql: "9.3"
+  postgresql: "9.3"
 notifications:
   email:
     on_success: change
@@ -17,3 +17,5 @@ before_install:
   - sudo su -c "echo '/usr/local/lib' > /etc/ld.so.conf.d/local.conf"
   - sudo ldconfig
   - cd ..
+  - git clone https://github.com/anchor/aeson-diff.git aeson-diff/
+  - cabal install ./aeson-diff/

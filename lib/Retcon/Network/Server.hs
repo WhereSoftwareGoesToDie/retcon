@@ -1,508 +1,567 @@
---
--- Copyright © 2013-2014 Anchor Systems, Pty Ltd and Others
---
--- The code in this file, and the program it is a part of, is
--- made available to you by its authors as open source software:
--- you can redistribute it and/or modify it under the terms of
--- the 3-clause BSD licence.
---
-
-{-# LANGUAGE DeriveDataTypeable         #-}
-{-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TupleSections              #-}
+{-# LANGUAGE TypeFamilies               #-}
 
-{-# OPTIONS_GHC -fno-warn-orphans #-}
-
--- | Server component for the retcon network API.
 module Retcon.Network.Server where
 
-import Control.Applicative
-import Control.Concurrent.Async
-import Control.Lens
-import Control.Monad
-import Control.Monad.Catch
-import Control.Monad.Except
-import Control.Monad.Logger
-import Control.Monad.Reader
-import qualified Data.Aeson as Aeson
-import Data.Binary
-import qualified Data.ByteString as BS
-import Data.ByteString.Lazy (fromStrict, toStrict)
-import qualified Data.ByteString.Lazy as LBS
-import Data.Either
-import Data.List.NonEmpty hiding (filter, length, map)
-import Data.Maybe
-import Data.Monoid
-import Data.String
-import Data.Typeable
-import Options.Applicative hiding (action)
-import System.ZMQ4.Monadic hiding (async)
+import           Control.Applicative
+import           Control.Concurrent
+import           Control.Concurrent.Async
+import           Control.Error.Util           ()
+import qualified Control.Exception            as E
+import           Control.Lens                 hiding (Context, coerce)
+import           Control.Monad.Catch
+import           Control.Monad.Error.Class
+import           Control.Monad.Reader
+import           Control.Monad.Trans.Except
+import qualified Data.Aeson.Diff              as D
+import           Data.Binary
+import qualified Data.ByteString              as BS hiding (unpack)
+import qualified Data.ByteString.Char8        as BS (unpack)
+import           Data.ByteString.Lazy         (fromStrict, toStrict)
+import qualified Data.ByteString.Lazy         as LBS
+import           Data.Coerce
+import           Data.Either
+import qualified Data.List                    as L
+import           Data.List.NonEmpty           hiding (filter, length, map)
+import qualified Data.Map                     as M
+import           Data.Maybe
+import           Data.Monoid
+import           Data.String
+import qualified Data.Text                    as T
+import qualified Data.Text.Encoding           as T
+import           Data.Traversable             ()
+import           System.Log.Logger
+import           System.ZMQ4
 
-import Retcon.Core
-import Retcon.Diff
-import Retcon.Document
-import Retcon.Error
-import Retcon.Handler
-import Retcon.Monad
-import Retcon.Options
+import           Retcon.Configuration
+import           Retcon.DataSource       (runDSMonad)
+import qualified Retcon.DataSource       as DS
+import           Retcon.Diff
+import           Retcon.Document
+import           Retcon.Identifier
+import           Retcon.Monad
+import           Retcon.Network.Protocol
+import           Retcon.Store
+import           Retcon.Store.PostgreSQL
 
--- | Values describing error states of the retcon API.
-data RetconAPIError
-    = UnknownServerError
-    | TimeoutError
-    | DecodeError
-    | InvalidNumberOfMessageParts
-    | UnknownKeyError -- ^ Notification contained an unknown key.
-  deriving (Show, Eq, Typeable)
 
-instance Exception RetconAPIError
+type ErrorMsg = String
 
-instance Enum RetconAPIError where
-    fromEnum TimeoutError = 0
-    fromEnum InvalidNumberOfMessageParts = 1
-    fromEnum DecodeError = 2
-    fromEnum UnknownKeyError = 3
-    fromEnum UnknownServerError = maxBound
+--------------------------------------------------------------------------------
 
-    toEnum 0 = TimeoutError
-    toEnum 1 = InvalidNumberOfMessageParts
-    toEnum 2 = DecodeError
-    toEnum 3 = UnknownKeyError
-    toEnum _ = UnknownServerError
+-- * Server
 
--- | An opaque reference to a Diff, used to uniquely reference the conflicted
--- diff for resolveDiff.
-newtype DiffID = DiffID
-    { unDiffID :: Int }
-  deriving (Binary, Eq, Show)
-
--- | A notification for Retcon that the document with 'ForeignID' which is an
--- 'EntityName' at the data source 'SourceName' has changed in some way.
-data ChangeNotification = ChangeNotification
-    { _notificationEntity    :: EntityName
-    , _notificationSource    :: SourceName
-    , _notificationForeignID :: ForeignID
+data ServerState = ServerState
+    { _serverContext :: Context       -- ^ ZMQ context
+    , _serverSocket  :: Socket Rep    -- ^ ZMQ socket
+    , _serverConfig  :: Configuration -- ^ retcond config
+    , _serverStore   :: PGStore       -- ^ Internal data store, shared between all server threads
     }
-  deriving (Eq, Show)
-makeLenses ''ChangeNotification
+makeLenses ''ServerState
 
--- | An opaque reference to a DiffOp, used when sending the list of selected
--- DiffOps to resolveDiff
-newtype ConflictedDiffOpID = ConflictedDiffOpID
-    { unConflictedDiffOpID :: Int }
-  deriving (Binary, Eq, Show)
+-- | Name of server component for logging.
+logName :: String
+logName = "Retcon.Server"
 
-getJSON
-    :: FromJSON a
-    => Get a
-getJSON = do
-    json <- Aeson.eitherDecode <$> get
-    case json of
-        Right x -> return x
-        Left msg -> fail msg
+-- | Spawn a thread serving the retcon API and a number of worker threads
+--   to process requests accepted by that server.
+--
+spawnServer :: Configuration -> Int -> IO ()
+spawnServer cfg n = do
+  _ <- bracket start stop $ \state -> do
 
-instance Binary (Diff ()) where
-    put = put . Aeson.encode
-    get = getJSON
+      -- Spawn a server implementing the protocol and some workers
+      api      <- spawnServerAPI state
+      peasants <- spawnServerWorkers state
 
-instance Binary (DiffOp ()) where
-    put = put . Aeson.encode
-    get = getJSON
+      -- Ensures workers die if the API server does.
+      mapM_ (link2 api) peasants
 
-instance Binary Document where
-    put = put . Aeson.encode
-    get = getJSON
-
-data RequestConflicted = RequestConflicted
-  deriving (Eq, Show)
-data ResponseConflicted
-    = ResponseConflicted
-        [ ( Document
-          , Diff ()
-          , DiffID
-          , [(ConflictedDiffOpID, DiffOp ())]
-        )]
-    -- | Pre-serialised version of the same data. This is generated on the server
-    -- to avoid the overhead of de-serialising from the database only to serialise
-    -- immediately. Woo.
-    | ResponseConflictedSerialised
-        [ ( BS.ByteString
-          , BS.ByteString
-          , Int
-          , [(Int, BS.ByteString)]
-        )]
-  deriving (Eq, Show)
-
-instance Binary RequestConflicted where
-    put _ = return ()
-    get = return RequestConflicted
-instance Binary ResponseConflicted where
-    put (ResponseConflicted ds) = put ds
-    put (ResponseConflictedSerialised ds) = put ds
-    get = ResponseConflicted <$> get
-
-data RequestChange = RequestChange ChangeNotification
-  deriving (Eq, Show)
-data ResponseChange = ResponseChange
-  deriving (Eq, Show)
-
-instance Binary RequestChange where
-    put (RequestChange (ChangeNotification entity source fk)) =
-        put (entity, source, fk)
-    get = do
-        (entity, source, fk) <- get
-        return . RequestChange $ ChangeNotification entity source fk
-instance Binary ResponseChange where
-    put _ = return ()
-    get = return ResponseChange
-
-data RequestResolve = RequestResolve DiffID [ConflictedDiffOpID]
-  deriving (Eq, Show)
-data ResponseResolve = ResponseResolve
-  deriving (Eq, Show)
-
-instance Binary RequestResolve where
-    put (RequestResolve did conflicts) = put (did, conflicts)
-    get = do
-        (did, conflicts) <- get
-        return $ RequestResolve did conflicts
-instance Binary ResponseResolve where
-    put _ = return ()
-    get = return ResponseResolve
-
-data InvalidRequest = InvalidRequest
-  deriving (Eq, Show)
-data InvalidResponse = InvalidResponse
-  deriving (Eq, Show)
-
-instance Binary InvalidRequest where
-    put _ = return ()
-    get = return InvalidRequest
-instance Binary InvalidResponse where
-    put _ = return ()
-    get = return InvalidResponse
-
-data Header request response where
-    HeaderConflicted :: Header RequestConflicted ResponseConflicted
-    HeaderChange :: Header RequestChange ResponseChange
-    HeaderResolve :: Header RequestResolve ResponseResolve
-    InvalidHeader :: Header InvalidRequest InvalidResponse
-
-data SomeHeader where
-    SomeHeader
-        :: Header request response
-        -> SomeHeader
-
-instance Enum SomeHeader where
-    fromEnum (SomeHeader HeaderConflicted) = 0
-    fromEnum (SomeHeader HeaderChange) = 1
-    fromEnum (SomeHeader HeaderResolve) = 2
-    fromEnum (SomeHeader InvalidHeader) = maxBound
-
-    toEnum 0 = SomeHeader HeaderConflicted
-    toEnum 1 = SomeHeader HeaderChange
-    toEnum 2 = SomeHeader HeaderResolve
-    toEnum _ = SomeHeader InvalidHeader
-
--- * Server configuration
-
--- | Configuration for the server.
-data ServerConfig = ServerConfig
-    { _cfgConnectionString :: String
-    }
-  deriving (Show, Eq)
-makeLenses ''ServerConfig
-
--- | Parser for server options.
-serverParser :: Parser ServerConfig
-serverParser = ServerConfig <$> connString
+      -- Wait for all of the API server or worker threads to finish.
+      mapM_ wait (api:peasants)
+  return ()
   where
-    connString = option str (
-           long "address"
-        <> short 'A'
-        <> metavar "SOCKET"
-        <> help "Server socket. e.g. tcp://0.0.0.0:60179")
+    spawnServerAPI :: ServerState -> IO (Async ())
+    spawnServerAPI = async . flip runProtocol protocol
 
--- * Server monad
+    spawnServerWorkers :: ServerState -> IO [Async ()]
+    spawnServerWorkers state
+      = replicateM n (async $ worker (_serverStore state) cfg)
 
--- | The State carried around in the server for retcon actions it needs to run.
-type State = RetconMonadState InitialisedEntity RWToken ()
+    start :: IO ServerState
+    start = do
+        noticeM logName "Starting Server"
+        let (zmq_conn, _, pg_conn) = configServer cfg
+        ctx    <- context
+        sock   <- socket ctx Rep
+        bind sock zmq_conn
+        db     <- initBackend (PGOpts pg_conn)
+        return $  ServerState ctx sock cfg db
 
--- | Monad for the API server actions to run in.
-newtype RetconServer z a = RetconServer
-    { unRetconServer :: ExceptT RetconAPIError
-        (ReaderT (Socket z Rep)
-            (ReaderT State
-                (LoggingT
-                    (ZMQ z)))) a
-    }
-  deriving (Applicative, Functor, Monad, MonadIO, MonadReader (Socket z Rep),
-            MonadError RetconAPIError, MonadLogger, MonadCatch, MonadThrow)
+    stop :: ServerState -> IO ()
+    stop state = do
+        closeBackend $ state ^. serverStore
+        close        $ state ^. serverSocket
+        term         $ state ^. serverContext
+        noticeM logName "Stopped Server"
 
--- | Run a handler in the 'RetconServer' monad using the ZMQ connection details.
-runRetconServer
-    :: forall a. ServerConfig
-    -> State
-    -> (forall z. RetconServer z a)
-    -> IO ()
-runRetconServer cfg state action = runZMQ $ runStdoutLoggingT $ do
-    sock <- lift . socket $ Rep
-    lift . bind sock $ cfg ^. cfgConnectionString
-    void $ flip runReaderT state . flip runReaderT sock . runExceptT . unRetconServer $ action
+--------------------------------------------------------------------------------
 
--- * Monads with ZMQ
+-- * Protocol Implementation
 
-liftZMQ :: ZMQ z a -> RetconServer z a
-liftZMQ = RetconServer . lift . lift . lift . lift
+-- | A monad which wraps up some state, some error handling, and some IO to
+-- implement the server side of retcond.
+newtype Protocol a = Proto
+    { unProtocol :: ExceptT APIError (ReaderT ServerState IO) a }
+  deriving (Applicative, Functor, Monad, MonadError APIError,
+  MonadIO, MonadReader ServerState)
 
-askState :: (forall z. RetconServer z State)
-askState = RetconServer . lift . lift $ ask
+instance MonadThrow Protocol where
+    throwM = liftIO . E.throwIO
 
--- * Server actions
+instance MonadCatch Protocol where
+    (Proto (ExceptT m)) `catch` f = Proto . ExceptT $ m `catch` (runExceptT . unProtocol . f)
 
-decodeStrict
-    :: (MonadError RetconAPIError m, Binary a)
-    => BS.ByteString
-    -> m a
-decodeStrict bs =
-    case decodeOrFail . fromStrict $ bs of
-        Left _ ->
-            -- TODO: Log this error somehow.
-            throwError DecodeError
-        Right (_, _, x) -> return x
+-- | Execute a 'Protocol' action.
+runProtocol :: ServerState -> Protocol a -> IO a
+runProtocol s act = do
+    res <- flip runReaderT s . runExceptT . unProtocol $ act
+    case res of
+        Left e -> throwM e
+        Right a -> return a
 
-encodeStrict
-    :: (Binary a)
-    => a
-    -> BS.ByteString
-encodeStrict = toStrict . encode
-
--- | Implement the API protocol.
-protocol
-    :: RetconServer z ()
+-- | Server protocol handler.
+protocol :: Protocol ()
 protocol = loop
   where
     loop = do
-        sock <- ask
-        cmd <- liftZMQ . receiveMulti $ sock
-        -- Decode and process the message.
+        sock <- _serverSocket <$> ask
+        -- Read a response from the client.
+        cmd <- liftIO $ receiveMulti sock
+        -- Decode and process it.
         (status, resp) <- case cmd of
-            [hdr, req] -> catchAndInject $
-                          join $ dispatchMessage <$> (toEnum <$> decodeStrict hdr)
-                                                 <*> pure (fromStrict req)
-            _          -> throwError InvalidNumberOfMessageParts
-        -- Encode and send the response.
-        liftZMQ . sendMulti sock . fromList $ [encodeStrict status, resp]
-        -- LOOOOOP
+            [hdr, req] -> catchAndInject . join $
+                    dispatch <$> (toEnum <$> decodeStrict hdr)
+                             <*> pure (fromStrict req)
+            _ -> throwError InvalidNumberOfMessageParts
+        -- Send the response to the client.
+        liftIO . sendMulti sock . fromList $ [encodeStrict status, resp]
+        -- Play it again, Sam.
         loop
-
-    -- Decode a request and call the appropriate handler.
-    dispatchMessage
+    dispatch
         :: SomeHeader
         -> LBS.ByteString
-        -> RetconServer z (Bool, BS.ByteString)
-    dispatchMessage (SomeHeader hdr) body =
+        -> Protocol (Bool, BS.ByteString)
+    dispatch (SomeHeader hdr) body =
         (True,) <$> case hdr of
             HeaderConflicted -> encodeStrict <$> listConflicts (decode body)
             HeaderResolve    -> encodeStrict <$> resolveConflict (decode body)
             HeaderChange     -> encodeStrict <$> notify (decode body)
-            InvalidHeader    -> encodeStrict <$> return InvalidResponse
+            InvalidHeader    -> return . encodeStrict $ InvalidResponse
 
     -- Catch exceptions and inject them into the monad as errors.
     --
     -- TODO: Chain together the catching and handling of difference Exception
     -- types and return more specific errors, if available.
     catchAndInject
-        :: RetconServer z (Bool, BS.ByteString)
-        -> RetconServer z (Bool, BS.ByteString)
-    catchAndInject action = catchError (catch action injectSomeException) reportAPIError
+        :: Protocol (Bool, BS.ByteString)
+        -> Protocol (Bool, BS.ByteString)
+    catchAndInject act = catchError (catch act injectSomeException) reportAPIError
       where
         injectSomeException
-            :: (MonadLogger m, MonadError RetconAPIError m)
+            :: (MonadIO m, MonadError APIError m)
             => SomeException
             -> m a
         injectSomeException e = do
-            logErrorN . fromString $
+            liftIO . errorM logName . fromString $
                 "Intercepted error to forward to client: " <> show e
             throwError UnknownServerError
 
     -- Handle an error in executing operations by sending it back to the client.
     reportAPIError
-        :: RetconAPIError
-        -> RetconServer z (Bool, BS.ByteString)
+        :: APIError
+        -> Protocol (Bool, BS.ByteString)
     reportAPIError e = do
-        logErrorN . fromString $
+        liftIO . errorM logName . fromString $
             "Could not process message: " <> show e
         return (False, toStrict . encode . fromEnum $ e)
 
--- | Run a RetconMonad action in the RetconServer monad.
-runRetconMonadInServer
-    :: RetconMonad InitialisedEntity RWToken () r
-    -> RetconServer z r
-runRetconMonadInServer action = do
-    state <- askState
-    result <- liftIO . runRetconMonad state $ action
+-- | Process a request for unresolved conflicts.
+listConflicts
+    :: RequestConflicted
+    -> Protocol ResponseConflicted
+listConflicts RequestConflicted = do
+    liftIO $ infoM logName "Listing conflicts"
+    conflicts <- liftIO . lookupConflicts =<< view serverStore
+    return $ ResponseConflictedSerialised $ fmap mkRespItem conflicts
+    where mkRespItem ConflictResp{..}
+            = ResponseConflictedSerialisedItem
+              _conflictRawDoc
+              _conflictRawDiff
+              (coerce _conflictDiffID)
+              (coerce _conflictRawOps)
 
-    case result of
-        Left (RetconUnknown key) -> do
-            logErrorN . fromString $
-                "Client notified an unknown key: " <> key
-            throwError UnknownKeyError
-        Left e -> do
-            logErrorN . fromString $
-                "Error running retcon action in server: " <> show e
-            throwError UnknownServerError
-        Right r -> return r
+-- | Process and resolve a conflict.
+resolveConflict
+    :: RequestResolve
+    -> Protocol ResponseResolve
+resolveConflict (RequestResolve diffID opIDs) = do
+    store <- view serverStore
+    liftIO . infoM logName $ "Resolving conflict: " <> show diffID
+    new <- composeNewDiff store
+    liftIO $ addWork store (WorkApplyPatch diffID $ new ^. patchDiff)
+    return ResponseResolve
+    where
+      composeNewDiff store = do
+        things <- liftIO $ lookupDiffConflicts store opIDs
+        return $ Patch Unamed $ D.Patch $ map _ops things
 
--- | Process a _notify_ message from the client, checking the
+-- | Notification of a change to be queued for processing.
 notify
     :: RequestChange
-    -> RetconServer z ResponseChange
-notify (RequestChange (ChangeNotification n d i)) = do
-    logInfoN . fromString $
-        "Processing change notification: " <> show (n,d,i)
+    -> Protocol ResponseChange
+notify (RequestChange nt) = do
+    let ent_name = nt ^. notificationEntity
+        src_name = nt ^. notificationSource
+        fid      = nt ^. notificationForeignID
+    cfg   <- _serverConfig <$> ask
+    store <- _serverStore  <$> ask
 
-    runRetconMonadInServer $ do
-        -- Check that the notification details are valid and, if so, add to the
-        -- work queue.
-        entities <- map dropEntityState <$> getRetconState
-        case someForeignKey entities (n,d,i) of
-            Just _  -> addWork (WorkNotify (n,d,i))
-            Nothing -> throwError (RetconUnknown $ show (n,d,i))
+    liftIO . infoM logName . T.unpack $
+        "Received change notification for: " <> ename ent_name <> "." <>
+        sname src_name <> "/" <> fid
+
+    let m_ds = do
+            Entity{..} <- M.lookup ent_name (configEntities cfg)
+            M.lookup src_name entitySources
+
+    case m_ds of
+        Nothing -> do
+            liftIO . errorM logName . T.unpack $ "Unknown entity or source: "
+                <> ename ent_name <> "." <> sname src_name
+            throwError UnknownKeyError
+        Just _ ->
+            liftIO . addWork store . WorkNotify $ ForeignKey ent_name src_name fid
 
     return ResponseChange
 
--- | Process a _resolve conflict_ message from the client.
+
+--------------------------------------------------------------------------------
+
+-- * Asynchronous Server Workers
+
+-- | Get a work item from the work queue, apply a constant backoff if there is
+--   nothing in the queue.
 --
--- The selected diff is marked as resolved; and a new diff is composed from the
--- selected operations and added to the work queue.
-resolveConflict
-    :: RequestResolve
-    -> RetconServer z ResponseResolve
-resolveConflict (RequestResolve diff_id op_ids) = do
-    logInfoN . fromString $
-        "Resolving diff " <> show (unDiffID diff_id) <> " with " <>
-        (show . map unConflictedDiffOpID $ op_ids)
+--   This function must not
+getWorkBackoff :: Store store => store -> IO (WorkItemID, WorkItem)
+getWorkBackoff store = do
+  work <- getWork store
+  case work of
+    Nothing -> threadDelay 50000 >> getWorkBackoff store
+    Just x  -> return x
 
-    runRetconMonadInServer $ do
-        new_diff <- composeNewDiff op_ids
-        addWork (WorkApplyPatch (unDiffID diff_id) new_diff)
-
-    return ResponseResolve
-
--- | Fetch the details of outstanding conflicts and return them to the client.
-listConflicts
-    :: RequestConflicted
-    -> RetconServer z ResponseConflicted
-listConflicts RequestConflicted = do
-    logInfoN . fromString $
-        "Listing conflicts for client"
-
-    conflicts <- runRetconMonadInServer lookupConflicts
-
-    logInfoN . fromString $
-        "Found " <> show (Prelude.length conflicts) <> " conflicts!"
-
-    return $ ResponseConflictedSerialised conflicts
-
--- | Retrieve selected 'DiffOp's from the store and combine them into a new
--- 'Diff'.
-composeNewDiff
-    :: ReadableToken s
-    => [ConflictedDiffOpID]
-    -> RetconMonad e s l (Diff ())
-composeNewDiff op_ids = do
-    ops <- lookupDiffConflicts . map unConflictedDiffOpID $ op_ids
-    return $ Diff () $ map thrd ops
-  where
-    thrd (_, _, c) = c
-
--- * API server
-
--- | Start a server running the retcon API over a ZMQ socket.
+-- | A worker for the retcond server.
+--   These workers cannot die, they simply log any errors and keep going.
 --
--- Open a ZMQ_REP socket and receive requests from it; unhandled errors are caught
--- and fed back through the socket to the client.
-apiServer
-    :: RetconConfig SomeEntity RWToken
-    -> ServerConfig
-    -> IO ()
-apiServer retcon_cfg server_cfg = runLogging (retcon_cfg ^. cfgLogging) $ do
-    logInfoN . fromString $
-        "Running server on " <> server_cfg ^. cfgConnectionString
+worker :: Store store => store -> Configuration -> IO ()
+worker store cfg = go
+  where -- Get a work item from the queue, mark it as busy and try to complete it.
+        -- If all goes well, mark the work as finished when done, otherwise signal
+        -- it as free.
+        --
+        go      = do
+          bracketOnError getIt ungetIt completeIt
+          go
 
-    -- Start the threads
-    liftIO $ race_
-        (bracket newState finaliseRetconState serverThread)
-        (bracket newState finaliseRetconState retconThread)
+        getIt   = liftIO $ getWorkBackoff store
+        ungetIt = ungetWork store . fst
 
-    logDebugN . fromString $
-        "Started API server and processing thread."
+        completeIt (work_id, item) = do
+          case item of
+            WorkNotify fk -> do
+              liftIO . debugM logName $ "Processing a notifcation: " <> show fk
+              processNotification store cfg fk
+            WorkApplyPatch did a_diff -> do
+              liftIO . debugM logName $ "Processing a diff: " <> show did
+              processDiff store cfg did a_diff
+          completeWork store work_id
+
+-- notifications
+
+processNotification :: Store store => store -> Configuration -> ForeignKey -> IO ()
+processNotification store cfg fk@(ForeignKey{..}) = do
+  let x = do e <- M.lookup fkEntity (configEntities cfg)
+             d <- M.lookup fkSource (entitySources e)
+             return (e, d)
+  case x of
+    Nothing -> liftIO . criticalM logName $ "Unknown key in workqueue: " <> show fk
+    Just (entity, source) -> do
+      ik    <- liftIO     $ lookupInternalKey store fk
+      doc   <- runDSMonad $ DS.readDocument source fk
+
+      let allSources = M.elems (entitySources entity)
+          sources    = L.delete source allSources
+
+      liftIO $ case (ik, doc) of
+        (Nothing, Left  e) -> notifyProblem (RetconUnknown $ show e)
+        (Nothing, Right d) -> notifyCreate  store sources fk d
+        (Just i,  Left  _) -> notifyDelete  store sources i
+        (Just i,  Right _) -> notifyUpdate  store allSources i (entityPolicy entity)
+
+-- | Creates a new internal document to reflect a new foreign change. Update
+--   all given data sources of the change.
+--
+--   Caller is responsible for: ensuring the datasources exclude the one from
+--   which the event originates.
+--
+notifyCreate :: Store store => store -> [DataSource] -> ForeignKey -> Document -> IO ()
+notifyCreate store datasources fk@(ForeignKey{..}) doc@(Document{..}) = do
+  infoM logName $ "CREATE: " <> show fk
+
+  -- Create an internal key associated with the new document
+  ik  <- createInternalKey store fkEntity
+  recordForeignKey store ik fk
+
+  -- Create an initial document
+  recordInitialDocument store ik doc
+
+  -- Update other sources in the entity
+  forM_ datasources (createDoc ik)
+
+  where createDoc ik ds = do
+          x <- runDSMonad
+             $ DS.createDocument ds
+             $ graftDoc doc ds
+          case x of
+            Left  e -> errorM logName ("notifyCreate: " <> show e)
+            Right f -> recordForeignKey store ik f
+
+        graftDoc Document{..} DataSource{..}
+          = Document sourceEntity sourceName _documentContent
+
+-- | Deletes internal document to reflect the foreign change. Update
+--   all given data sources of the change.
+--
+--   Caller is responsible for: ensuring the datasources exclude the one from
+--   which the event originates.
+--
+notifyDelete
+  :: Store store => store
+  -> [DataSource]
+  -> InternalKey
+  -> IO ()
+notifyDelete store datasources ik = do
+  infoM logName $ "DELETE: " <> show ik
+  forM_ datasources deleteDoc
+
+  where deleteDoc ds = do
+          f <- lookupForeignKey store (sourceName ds) ik
+          case f of
+            Nothing -> return ()
+            Just fk -> do
+              -- Delete the document
+              hushBoth $ runDSMonad $ DS.deleteDocument ds fk
+              -- Delete known foreign key
+              void $ deleteForeignKey store fk
+          -- Delete internal bookkeeping
+          void $ deleteInitialDocument store ik
+          deleteInternalKey store ik
+
+-- | Updates internal document to reflect the foreign change. Update
+--   all given data sources of the change.
+--
+notifyUpdate
+  :: Store store => store
+  -> [DataSource]
+  -> InternalKey
+  -> MergePolicy
+  -> IO ()
+notifyUpdate store datasources ik policy = do
+  infoM logName $ "UPDATE: " <> show ik
+
+  -- Fetch documents from all data sources.
+  docs <- mapM (getDocument store ik) datasources
+  let (_missing, valid) = partitionEithers docs
+
+  -- Load (or calculate) the initial document.
+  initial <- lookupInitialDocument store ik >>=
+      maybe (calculate valid) return
+
+  -- Extract and merge patches.
+  let (merged, rejects) = mergeAll policy $ map (diff policy initial) valid
+
+  if   null rejects
+  then debugM logName $ "No rejected changes processing " <> show ik
+  else infoM  logName $ "Rejected " <> show (length rejects) <> " changes in " <> show ik
+
+  -- Record changes in history.
+  did <- recordDiffs store ik (merged, rejects)
+  infoM logName $ "Recorded diff " <> show did <> " against " <> show ik
+
+  -- Update and save the documents.
+  let docs' = map (patch policy merged . either (const initial) id) docs
+  mapM_ (setDocument store ik) (L.zip datasources docs')
+
+  -- Update initial document.
+  let initial' = patch policy merged initial
+  recordInitialDocument store ik initial'
+
   where
-    newState =
-        initialiseRetconState retcon_cfg ()
-    serverThread state = do
-        putStrLn . fromString $
-          "Starting server, handling " <> (show . length $ state ^. retconConfig . cfgEntities) <> " entities"
-        void $ runRetconServer server_cfg state protocol
-        putStrLn  . fromString $
-          "Done server"
-    retconThread state = do
-        putStrLn . fromString $
-          "Starting worker, handling " <> (show . length $ state ^. retconConfig . cfgEntities) <> " entities"
-        void $ runRetconMonad state (forever $ processWork processWorkItem)
-        putStrLn "Done worker"
+    calculate :: [Document] -> IO Document
+    calculate docs = do
+      infoM logName $ "No initial document for " <> show ik <> "."
+      return . either (const $ emptyDocument (ikEntity ik) "<initial>") id
+        $ calculateInitialDocument docs
 
--- | Inspect a work item and perform whatever task is required.
-processWorkItem
-    :: WritableToken s
-    => WorkItem
-    -> RetconHandler s ()
-processWorkItem work = do
-    whenVerbose . logInfoN . fromString $
-        "Processing work item: " <> show work
-    case work of
-        WorkNotify fkval -> do
-            logDebugN . fromString $
-                "Processing a notifcation: " <> show fkval
-            dispatch fkval
+-- | Logs a problem with the notification.
+notifyProblem :: RetconError -> IO ()
+notifyProblem = errorM logName . (<>) "notifyProblem: " . show
 
-        WorkApplyPatch did new_diff -> do
-            logDebugN . fromString $
-                "Processing a diff: " <> show did
+-- | Apply a 'Patch' to resolve the conflicts on a previous update.
+--
+-- TODO(thsutton) We need to check the diff hasn't already been resolved.
+processDiff
+    :: (Store store, MonadIO m, Functor m)
+    => store
+    -> Configuration
+    -> DiffID
+    -> D.Patch
+    -> m ()
+processDiff store cfg diff_id a_diff = do
+  res <- runExceptT act
+  case res of
+    Left e -> liftIO . errorM logName $ e
+    Right () -> return ()
+  where
+    act = do
+      liftIO . infoM logName $ "Resolving errors in diff " <> show diff_id
+      conflict <- getConflict
 
-            details <- lookupDiff did
-            case details of
-                Nothing -> do
-                    logErrorN . fromString $
-                        "Could not process diff " <> show did <>
-                        " because it is missing!"
-                    return ()
-                Just (SomeInternalKey ik, _, _) -> do
-                    -- TODO: Check that the diff is conflicting.
+      let en = EntityName . T.decodeUtf8 $ conflict ^. diffEntity
+          ik = InternalKey en $ conflict ^. diffKey
+          a_patch = Patch Unamed a_diff
 
-                    -- Get the documents from the data sources.
-                    docs <- getDocuments ik
+      (policy, srcs) <- getSources en
 
-                    -- Get or build and initial document.
-                    initial <- fromMaybe (calculateInitialDocument . rights $ docs) <$>
-                               lookupInitialDocument ik
+      -- 0. Load and update the initial document.
+      initial <- liftIO $ fromMaybe (emptyDocument en "<initial>") <$>
+        lookupInitialDocument store ik
+      let initial' = patch policy a_patch initial
 
-                    -- Apply the diff and save the altered documents.
-                    distributeDiff ik initial (new_diff, [])
-                        . map (either (const initial) id)
-                        $ docs
+      -- 1. Apply the patch to all sources.
+      mapM_ (\src -> liftIO $ do
+        doc <- either (const initial') id <$> getDocument store ik src
+        setDocument store ik (src, patch policy a_patch doc)
+        ) srcs
 
-                    -- Mark the diff as being resolved.
-                    resolveDiff did
-    return ()
+      -- 2. Record the updated initial document.
+      liftIO $ recordInitialDocument store ik initial'
+
+      -- 3. Mark the conflicted patch as resolved.
+      liftIO $ resolveDiffs store diff_id
+      return ()
+
+    getConflict = do
+        conf <- liftIO $ lookupDiff store diff_id
+        case conf of
+          Nothing -> throwError $
+            "Cannot resolve diff " <> show diff_id <> " because it doesn't exist."
+          Just v -> return v
+
+    getSources en = do
+      let things = do
+            e    <- M.lookup en (configEntities cfg)
+            return ( entityPolicy e
+                   , map snd . M.toList . entitySources $ e)
+      case things of
+        Nothing -> throwError $
+            "Cannot resolve diff " <> show diff_id <> " because there are no "
+            <> "sources for " <> show en <> "."
+        Just x  -> return x
+
+--------------------------------------------------------------------------------
+
+-- * Data source functions
+
+-- | Get the 'Document' corresponding to an 'InternalKey' from a 'DataSource'.
+getDocument
+    :: Store store
+    => store
+    -> InternalKey
+    -> DataSource
+    -> IO (Either ErrorMsg Document)
+getDocument store ik ds = do
+  f  <- lookupForeignKey store (sourceName ds) ik
+  case f of
+    Nothing -> return (Left "getDocument: No foreign key found.")
+    Just fk -> fmap (over _Left show) . DS.runDSMonad $ DS.readDocument ds fk
+
+-- | Set the 'Document' in the given 'DataSource' corresponding to an 'InternalKey'.
+setDocument
+    :: Store store
+    => store
+    -> InternalKey
+    -> (DataSource, Document)
+    -> IO (Either ErrorMsg ForeignKey)
+setDocument store ik (ds, doc) = do
+  f <- lookupForeignKey store (sourceName ds) ik
+  case f of
+    Nothing -> return (Left "setDocument: No foreign key found.")
+    Just fk -> fmap (over _Left show) . DS.runDSMonad $ DS.updateDocument ds fk doc
+
+-- | Merge a sequence of 'Patch'es by applying a 'MergePolicy'.
+--
+mergeAll
+    :: MergePolicy
+    -> [Patch]
+    -> (Patch, [RejectedOp])
+mergeAll pol =
+  foldr (\p1 (p2, r) -> (r <>) <$> merge pol p1 p2)
+        (emptyPatch, mempty)
+
+extractDiff
+    :: Document
+    -> Document
+    -> Patch
+extractDiff = diff ignoreConflicts
+
+
+--------------------------------------------------------------------------------
+
+-- * Utility functions
+
+-- | Decode a serializable value from a strict 'ByteString'.
+--
+-- If the bytestring cannot be decoded, a 'DecodeError' is thrown.
+decodeStrict
+    :: (MonadIO m, MonadError APIError m, Binary a)
+    => BS.ByteString
+    -> m a
+decodeStrict bs =
+    case decodeOrFail . fromStrict $ bs of
+        Left _ -> do
+            liftIO . warningM logName . BS.unpack $
+                "Decode failure for input: " <> bs
+            throwError DecodeError
+        Right (_, _, x) -> return x
+
+-- | Encode a serialisable value into a strict 'ByteString'.
+encodeStrict
+    :: (Binary a)
+    => a
+    -> BS.ByteString
+encodeStrict = toStrict . encode
+
+-- | Silences both errors (via logging) and results.
+--
+hushBoth :: Show a => IO (Either a b) -> IO ()
+hushBoth act = act >>= \x -> case x of
+  Left e  -> errorM logName (show e)
+  Right _ -> return ()

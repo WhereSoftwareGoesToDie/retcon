@@ -1,378 +1,202 @@
 name:                retcon
-version:             0.1.0.0
-synopsis:            Synchronise multiple data sources.
-description:         Synchronise data shared between data sources.
+version:             0.0.2.0
+synopsis:            Daemon to propagate changes between JSON stores.
+description:
+  Retcon is a library and program to detect, extract, merge and propagate
+  changes to JSON documents stored in multiple systems.
+homepage:            https://github.com/anchor/retcon
 license:             BSD3
 license-file:        LICENSE
-author:              Thomas Sutton <thomas.sutton@anchor.net.au>
-maintainer:          Anchor Engineering <engineering@anchor.net.au>
-copyright:           (c) 2014 Anchor Systems, Pty Ltd and Others
+author:              Thomas Sutton
+maintainer:          me@thomas-sutton.id.au
+copyright:           Copyright 2014-2015 Thomas Sutton, Anchor Systems,
+                     and others.
 category:            Data
 build-type:          Simple
 extra-source-files:  README.md
-                   , retcon.sql
 cabal-version:       >=1.10
 
-source-repository head
+source-repository HEAD
   type: git
-  location: git@github.com:anchor/retcon.git
+  location: https://github.com/anchor/retcon
 
 library
-  exposed-modules:     Retcon.Core
-                     , Retcon.Network.Client
-                     , Retcon.Network.Server
-                     , Retcon.DataSource.JsonDirectory
-                     , Retcon.DataSource.PostgreSQL
-                     , Retcon.Diff
-                     , Retcon.Document
-                     , Retcon.Error
-                     , Retcon.Handler
-                     , Retcon.MergePolicy
-                     , Retcon.Monad
-                     , Retcon.Notifications
-                     , Retcon.Options
-                     , Retcon.Store.PostgreSQL
-                     , Retcon.Store.Memory
-                     -- Utility modules
-                     , Data.Tree.GenericTrie
-                     , Utility.Configuration
-  build-depends:       base >=4.7 && <4.8
-                     , aeson
-                     , async
-                     , bifunctors
-                     , bytestring
-                     , containers
-                     , directory
-                     , exceptions
-                     , semigroups
-                     , enclosed-exceptions
-                     , filepath
-                     , free
-                     , old-locale
-                     , HStringTemplate
-                     , lens
-                     , lifted-base
-                     , mime-mail
-                     , monad-control == 0.3.*
-                     , monad-logger
-                     , binary
-                     , mtl
-                     , optparse-applicative >= 0.11
-                     , postgresql-simple
-                     , random
-                     , text
-                     , time
-                     , transformers >= 0.4
-                     , transformers-base
-                     , trifecta
-                     , unix
-                     , unordered-containers
-                     , zeromq4-haskell
-  hs-source-dirs:      lib
   default-language:    Haskell2010
+  hs-source-dirs:      lib
+  exposed-modules:
+    Retcon
+    Retcon.Configuration
+    Retcon.DataSource
+    Retcon.Diff
+    Retcon.Document
+    Retcon.Identifier
+    Retcon.Store
+    Retcon.Monad
+    Retcon.Network.Protocol
+    Retcon.Network.Server
+    Retcon.Network.Client
+    Retcon.Store.Base
+    Retcon.Store.Memory
+    Retcon.Store.PostgreSQL
+    Retcon.Program.Daemon
+    Retcon.Program.Once
+  other-modules:
+    Paths_retcon
+  build-depends:
+      base >=4.7 && <4.8
+    , aeson
+    , aeson-diff
+    , async
+    , binary
+    , bytestring
+    , configurator
+    , containers
+    , errors
+    , exceptions
+    , hslogger
+    , lens
+    , mtl
+    , postgresql-simple
+    , process
+    , regex-compat
+    , semigroups
+    , text
+    , transformers >= 0.3
+    , transformers-compat >= 0.4
+    , zeromq4-haskell
+  ghc-options:
+    -Wall
 
-executable send-notifications
+executable retcon
   default-language:    Haskell2010
   hs-source-dirs:      src
-  main-is:             notifications.hs
-  build-depends:       base
-                     , HStringTemplate
-                     , bytestring
-                     , containers
-                     , filepath
-                     , mime-mail
-                     , old-locale
-                     , optparse-applicative
-                     , postgresql-simple
-                     , text
-                     , time
-                     , trifecta
-                     , retcon
+  main-is:             Oneshot.hs
+  other-modules:
+    Paths_retcon
+  build-depends:
+      base
+    , configurator
+    , ekg
+    , filepath
+    , optparse-applicative
+    , retcon
+    , text
+    , transformers
+    , transformers-compat
 
-executable             retcon
+executable retcond
+  default-language:    Haskell2010
+  hs-source-dirs:      src
+  main-is:             Main.hs
+  other-modules:
+    Paths_retcon
+  build-depends:
+      base
+    , configurator
+    , filepath
+    , optparse-applicative
+    , retcon
+    , text
+    , transformers
+    , transformers-compat
+
+executable client
   default-language:    Haskell2010
   hs-source-dirs:      src
   main-is:             client.hs
-  build-depends:       base
-                     , bytestring
-                     , lens
-                     , optparse-applicative
-                     , zeromq4-haskell
-                     , retcon
+  build-depends:
+      base
+    , bytestring
+    , lens
+    , optparse-applicative
+    , retcon
+    , text
+    , zeromq4-haskell
 
-executable             retcon-demo
+executable json-directory
   default-language:    Haskell2010
-  hs-source-dirs:      src
-  main-is:             CLI.hs
-  build-depends:       base
-                     , retcon
-                     , text
-                     , containers
-                     , unordered-containers
-                     , aeson
-                     , transformers
-                     , mtl
-                     , lens
-                     , directory
-                     , filepath
-                     , postgresql-simple
-                     , monad-logger
+  hs-source-dirs:      datasource
+  main-is:             json-directory.hs
+  build-depends:
+      base
+    , aeson
+    , bytestring
+    , directory
+    , filepath
+    , optparse-applicative
+    , random
+    , retcon
+    , text
+    , unix
 
-executable             client-demo
-  default-language:    Haskell2010
-  hs-source-dirs:      src
-  main-is:             client-demo.hs
-  build-depends:       base
-                     , bytestring
-                     , lens
-                     , optparse-applicative
-                     , zeromq4-haskell
-                     , retcon
-
-executable             server-demo
-  default-language:    Haskell2010
-  hs-source-dirs:      src
-  main-is:             server-demo.hs
-  build-depends:       base
-                     , lens
-                     , optparse-applicative
-                     , zeromq4-haskell
-                     , retcon
-
-test-suite             acceptance-test
+test-suite test-retcon
   type:                exitcode-stdio-1.0
   default-language:    Haskell2010
-  hs-source-dirs:      tests
-  main-is:             AcceptanceTest.hs
-  build-depends:       base
-                     , retcon
-                     , async
-                     , bytestring
-                     , process
-                     , text
-                     , containers
-                     , unordered-containers
-                     , hspec
-                     , aeson
-                     , transformers
-                     , mtl
-                     , lens
-                     , directory
-                     , filepath
-                     , postgresql-simple
-                     , monad-logger
+  hs-source-dirs:      test
+  main-is:             tests.hs
+  build-depends:
+      base
+    , hspec
+    , retcon
 
-test-suite             document-test
+test-suite source-test
   type:                exitcode-stdio-1.0
   default-language:    Haskell2010
-  hs-source-dirs:      tests
-  main-is:             DocumentTest.hs
-  other-modules:       TestHelpers, TreeHelpers
-  build-depends:       base
-                     , aeson
-                     , bytestring
-                     , lens
-                     , containers
-                     , directory
-                     , filepath
-                     , hspec
-                     , transformers
-                     , retcon
-                     , text
-                     , unordered-containers
-                     , QuickCheck
+  hs-source-dirs:      test
+  main-is:             source-test.hs
+  build-depends:
+      base
+    , HUnit
+    , aeson
+    , hspec
+    , retcon
 
-test-suite             diff-test
+test-suite policy-test
   type:                exitcode-stdio-1.0
   default-language:    Haskell2010
-  hs-source-dirs:      tests
-  main-is:             DiffTest.hs
-  other-modules:       TestHelpers, TreeHelpers
-  build-depends:       base
-                     , aeson
-                     , bytestring
-                     , containers
-                     , transformers
-                     , directory
-                     , filepath
-                     , hspec
-                     , retcon
-                     , text
-                     , unordered-containers
-                     , QuickCheck
+  hs-source-dirs:      test
+  main-is:             policy-test.hs
+  build-depends:
+      base
+    , HUnit
+    , aeson-diff
+    , hspec
+    , retcon
 
-test-suite             tree-test
+test-suite api-roundtrip-test
   type:                exitcode-stdio-1.0
   default-language:    Haskell2010
-  hs-source-dirs:      tests
-  main-is:             TreeTest.hs
-  other-modules:       TestHelpers, TreeHelpers
-  build-depends:       base
-                     , bytestring
-                     , containers
-                     , hspec
-                     , retcon
-                     , text
-                     , unordered-containers
-                     , QuickCheck
+  hs-source-dirs:      test
+  main-is:             api-roundtrip-test.hs
+  build-depends:
+      base
+    , HUnit
+    , async
+    , configurator
+    , either
+    , hslogger
+    , hspec
+    , mtl
+    , process
+    , retcon
 
-test-suite             policy-test
+test-suite store-psql-test
   type:                exitcode-stdio-1.0
   default-language:    Haskell2010
-  hs-source-dirs:      tests
-  main-is:             PolicyTest.hs
-  other-modules:       TestHelpers, TreeHelpers
-  build-depends:       base
-                     , bytestring
-                     , containers
-                     , hspec == 1.*
-                     , retcon
-                     , text
-                     , unordered-containers
-                     , QuickCheck
-
-test-suite             userapi-test
-  type:                exitcode-stdio-1.0
-  default-language:    Haskell2010
-  hs-source-dirs:      tests
-  main-is:             UserAPITest.hs
-  other-modules:       TestHelpers, TreeHelpers
-  build-depends:       base
-                     , aeson
-                     , bytestring
-                     , containers
-                     , directory
-                     , filepath
-                     , hspec == 1.*
-                     , lens
-                     , retcon
-                     , text
-                     , transformers
-                     , unordered-containers
-                     , QuickCheck
-
-test-suite             postgresql-test
-  type:                exitcode-stdio-1.0
-  default-language:    Haskell2010
-  hs-source-dirs:      tests
-  main-is:             PostgreSQLTest.hs
-  other-modules:       TestHelpers, TreeHelpers
-  build-depends:       base
-                     , aeson
-                     , bytestring
-                     , containers
-                     , directory
-                     , filepath
-                     , hspec
-                     , lens
-                     , postgresql-simple
-                     , process
-                     , retcon
-                     , text
-                     , transformers
-                     , unordered-containers
-                     , QuickCheck
-
-test-suite             handler-test
-  type:                exitcode-stdio-1.0
-  default-language:    Haskell2010
-  hs-source-dirs:      tests
-  main-is:             HandlerTest.hs
-  other-modules:       TestHelpers, TreeHelpers
-  build-depends:       base
-                     , aeson
-                     , bifunctors
-                     , bytestring
-                     , containers
-                     , directory
-                     , filepath
-                     , hspec
-                     , lens
-                     , mtl
-                     , postgresql-simple
-                     , process
-                     , retcon
-                     , text
-                     , transformers
-                     , unordered-containers
-                     , QuickCheck
-
-test-suite configuration-test
-  type:                exitcode-stdio-1.0
-  default-language:    Haskell2010
-  hs-source-dirs:      tests
-  main-is:             ConfigTest.hs
-  build-depends:       base
-                     , aeson
-                     , bytestring
-                     , containers
-                     , directory
-                     , hspec
-                     , mtl
-                     , retcon
-                     , text
-                     , transformers
-                     , trifecta
-
-test-suite store-postgresql-test
-  type:                exitcode-stdio-1.0
-  default-language:    Haskell2010
-  hs-source-dirs:      tests
-  main-is:             StorePostgreSQL.hs
-  build-depends:       base
-                     , aeson
-                     , bytestring
-                     , containers
-                     , hspec
-                     , lens
-                     , mtl
-                     , postgresql-simple
-                     , process
-                     , retcon
-                     , transformers
-
-test-suite           wire-formats-test
-  hs-source-dirs:    tests
-  main-is:           WireFormatsTest.hs
-  type:              exitcode-stdio-1.0
-  default-language:  Haskell2010
-
-  build-depends:     base
-                   , hspec
-                   , text
-                   , QuickCheck
-                   , mtl
-                   , bytestring
-                   , containers
-                   , binary
-                   , retcon
-
-  ghc-options:       -O2
-                     -threaded
-                     -Wall
-                     -Wwarn
-                     -fwarn-tabs
-
-test-suite           api-round-trip-test
-  hs-source-dirs:    tests
-  main-is:           APIRoundTripTest.hs
-  type:              exitcode-stdio-1.0
-  default-language:  Haskell2010
-  build-depends:     base
-                   , QuickCheck
-                   , async
-                   , binary
-                   , bytestring
-                   , containers
-                   , hspec
-                   , mtl
-                   , text
-                   , retcon
-
-  ghc-options:       -O2
-                     -threaded
-                     -Wall
-                     -Wwarn
-                     -fwarn-tabs
-
--- vim: set tabstop=21 expandtab:
+  hs-source-dirs:      test
+  main-is:             store-psql-test.hs
+  build-depends:
+      base
+    , aeson
+    , bytestring
+    , containers
+    , hspec
+    , lens
+    , mtl
+    , postgresql-simple
+    , process
+    , retcon
+    , text
+    , transformers
+    , unordered-containers
+    , vector
