@@ -906,7 +906,7 @@ class ReadableToken s => WritableToken s where
         -> Int
         -> RetconMonad e s l ()
 
-    -- | Fetch and delete up to @n@ 'Notifications from the data store.
+    -- | Fetch and delete up to @n@ 'Notification's from the data store.
     --
     -- Returns the number of 'Notification's remaining in the data store along
     -- with the list of 'Notification'.
