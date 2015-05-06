@@ -76,7 +76,6 @@ executable retcon
   build-depends:
       base
     , configurator
-    , ekg
     , filepath
     , optparse-applicative
     , retcon
