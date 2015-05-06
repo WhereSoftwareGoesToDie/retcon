@@ -12,15 +12,18 @@
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE TypeFamilies          #-}
 
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+
 module Main where
 
 import Control.Applicative
 import Control.Exception
 import Control.Monad
 import Control.Monad.Reader
+import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
 import Data.Proxy
-import System.Directory
+import Data.Text (Text)
 import System.Environment
 import Test.Hspec
 import Text.Trifecta
@@ -35,6 +38,9 @@ testfile = "tests/data/parameters.conf"
 testconfig :: FilePath
 testconfig = "tests/data/retcon.conf"
 
+-- | Initialiser: throw exception with params so they can be inspected in a
+-- test.
+explodeAfterLookup :: Initialiser (Map Text Text) b
 explodeAfterLookup = do
     p <- ask
     let values = (M.lookup "password" p, M.lookup "init" p, M.lookup "final" p)
@@ -73,12 +79,12 @@ configurationSuite = do
     describe "Retcon configuration" $ do
         let config = RetconOptions False (Just LogStdout) "dbname='retcon'" (Just testfile)
             testParser = (,) <$> optionsParser <*> pure ()
-        it "should load from a default 'retcon.conf'" $ do
+        it "should load from a default 'retcon.conf'" $
             parseOptionsWithDefault testParser testconfig `shouldReturn` (config,())
-        it "should load from a 'retcon.conf' specified on the command line" $ do
-            withArgs ["--config=" ++ testconfig] $ do
+        it "should load from a 'retcon.conf' specified on the command line" $
+            withArgs ["--config=" ++ testconfig] $
                 parseOptionsWithDefault testParser undefined `shouldReturn` (config,())
-        it "command line parameters should take precedence" $ do
+        it "command line parameters should take precedence" $
             withArgs [ "--verbose"
                      , "--db=dbname='testdb'"
                      , "--log=none"

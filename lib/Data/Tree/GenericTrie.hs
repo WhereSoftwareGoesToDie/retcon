@@ -119,7 +119,7 @@ lookup
     -> Tree k v
     -> Maybe v
 lookup []     (Node v _kids) = v
-lookup (n:ns) (Node _ kids ) = M.lookup n kids >>= lookup ns
+lookup (n:ns) (Node _  kids) = M.lookup n kids >>= lookup ns
 
 insert
     :: Ord k

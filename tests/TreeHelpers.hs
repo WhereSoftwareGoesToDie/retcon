@@ -8,6 +8,7 @@
 --
 
 {-# LANGUAGE OverloadedStrings #-}
+
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module TreeHelpers where
@@ -51,8 +52,8 @@ generateTree n = do
     value <- case kids of
         [] -> arbitrary
         _  -> return Nothing
-    labels <- vectorOf (n-1) arbitrary
-    return $ Node value $ M.fromList $ zip labels kids
+    kids_labels <- vectorOf (n-1) arbitrary
+    return $ Node value $ M.fromList $ zip kids_labels kids
 
 instance Arbitrary Text where
   arbitrary = T.pack <$> arbitrary

@@ -102,7 +102,6 @@ import Control.Concurrent
 import Control.Exception
 import Control.Exception.Enclosed
 import qualified Control.Exception.Lifted as LE
-import Control.Lens (view)
 import Control.Lens.Operators
 import Control.Monad.Base
 import Control.Monad.Except
@@ -148,11 +147,11 @@ runRetconAction l =
     -- Restrict store and add the local state.
     RetconMonad . withReaderT (localise l) . unRetconMonad .
     -- Do exception and error handling.
-    handle . handleAny (throwError . RetconError)
+    liftError . handleAny (throwError . RetconError)
   where
     -- | Handle any errors in an action, pulling them into the monad.
-    handle :: (Functor m, MonadError e m) => m v -> m (Either e v)
-    handle a = (Right <$> a) `catchError` (return . Left)
+    liftError :: (Functor m, MonadError e m) => m v -> m (Either e v)
+    liftError a = (Right <$> a) `catchError` (return . Left)
 
 -- | "Localise" the state as appropriate to run a 'RetconAction' in a
 -- 'RetconHandler' context.
@@ -504,7 +503,7 @@ someForeignKey entities (entity_name, source_name, key) =
     let entity_sym = someSymbolVal entity_name
         source_sym = someSymbolVal source_name
         same = concatMap (expandEntity entity_sym source_sym) entities
-    in listToMaybe $ same
+    in listToMaybe same
   where
     expandEntity
         :: SomeSymbol
@@ -548,7 +547,7 @@ someInternalKey entities (name, key) =
         -> Maybe SomeInternalKey
     matching (SomeSymbol symb) (SomeEntity (entity :: Proxy entity)) =
         case sameSymbol symb entity of
-            Just refl ->
+            Just _refl ->
                 let ik = InternalKey key :: (InternalKey entity)
                     sik = SomeInternalKey ik
                 in Just sik

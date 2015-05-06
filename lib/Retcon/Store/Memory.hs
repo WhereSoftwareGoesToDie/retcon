@@ -16,6 +16,8 @@
 {-# LANGUAGE TupleSections         #-}
 {-# LANGUAGE TypeFamilies          #-}
 
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+
 -- | Description: In-memory storage for operational data.
 --
 -- Retcon maintains quite a lot of operational data. This implements the
@@ -145,19 +147,19 @@ instance RetconStore MemStorage where
             ^. swapped & _2 %~ length
 
     -- TODO Implement
-    storeLookupDiff (MemStorage ref) did =
+    storeLookupDiff (MemStorage ref) _did =
         atomicModifyIORef' ref get
       where
         get st = (st, Nothing)
 
     -- TODO Implement
-    storeLookupDiffIds (MemStorage ref) ik =
+    storeLookupDiffIds (MemStorage ref) _ik =
         atomicModifyIORef' ref get
       where
         get st = (st, [])
 
     -- TODO: Implement
-    storeDeleteDiff (MemStorage ref) did =
+    storeDeleteDiff (MemStorage ref) _did =
         atomicModifyIORef' ref del
       where
         del st = (st, 0)
@@ -178,3 +180,15 @@ instance RetconStore MemStorage where
             let (del, keep) = splitAt limit $ st ^. memNotes
                 remaining = length keep
             in (st & memNotes .~ keep, (remaining, del))
+
+    storeResolveDiff = error "Retcon.Store.Memory: storeResolveDiff not supported."
+
+    storeLookupConflicts = error "Retcon.Store.Memory: storeLookupConflicts not supported."
+
+    storeLookupDiffConflicts = error "Retcon.Store.Memory: storeLookupDiffConflicts not supported."
+
+    storeAddWork = error "Retcon.Store.Memory: storeAddWork not supported."
+
+    storeGetWork = error "Retcon.Store.Memory: storeGetWork not supported."
+
+    storeCompleteWork = error "Retcon.Store.Memory: storeCompleteWork not supported."

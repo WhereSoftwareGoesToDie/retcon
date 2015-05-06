@@ -16,21 +16,14 @@ module Main where
 import Control.Applicative
 import Control.Monad
 import qualified Data.ByteString.Char8 as BS
-import qualified Data.ByteString.Lazy as LBS
 import Data.Text (Text)
 import qualified Data.Text as T
-import qualified Data.Text.Lazy as LT
-import qualified Data.Text.Lazy.Encoding as LT
 import Data.Time
-import Data.Time.Clock
 import qualified Database.PostgreSQL.Simple as PG
-import qualified Database.PostgreSQL.Simple.FromRow as PG
-import qualified Database.PostgreSQL.Simple.Notification as PG
 import Network.Mail.Mime
 import Options.Applicative
 import qualified Options.Applicative as O
 import Options.Applicative.Types (readerAsk)
-import System.Locale
 import Text.Trifecta hiding (Parser)
 
 import Retcon.Notifications
@@ -48,33 +41,33 @@ data Config = Config
 -- | Command-line options parser for configuration.
 configParser :: Parser Config
 configParser = Config
-    <$> dbParser
-    <*> rulesParser
-    <*> subjParser
-    <*> tplParser
-    <*> fromParser
+    <$> db_parser
+    <*> rules_parser
+    <*> subj_parser
+    <*> tpl_parser
+    <*> from_parser
   where
-    dbParser = O.option (BS.pack <$> readerAsk)
+    db_parser = O.option (BS.pack <$> readerAsk)
         ( long "database"
         <> metavar "CONNECTION"
         <> help "retcon database connection string"
         )
-    rulesParser = O.option str
+    rules_parser = O.option str
         ( long "rules"
         <> metavar "FILE"
         <> help "message dispatch rules path"
         )
-    subjParser = O.option (T.pack <$> readerAsk)
+    subj_parser = O.option (T.pack <$> readerAsk)
         ( long "subject"
         <> metavar "STRING"
         <> help "email subject template"
         )
-    tplParser = O.option str
+    tpl_parser = O.option str
         ( long "message"
         <> metavar "FILE"
         <> help "email message template path"
         )
-    fromParser = O.option (T.pack <$> readerAsk)
+    from_parser = O.option (T.pack <$> readerAsk)
         ( long "from"
         <> metavar "ADDRESS"
         <> help "email from address"
@@ -110,6 +103,6 @@ process
     -> [NotificationRule]
     -> [Notification]
     -> IO ()
-process tpl rules res = do
-    forM_ rules $ \rule -> do
-        mapM_ renderSendMail $ map (prepareMessage tpl rule) res
+process tpl rules res =
+    forM_ rules $ \rule ->
+        mapM_ (renderSendMail . prepareMessage tpl rule) res

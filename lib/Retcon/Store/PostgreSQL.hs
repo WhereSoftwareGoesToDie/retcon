@@ -25,7 +25,6 @@ import Control.Lens
 import Control.Monad
 import Data.Aeson
 import Data.ByteString (ByteString)
-import Data.Function
 import Data.List
 import Data.Map.Strict (Map)
 import Data.Maybe
@@ -36,11 +35,11 @@ import Data.Text (Text)
 import Database.PostgreSQL.Simple
 import GHC.TypeLits
 import System.Directory
-import Text.Trifecta hiding (Success, token)
+import Text.Trifecta hiding (Success, doc, source, token)
 import qualified Text.Trifecta as P
 
 import Retcon.Core
-import Retcon.Diff
+import Retcon.Diff hiding (diff)
 import Retcon.Options
 
 import Utility.Configuration
@@ -156,7 +155,7 @@ instance RetconStore PGStorage where
         -- the arbitrary, possibly unserialisable, labels.
 
         -- Extract the operations from the conflicting diffs.
-        let ops = map (toJSON) . concatOf (traversed . to void . diffChanges) $ ds
+        let ops = map toJSON . concatOf (traversed . to void . diffChanges) $ ds
 
         -- Record the merged diff in the database.
         [Only did] <- query conn diffQ (entity, key, not . null $ ops, encode . void $ d)
@@ -168,7 +167,7 @@ instance RetconStore PGStorage where
         diffQ = "INSERT INTO retcon_diff (entity, id, is_conflict, content) VALUES (?, ?, ?, ?) RETURNING diff_id"
         opsQ = "INSERT INTO retcon_diff_conflicts (diff_id, content) VALUES (?, ?)"
 
-    storeResolveDiff (PGStore conn _) did = do
+    storeResolveDiff (PGStore conn _) did =
         void $ execute conn sql (Only did)
       where
         sql = "UPDATE retcon_diff SET is_conflict = FALSE WHERE diff_id = ?"
@@ -204,7 +203,7 @@ instance RetconStore PGStorage where
         --
         -- TODO This is O(mn). I am embarrassing.
         match all_ops (doc, diff, diff_id) =
-            let ops = map (\(_, op_id, op) -> (op_id, op))
+            let ops = map (\(_, op_id, diff_op) -> (op_id, diff_op))
                     . filter (\(op_diff_id,_,_) -> diff_id == op_diff_id)
                     $ all_ops
             in (doc, diff, diff_id, ops)
@@ -218,12 +217,12 @@ instance RetconStore PGStorage where
             <> "LEFT JOIN retcon_diff AS diff ON (op.diff_id = diff.diff_id) "
             <> "WHERE diff.is_conflict ORDER BY op.diff_id ASC"
 
-    storeLookupDiffConflicts (PGStore conn _) ids = do
-        (map parse) <$> (query conn sql . Only . In $ ids)
+    storeLookupDiffConflicts (PGStore conn _) ids =
+        map parse <$> (query conn sql . Only . In $ ids)
       where
         sql = "SELECT diff_id, operation_id, content FROM retcon_diff_conflicts WHERE operation_id IN ?"
         parse :: (Int, Int, Value) -> (Int, Int, DiffOp ())
-        parse (did, opid, op_json) = do
+        parse (did, opid, op_json) =
             case fromJSON op_json of
                 Success dop -> (did, opid, dop)
                 Error e     -> error $
@@ -317,6 +316,6 @@ prepareConfig (opt, event) entities = do
 cleanupConfig
     :: RetconConfig SomeEntity RWToken
     -> IO ()
-cleanupConfig cfg = do
+cleanupConfig cfg =
     -- void $ finaliseEntities (cfg ^. cfgParams) $ cfg ^. cfgEntities
     void $ closeToken (cfg ^. cfgDB)

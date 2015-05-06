@@ -34,7 +34,6 @@ module Retcon.Document (
 
 import Control.Applicative
 import Control.Lens hiding ((.=))
-import Control.Lens.TH
 import Control.Monad
 import Data.Aeson
 import Data.Aeson.Types (Parser)
@@ -43,7 +42,7 @@ import Data.HashMap.Strict (lookup)
 import Data.List hiding (lookup)
 import qualified Data.Map as M
 import Data.Monoid
-import Data.Text (Text, unpack)
+import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Tree.GenericTrie (Tree (..))
 import GHC.Exts (IsList (..))
@@ -91,14 +90,24 @@ docFromJsonObject (Object v) =
             case identKey "_contents" of
                 Nothing          -> standardObj v
                 Just (Object v') -> specialObj tlv v'
+                Just (Array _) -> error $ "Retcon.Document.docFromJsonObject: "
+                    <> "Unexpected Array for _contents"
+                Just val -> error $ "Retcon.Document.docFromJsonObject: "
+                    <> "Unexpected _contents " <> show val
   where
     identKey s = lookup s v
-    standardObj v = Document . Node Nothing . M.fromList . H.toList <$>
-        traverse (\x -> unDocument <$> parseJSON x) v
-    specialObj Null v = Document . Node Nothing . M.fromList . H.toList <$>
-        traverse (\x -> unDocument <$> parseJSON x) v
-    specialObj (String tlv) v = Document . Node (Just tlv) . M.fromList . H.toList <$>
-        traverse (\x -> unDocument <$> parseJSON x) v
+    standardObj v' = Document . Node Nothing . M.fromList . H.toList <$>
+        traverse (\x -> unDocument <$> parseJSON x) v'
+    specialObj Null v' = Document . Node Nothing . M.fromList . H.toList <$>
+        traverse (\x -> unDocument <$> parseJSON x) v'
+    specialObj (String tlv) v' = Document . Node (Just tlv) . M.fromList . H.toList <$>
+        traverse (\x -> unDocument <$> parseJSON x) v'
+    specialObj _ _ = error "Retcon.Document.specialObj: "
+docFromJsonObject (Array _) =
+    error "Retcon.Document.docFromJsonObject: Given an Array not an Object."
+docFromJsonObject val =
+    error $ "Retcon.Document.docFromJsonObject: " <> "Given " <> show val
+        <> " not an Object."
 
 -- | Translate a document to JSON
 -- Allowing different behaviours at top level than subsequent levels.

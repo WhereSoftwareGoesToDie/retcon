@@ -4,8 +4,8 @@ import Control.Applicative
 import Options.Applicative
 
 import Retcon.Core
-import Retcon.Options
 import Retcon.Network.Server
+import Retcon.Options
 import Retcon.Store.PostgreSQL
 
 entities :: [SomeEntity]

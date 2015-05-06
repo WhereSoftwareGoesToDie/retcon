@@ -22,28 +22,21 @@ main = do
     -- Try to retrieve a list of conflicts.
     val <- runRetconZMQ conn getConflicted
     case val of
-        Left e -> do
-            putStr ":-( "
-            print e
-        Right l -> do
-            print l
-            putStrLn ":-)"
+        Left  e -> putStr ":-( " >> print e
+        Right l -> print l >> putStrLn ":-)"
 
     -- Try to send a "something changed" notification.
     let change = ChangeNotification "LOL" "no u" "123"
-    val <- runRetconZMQ conn $ enqueueChangeNotification change
-    case val of
-        Left  e -> do
-            putStr ":-( "
-            print e
-        Right _ -> do
-            putStrLn ":-)"
+    val2 <- runRetconZMQ conn $ enqueueChangeNotification change
+    case val2 of
+        Left  e -> putStr ":-( " >> print e
+        Right _ -> putStrLn ":-)"
 
 -- | Squirt arbitrary bytes down a ZMQ channel.
 sentBytes
     :: String
     -> IO ()
-sentBytes conn = do
+sentBytes conn =
     runZMQ $ do
         liftIO . putStrLn $ "Opening socket"
         sock <- socket Req

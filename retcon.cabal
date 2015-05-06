@@ -1,6 +1,7 @@
 name:                retcon
 version:             0.1.0.0
 synopsis:            Synchronise multiple data sources.
+description:         Synchronise data shared between data sources.
 license:             BSD3
 license-file:        LICENSE
 author:              Thomas Sutton <thomas.sutton@anchor.net.au>
@@ -305,12 +306,13 @@ test-suite configuration-test
                      , aeson
                      , bytestring
                      , containers
+                     , directory
                      , hspec
                      , mtl
+                     , retcon
+                     , text
                      , transformers
                      , trifecta
-                     , retcon
-                     , directory
 
 test-suite store-postgresql-test
   type:                exitcode-stdio-1.0
@@ -322,12 +324,12 @@ test-suite store-postgresql-test
                      , bytestring
                      , containers
                      , hspec
+                     , lens
                      , mtl
                      , postgresql-simple
                      , process
-                     , transformers
-                     , lens
                      , retcon
+                     , transformers
 
 test-suite           wire-formats-test
   hs-source-dirs:    tests
