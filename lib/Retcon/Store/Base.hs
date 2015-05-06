@@ -67,7 +67,7 @@ makeLenses ''OpResp
 -- | The internal store "module".
 --
 class Store store where
-  data StoreOpts opts
+  data StoreOpts store
 
   -- | Initialise a handle to the storage backend.
   initBackend  :: StoreOpts store -> IO store
