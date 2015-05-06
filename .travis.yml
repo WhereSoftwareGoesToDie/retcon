@@ -16,3 +16,4 @@ before_install:
   - sudo make install
   - sudo su -c "echo '/usr/local/lib' > /etc/ld.so.conf.d/local.conf"
   - sudo ldconfig
+  - cd ..
