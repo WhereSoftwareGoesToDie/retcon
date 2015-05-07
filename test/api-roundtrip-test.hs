@@ -34,9 +34,16 @@ import           Retcon.Network.Client
 import           Retcon.Network.Protocol
 import           Retcon.Network.Server
 
+path   :: FilePath
 path   = "test/api-roundtrip-test.conf"
+
+dbconn :: String
 dbconn = "tcp://127.0.0.1:1234"
+
+db     :: String
 db     = "retcon_test"
+
+dbfile :: FilePath
 dbfile = "test/retcon.sql"
 
 --------------------------------------------------------------------------------

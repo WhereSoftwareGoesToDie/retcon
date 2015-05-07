@@ -27,19 +27,19 @@ module Retcon.Network.Client
   , mkChangeNotification
   ) where
 
-import Control.Applicative
-import Control.Monad.Trans.Except
-import Control.Monad.Error.Class
-import Control.Monad.Reader
-import Data.Binary
-import Data.ByteString.Lazy (fromStrict)
-import Data.List.NonEmpty
-import System.ZMQ4.Monadic
+import           Control.Applicative
+import           Control.Monad.Error.Class
+import           Control.Monad.Reader
+import           Control.Monad.Trans.Except
+import           Data.Binary
+import           Data.ByteString.Lazy       (fromStrict)
+import           Data.List.NonEmpty
+import           System.ZMQ4.Monadic
 
-import Retcon.Identifier
-import Retcon.Network.Protocol
-import Retcon.Network.Server
-import Retcon.Store hiding (ops)
+import           Retcon.Identifier
+import           Retcon.Network.Protocol
+import           Retcon.Network.Server
+import           Retcon.Store               hiding (ops)
 
 
 -- | Retrieve all documents that are currently marked as being conflicted
