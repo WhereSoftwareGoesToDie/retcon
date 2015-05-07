@@ -51,7 +51,7 @@ library
     , bytestring
     , configurator
     , containers
-    , errors
+    , errors < 2.0
     , exceptions
     , hslogger
     , lens
@@ -105,12 +105,9 @@ executable client
   main-is:             client.hs
   build-depends:
       base
-    , bytestring
-    , lens
     , optparse-applicative
     , retcon
     , text
-    , zeromq4-haskell
 
 executable json-directory
   default-language:    Haskell2010
@@ -127,16 +124,6 @@ executable json-directory
     , retcon
     , text
     , unix
-
-test-suite test-retcon
-  type:                exitcode-stdio-1.0
-  default-language:    Haskell2010
-  hs-source-dirs:      test
-  main-is:             tests.hs
-  build-depends:
-      base
-    , hspec
-    , retcon
 
 test-suite source-test
   type:                exitcode-stdio-1.0
@@ -157,7 +144,6 @@ test-suite policy-test
   main-is:             policy-test.hs
   build-depends:
       base
-    , HUnit
     , aeson-diff
     , hspec
     , retcon
@@ -169,7 +155,6 @@ test-suite api-roundtrip-test
   main-is:             api-roundtrip-test.hs
   build-depends:
       base
-    , HUnit
     , async
     , configurator
     , either
@@ -188,14 +173,10 @@ test-suite store-psql-test
       base
     , aeson
     , bytestring
-    , containers
     , hspec
-    , lens
-    , mtl
     , postgresql-simple
     , process
     , retcon
     , text
     , transformers
-    , unordered-containers
     , vector

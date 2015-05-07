@@ -60,9 +60,6 @@ import           Retcon.Document
 import           Retcon.Identifier
 
 
--- TODO(thsutton): Remove this
-{-# ANN module ("HLint: ignore Reduce duplication" :: String) #-}
-
 logName :: String
 logName = "Retcon.DataSource"
 

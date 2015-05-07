@@ -30,5 +30,3 @@ import           Retcon.Document
 import           Retcon.Identifier
 
 import           Paths_retcon         as R
-
-{-# ANN module "HLint: ignore Use import/export shortcut" #-}
