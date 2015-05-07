@@ -7,9 +7,11 @@
 -- the 3-clause BSD licence.
 --
 
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TupleSections     #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE TupleSections         #-}
 
 -- | Description: Configuration for the system.
 module Retcon.Configuration where
@@ -142,6 +144,7 @@ parseEntity name cfg' = do
     parseSchema      cfg = liftIO $ C.lookup cfg "schema"
     parsePolicy      cfg = liftIO $ C.lookup cfg "merge-policy"
 
+    mkPolicy :: MonadError Text m => Maybe String -> m MergePolicy
     mkPolicy n
       | n == Just "accept-all"       = return acceptAll
       | n == Just "reject-all"       = return rejectAll
