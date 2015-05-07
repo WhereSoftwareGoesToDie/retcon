@@ -197,5 +197,6 @@ test-suite store-psql-test
     , retcon
     , text
     , transformers
+    , transformers-compat
     , unordered-containers
     , vector
