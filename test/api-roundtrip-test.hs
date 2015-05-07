@@ -16,17 +16,17 @@
 -- | Test the API round-trip.
 module Main where
 
-import Data.Monoid
-import System.Process
-import System.Exit
-import qualified Data.List as L
 import           Control.Applicative
 import           Control.Concurrent.Async
 import           Control.Monad
-import           Control.Monad.Except
+import           Control.Monad.Trans.Except
 import           Data.Configurator
 import           Data.Either.Combinators
+import qualified Data.List                  as L
+import           Data.Monoid
+import           System.Exit
 import           System.Log.Logger
+import           System.Process
 import           Test.Hspec
 
 import           Retcon
