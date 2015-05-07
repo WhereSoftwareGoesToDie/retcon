@@ -30,15 +30,7 @@ before_install:
  # Install ZeroMQ libraries.
  - |
     sudo apt-get remove libzmq1
-    wget http://download.zeromq.org/zeromq-4.0.4.tar.gz
-    tar -xf zeromq-4.0.4.tar.gz
-    cd zeromq-4.0.4
-    ./configure
-    make
-    sudo make install
-    sudo su -c "echo '/usr/local/lib' > /etc/ld.so.conf.d/local.conf"
-    sudo ldconfig
-    cd ..
+    sudo apt-get install libzmq3 libzmq3-dev
 
 install:
  - cabal --version
