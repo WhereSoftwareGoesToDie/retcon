@@ -19,10 +19,10 @@ module Main where
 import           Control.Applicative
 import           Control.Concurrent.Async
 import           Control.Monad
-import           Control.Monad.Except
+import           Control.Monad.Trans.Except
 import           Data.Configurator
 import           Data.Either.Combinators
-import qualified Data.List                as L
+import qualified Data.List                  as L
 import           Data.Monoid
 import           System.Exit
 import           System.Log.Logger

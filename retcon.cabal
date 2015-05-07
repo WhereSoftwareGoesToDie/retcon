@@ -163,6 +163,8 @@ test-suite api-roundtrip-test
     , mtl
     , process
     , retcon
+    , transformers
+    , transformers-compat
 
 test-suite store-psql-test
   type:                exitcode-stdio-1.0
@@ -179,4 +181,6 @@ test-suite store-psql-test
     , retcon
     , text
     , transformers
+    , transformers-compat
+    , unordered-containers
     , vector
