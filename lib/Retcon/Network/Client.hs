@@ -28,7 +28,8 @@ module Retcon.Network.Client
   ) where
 
 import Control.Applicative
-import Control.Monad.Except
+import Control.Monad.Trans.Except
+import Control.Monad.Error.Class
 import Control.Monad.Reader
 import Data.Binary
 import Data.ByteString.Lazy (fromStrict)
