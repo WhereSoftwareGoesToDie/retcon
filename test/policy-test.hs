@@ -7,31 +7,53 @@ import qualified Data.Aeson.Diff as D
 import           Test.Hspec
 
 import           Retcon.Diff
+import           Retcon.Identifier
 
 suite :: Spec
 suite = do
     describe "ignoreConflicts merge policy" $ do
-        let d1 = mkPatch
+        let d1 = mkPatch Nothing
                  [ Ins [D.OKey "value"] "one"
-                 , Ins [D.OKey "pet"] "cat"]
+                 , Ins [D.OKey "pet"] "cat"
+                 , Del [D.OKey "type"] "zebra"
+                 ]
 
-            d2 = mkPatch
+            d2 = mkPatch Nothing
                  [ Ins [D.OKey "value"] "two"
-                 , Del [D.OKey "food"] ""]
+                 , Del [D.OKey "food"] ""
+                 , Ins [D.OKey "owner"] "Doge"
+                 ]
 
-            (accepted, rejected) = merge ignoreConflicts d1 d2
+            d3 = mkPatch Nothing
+                 [ Ins [D.OKey "food"] "grass"
+                 , Ins [D.OKey "type"] "goat"
+                 , Del [D.OKey "color"] "pink"
+                 , Del [D.OKey "value"] "$$$"
+                 ]
+
+            (accepted, rejected) = mergeWith ignoreConflicts [d1,d2,d3]
 
         it "should accept changes that do not conflict" $
-            accepted `shouldBe` mkPatch [ Ins [D.OKey "pet"] "cat"
-                                        , Del [D.OKey "food"] ""]
+            accepted `shouldBe` mkPatch Nothing
+                                        [ Del [D.OKey "value"] "$$$"
+                                        , Ins [D.OKey "pet"] "cat"
+                                        , Ins [D.OKey "owner"] "Doge"
+                                        , Del [D.OKey "color"] "pink"
+                                        ]
 
         it "should ignore all changes which conflict" $
             rejected `shouldBe` map mkRej [ Ins [D.OKey "value"] "one"
-                                          , Ins [D.OKey "value"] "two" ]
+                                          , Ins [D.OKey "value"] "two"
+                                          , Del [D.OKey "value"] "$$$"
+                                          , Del [D.OKey "food"] ""
+                                          , Ins [D.OKey "food"] "grass"
+                                          , Del [D.OKey "type"] "zebra"
+                                          , Ins [D.OKey "type"] "goat"
+                                          ]
 
     describe "rejectAll merge policy" $ do
-        let d1    = mkPatch [Ins [D.OKey "value"] "one"]
-            d2    = mkPatch [Ins [D.OKey "value"] "two"]
+        let d1    = mkPatch Nothing [Ins [D.OKey "value"] "one"]
+            d2    = mkPatch Nothing [Ins [D.OKey "value"] "two"]
             (d,c) = merge rejectAll d1 d2
 
         it "should ignore all changes" $ do
@@ -40,12 +62,12 @@ suite = do
                                    , Ins [D.OKey "value"] "two" ]
 
     describe "acceptAll merge policy" $ do
-        let d1    = mkPatch [Ins [D.OKey "value"] "one"]
-            d2    = mkPatch [Ins [D.OKey "value"] "two"]
+        let d1    = mkPatch Nothing [Ins [D.OKey "value"] "one"]
+            d2    = mkPatch Nothing [Ins [D.OKey "value"] "two"]
             (d,c) = merge acceptAll d1 d2
 
         it "should accept all changes" $ do
-            d `shouldBe` mkPatch [ Ins [D.OKey "value"] "one"
+            d `shouldBe` mkPatch Nothing [ Ins [D.OKey "value"] "one"
                                  , Ins [D.OKey "value"] "two" ]
             c `shouldBe` []
 
@@ -61,8 +83,9 @@ suite = do
             c `shouldBe` [ RejectedOp (Name "peasant") $ Ins [D.OKey "value"] "two" ]
 
 
-mkPatch :: [Operation] -> Patch
-mkPatch = Patch Unamed . D.Patch
+mkPatch :: Maybe SourceName -> [Operation] -> Patch
+mkPatch Nothing  = Patch Unamed   . D.Patch
+mkPatch (Just n) = Patch (Name n) . D.Patch
 
 mkRej :: Operation -> RejectedOp
 mkRej = RejectedOp Unamed

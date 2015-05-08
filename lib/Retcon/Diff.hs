@@ -1,15 +1,15 @@
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards   #-}
-{-# LANGUAGE TemplateHaskell   #-}
-{-# LANGUAGE ViewPatterns      #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE ViewPatterns    #-}
 
 -- | Description: Diff and patch /Retcon/ documents.
 module Retcon.Diff
      ( -- * Operations
        diff
      , patch
-     , merge
+     , mergeWith
      , extractLabel
+     , merge
 
        -- * Merge policies
      , MergePolicy
@@ -33,12 +33,12 @@ module Retcon.Diff
 import           Control.Applicative
 import           Control.Lens        hiding ((.=))
 import qualified Data.Aeson.Diff     as D
+import           Data.Either
 import qualified Data.Map            as M
 import           Data.Monoid
 
 import           Retcon.Document
 import           Retcon.Identifier
-
 
 data PatchLabel
   = Unamed           -- ^ ()
@@ -61,7 +61,8 @@ makeLenses ''RejectedOp
 --
 data MergePolicy = MergePolicy
   { extractLabel :: Document -> PatchLabel
-  , merge        :: Patch    -> Patch -> MergeResult }
+  , mergeWith    :: [Patch]  -> MergeResult
+  }
 
 type MergeResult = (Patch, [RejectedOp])
 
@@ -76,8 +77,9 @@ emptyPatch = Patch Unamed mempty
 doNothing :: MergePolicy
 doNothing = MergePolicy {..}
   where
-    extractLabel   = const Unamed
-    merge      _ _ = (emptyPatch, mempty)
+    extractLabel    = const Unamed
+    mergeWith ps    = (emptyPatch, concatMap rej ps)
+    rej (Patch n o) = map (RejectedOp n) (o ^. patchOperations)
 
 -- | Policy: accept all changes.
 --
@@ -86,7 +88,9 @@ acceptAll :: MergePolicy
 acceptAll = MergePolicy {..}
   where
     extractLabel = const Unamed
-    merge p1 p2  = (Patch Unamed $ (p1 ^. patchDiff) <> (p2 ^. patchDiff), mempty)
+    mergeWith ps =
+        let os = concatMap (^. patchDiff . patchOperations) ps
+        in (Patch Unamed (D.Patch os), mempty)
 
 -- | Policy: reject all changes.
 --
@@ -95,19 +99,18 @@ rejectAll :: MergePolicy
 rejectAll = MergePolicy {..}
   where
     extractLabel = const Unamed
-    merge p1 p2  = (Patch Unamed mempty, reject p1 <> reject p2)
+    mergeWith ps = (Patch Unamed mempty, concatMap reject ps)
 
 -- | Trust only patches from a particular 'DataSource', discarding all other
--- changes.
+--   changes.
 trustOnlySource :: SourceName -> MergePolicy
-trustOnlySource (Name -> name) = MergePolicy {..}
+trustOnlySource n@(Name -> name) = MergePolicy {..}
   where
     extractLabel d = Name $ d ^. documentSource
-    merge p1 p2
-      | name == (p2 ^. patchLabel) = (p2, reject p1)
-      | name == (p1 ^. patchLabel) = (p1, reject p2)
-      | otherwise = ( Patch name mempty
-                    , reject p1 <> reject p2 )
+    mergeWith ps =
+        let (acc, rej) = partitionEithers . map hasName $ concatMap reject ps
+        in (Patch (Name n) $ D.Patch (map (^. rejectedOperation) acc), rej)
+    hasName o = if name == o ^. rejectedLabel then Left o else Right o
 
 -- | Policy: reject all conflicting changes.
 --
@@ -117,20 +120,24 @@ ignoreConflicts :: MergePolicy
 ignoreConflicts = MergePolicy {..}
   where
     extractLabel = const Unamed
-    merge p1 p2
-      = let m1 = toMap p1
-            m2 = toMap p2
+    mergeWith :: [Patch] -> MergeResult
+    mergeWith ps =
+        let ops = concatMap reject ps
+            m1  = mempty :: M.Map D.Path [RejectedOp]
+            m2  = mempty :: M.Map D.Path [RejectedOp]
             allOps    = M.unionWith (++) m1 m2
             conflicts = M.intersectionWith (++) m1 m2
             accepts   = M.difference allOps conflicts
-        in  (fromMap accepts, justOps conflicts)
+        in (fromMap accepts, concat $ M.elems conflicts)
 
-    justOps = map (RejectedOp Unamed)       . concat . M.elems
-    fromMap = foldr addOperation emptyPatch . concat . M.elems
+    fromMap :: M.Map D.Path [RejectedOp] -> Patch
+    fromMap = foldr addOperation emptyPatch . map (^. rejectedOperation) . concat . M.elems
 
     -- Groups changes in a patch by the change path.
-    toMap   = foldr count M.empty . D.patchOperations . _patchDiff
-    count o = M.insertWith (++) (D.changePath o) [o]
+    toMap  :: Patch -> M.Map D.Path [RejectedOp]
+    toMap p = foldr count M.empty $ reject p
+    count :: RejectedOp -> M.Map D.Path [RejectedOp] -> M.Map D.Path [RejectedOp]
+    count o = M.insertWith (++) (D.changePath $ o ^. rejectedOperation) [o]
 
 --------------------------------------------------------------------------------
 
@@ -155,6 +162,14 @@ patch
     -> Document
     -> Document
 patch MergePolicy{} p d = d & documentContent %~ D.patch (p ^. patchDiff)
+
+-- | Use a 'MergePolicy' to merge a pair of 'Patch'es.
+merge
+    :: MergePolicy
+    -> Patch
+    -> Patch
+    -> MergeResult
+merge pol p1 p2 = mergeWith pol [p1, p2]
 
 --------------------------------------------------------------------------------
 
