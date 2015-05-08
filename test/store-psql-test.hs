@@ -96,7 +96,7 @@ prepareDatabase action = bracket setupSuite teardownSuite (const action)
     setupSuite = do
         _ <- system $ concat [ " dropdb --if-exists ", db, " >/dev/null 2>&1 "
                              , " && createdb ", db
-                             , " && psql --quiet --file=retcon.sql ", db
+                             , " && psql --quiet --file=schema/retcon.sql ", db
                              ]
         return ()
 

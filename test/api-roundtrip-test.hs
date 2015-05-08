@@ -35,7 +35,7 @@ db     :: String
 db     = "retcon_test"
 
 dbfile :: FilePath
-dbfile = "test/retcon.sql"
+dbfile = "schema/retcon.sql"
 
 --------------------------------------------------------------------------------
 
