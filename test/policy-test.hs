@@ -16,6 +16,8 @@ suite = do
                  [ Ins [D.OKey "value"] "one"
                  , Ins [D.OKey "pet"] "cat"
                  , Del [D.OKey "type"] "zebra"
+                 , Del [D.OKey "size"] "small"
+                 , Ins [D.OKey "size"] "medium"
                  ]
 
             d2 = mkPatch Nothing
@@ -38,6 +40,8 @@ suite = do
                                         [ Ins [D.OKey "pet"] "cat"
                                         , Ins [D.OKey "owner"] "Doge"
                                         , Del [D.OKey "color"] "pink"
+                                        , Del [D.OKey "size"] "small"
+                                        , Ins [D.OKey "size"] "medium"
                                         ]
 
         it "should ignore all changes which conflict" $
