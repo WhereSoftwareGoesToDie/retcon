@@ -16,6 +16,7 @@ import           Control.Lens               hiding (op)
 import           Control.Monad
 import           Data.Aeson
 import           Data.Aeson.Diff            ()
+import qualified Data.Aeson.Diff            as D
 import           Data.ByteString            (ByteString)
 import qualified Data.List                  as L
 import           Data.Maybe
@@ -152,6 +153,26 @@ instance Store PGStore where
       void $ execute conn sql (Only did)
     where
       sql = "UPDATE retcon_diff SET is_conflict = FALSE WHERE diff_id = ?"
+
+  reduceDiff (PGStore conn _) did oids = do
+      let content = encode os
+
+      x <- map fromSuccess . filter isSuccess . map (fromJSON . fromOnly) <$> query conn foo (Only did)
+      putStrLn $ "BEFORE: " ++ show (x :: [D.Patch])
+
+      -- Change the diff
+      void $ execute conn "UPDATE retcon_diff SET content = ? WHERE diff_id = ?" (content, did)
+      -- Change the corresponding conflicts
+      cons <- query conn "SELECT * FROM retcon_diff_conflicts WHERE diff_id = ?" (Only diff_id)
+
+      y <- map fromSuccess . filter isSuccess . map (fromJSON . fromOnly) <$> query conn foo (Only did)
+      putStrLn $ "AFTER: " ++ show (y :: [D.Patch])
+
+    where
+      foo = "SELECT * FROM retcon_diff WHERE diff_id = ?"
+      fromSuccess (Success a) = a
+      fromSuccess _ = error "fromSuccess: Cannot unwrap not-a-success."
+      isSuccess (Success _) = True
 
   lookupDiff (PGStore conn _) diff_id = do
       let query' sql = query conn sql (Only diff_id)

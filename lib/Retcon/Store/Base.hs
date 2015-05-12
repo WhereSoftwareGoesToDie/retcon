@@ -133,6 +133,9 @@ class Store store where
   -- | Record that the conflicts in a 'Diff' are resolved.
   resolveDiffs        :: store -> DiffID -> IO ()
 
+  -- | Partially resolve a 'Diff'.
+  reduceDiff          :: store -> DiffID -> [D.Operation] -> IO ()
+
   -- | Lookup the list of 'Diff' IDs associated with an 'InternalKey'.
   lookupDiffIDs       :: store -> InternalKey -> IO [DiffID]
 
