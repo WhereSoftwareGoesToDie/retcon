@@ -18,3 +18,16 @@ post change notifications, resolve conflicts, etc.
 [badge]: https://travis-ci.org/anchor/retcon.svg?branch=master
 [status]: https://travis-ci.org/anchor/retcon
 [retcon]: https://en.wikipedia.org/wiki/Retcon
+
+
+Binaries
+--------
+
+This package produces three executables:
+
+* retcond: long-running server that receives notifications and issues updates
+  to entity sources as required.
+* retcon-client: send a notification to a retcond.
+* retcon-oneshot: useful for testing and debugging, perform a retcon update
+  without going through the rigmarole of setting up a retcond and then issuing
+  a requests with retcon-client.
