@@ -38,19 +38,19 @@ suite = do
         it "should accept changes that do not conflict" $
             accepted `shouldBe` mkPatch Nothing
                                         [ Ins [D.OKey "pet"] "cat"
-                                        , Ins [D.OKey "owner"] "Doge"
-                                        , Del [D.OKey "color"] "pink"
                                         , Del [D.OKey "size"] "small"
                                         , Ins [D.OKey "size"] "medium"
+                                        , Ins [D.OKey "owner"] "Doge"
+                                        , Del [D.OKey "color"] "pink"
                                         ]
 
         it "should ignore all changes which conflict" $
-            rejected `shouldBe` map mkRej [ Del [D.OKey "food"] ""
-                                          , Ins [D.OKey "food"] "grass"
+            rejected `shouldBe` map mkRej [ Ins [D.OKey "value"] "one"
                                           , Del [D.OKey "type"] "zebra"
-                                          , Ins [D.OKey "type"] "goat"
-                                          , Ins [D.OKey "value"] "one"
                                           , Ins [D.OKey "value"] "two"
+                                          , Del [D.OKey "food"] ""
+                                          , Ins [D.OKey "food"] "grass"
+                                          , Ins [D.OKey "type"] "goat"
                                           , Del [D.OKey "value"] "$$$"
                                           ]
 
