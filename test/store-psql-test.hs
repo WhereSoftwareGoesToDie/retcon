@@ -94,7 +94,7 @@ prepareDatabase action = bracket setupSuite teardownSuite (const action)
 
     setupSuite :: IO ()
     setupSuite = do
-        _ <- system $ concat [ " dropdb --if-exists ", db, " >/dev/null 2>&1 "
+        callCommand $ concat [ " dropdb --if-exists ", db, " >/dev/null 2>&1 "
                              , " && createdb ", db
                              , " && psql --quiet --file=schema/retcon.sql ", db
                              ]
@@ -102,7 +102,7 @@ prepareDatabase action = bracket setupSuite teardownSuite (const action)
 
     teardownSuite :: a -> IO ()
     teardownSuite _ = do
-        _ <- system $ concat [ "dropdb --if-exists ", db, " >/dev/null 2>&1 " ]
+        callCommand $ concat [ "dropdb --if-exists ", db, " >/dev/null 2>&1 " ]
         return ()
 
 postgresqlSuite :: Spec
