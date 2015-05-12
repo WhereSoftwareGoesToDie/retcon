@@ -34,7 +34,7 @@ import           Control.Applicative
 import           Control.Lens        hiding ((.=))
 import qualified Data.Aeson.Diff     as D
 import           Data.Either
-import qualified Data.Map            as M
+import           Data.List
 import           Data.Monoid
 
 import           Retcon.Document
@@ -114,33 +114,29 @@ trustOnlySource n@(Name -> name) = MergePolicy {..}
 
 -- | Policy: reject all conflicting changes.
 --
---   Changes will be applied iff they are the sole change affecting that key; all
---   other changes will be rejected.
+--   Changes will be applied iff changes for that key appear in only one diff;
+--   all changes to keys which appear in multiple diffs will be rejected.
 ignoreConflicts :: MergePolicy
 ignoreConflicts = MergePolicy {..}
   where
     extractLabel = const Unamed
     mergeWith :: [Patch] -> MergeResult
-    mergeWith ps =
-        let ops    = map toMap ps
-            allOps = mapReduce (M.unionWith (++)) ops
-            ignore = M.filter (\l -> 1 < length l) allOps
-            accept = M.difference allOps ignore
-        in (fromMap accept, concat $ M.elems ignore)
+    mergeWith patches =
+        let patch_keys = map (nub . sort . map D.changePath . D.patchOperations . _patchDiff) patches
+            touched = group . sort . concat $ patch_keys
+            accepted_paths = map head . filter (\l -> length l == 1) $ touched
+            allOps = reject =<< patches
+            (rejected, accepted) = partitionEithers . map (filterChanges accepted_paths) $ allOps
+        in (makePatch accepted, rejected)
 
-    fromMap :: M.Map D.Path [RejectedOp] -> Patch
-    fromMap = foldr addOperation emptyPatch . map (^. rejectedOperation) . concat . M.elems
+    -- | Filter out rejected changes.
+    filterChanges :: [D.Path] -> RejectedOp -> Either RejectedOp RejectedOp
+    filterChanges acc rop =
+        if (D.changePath $ rop ^. rejectedOperation) `elem` acc
+            then Right rop
+            else Left rop
 
-    mapReduce _ [] = mempty
-    mapReduce _ [m] = m
-    mapReduce f (h:r) = f h (mapReduce f r)
-
-    -- Groups changes in a patch by the change path.
-    toMap  :: Patch -> M.Map D.Path [RejectedOp]
-    toMap p = foldr count M.empty $ reject p
-
-    count :: RejectedOp -> M.Map D.Path [RejectedOp] -> M.Map D.Path [RejectedOp]
-    count o = M.insertWith (++) (D.changePath $ o ^. rejectedOperation) [o]
+    makePatch = foldr addOperation emptyPatch . map (^. rejectedOperation)
 
 --------------------------------------------------------------------------------
 
@@ -183,7 +179,7 @@ reject :: Patch -> [RejectedOp]
 reject p = fmap (RejectedOp (p ^. patchLabel)) . D.patchOperations $ p ^. patchDiff
 
 addOperation :: D.Operation -> Patch -> Patch
-addOperation x p = p & patchDiff . patchOperations <>~ [x]
+addOperation x p = p & patchDiff . patchOperations %~ (x:)
 
 patchOperations :: Lens' D.Patch [D.Operation]
 patchOperations f (D.Patch os) = D.Patch <$> f os
