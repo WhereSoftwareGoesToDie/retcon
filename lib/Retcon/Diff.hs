@@ -30,6 +30,8 @@ module Retcon.Diff
      , rejectedOperation
      ) where
 
+import           Debug.Trace
+
 import           Control.Applicative
 import           Control.Lens        hiding ((.=))
 import qualified Data.Aeson.Diff     as D
@@ -122,20 +124,23 @@ ignoreConflicts = MergePolicy {..}
     extractLabel = const Unamed
     mergeWith :: [Patch] -> MergeResult
     mergeWith ps =
-        let ops = concatMap reject ps
-            m1  = mempty :: M.Map D.Path [RejectedOp]
-            m2  = mempty :: M.Map D.Path [RejectedOp]
-            allOps    = M.unionWith (++) m1 m2
-            conflicts = M.intersectionWith (++) m1 m2
-            accepts   = M.difference allOps conflicts
-        in (fromMap accepts, concat $ M.elems conflicts)
+        let ops    = map toMap ps
+            allOps = mapReduce (M.unionWith (++)) ops
+            ignore = M.filter (\l -> 1 < length l) allOps
+            accept = M.difference allOps ignore
+        in (fromMap accept, concat $ M.elems ignore)
 
     fromMap :: M.Map D.Path [RejectedOp] -> Patch
     fromMap = foldr addOperation emptyPatch . map (^. rejectedOperation) . concat . M.elems
 
+    mapReduce _ [] = mempty
+    mapReduce _ [m] = m
+    mapReduce f (h:r) = f h (mapReduce f r)
+
     -- Groups changes in a patch by the change path.
     toMap  :: Patch -> M.Map D.Path [RejectedOp]
     toMap p = foldr count M.empty $ reject p
+
     count :: RejectedOp -> M.Map D.Path [RejectedOp] -> M.Map D.Path [RejectedOp]
     count o = M.insertWith (++) (D.changePath $ o ^. rejectedOperation) [o]
 
