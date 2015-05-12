@@ -30,8 +30,6 @@ module Retcon.Diff
      , rejectedOperation
      ) where
 
-import           Debug.Trace
-
 import           Control.Applicative
 import           Control.Lens        hiding ((.=))
 import qualified Data.Aeson.Diff     as D
