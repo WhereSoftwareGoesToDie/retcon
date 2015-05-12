@@ -35,20 +35,19 @@ suite = do
 
         it "should accept changes that do not conflict" $
             accepted `shouldBe` mkPatch Nothing
-                                        [ Del [D.OKey "value"] "$$$"
-                                        , Ins [D.OKey "pet"] "cat"
+                                        [ Ins [D.OKey "pet"] "cat"
                                         , Ins [D.OKey "owner"] "Doge"
                                         , Del [D.OKey "color"] "pink"
                                         ]
 
         it "should ignore all changes which conflict" $
-            rejected `shouldBe` map mkRej [ Ins [D.OKey "value"] "one"
-                                          , Ins [D.OKey "value"] "two"
-                                          , Del [D.OKey "value"] "$$$"
-                                          , Del [D.OKey "food"] ""
+            rejected `shouldBe` map mkRej [ Del [D.OKey "food"] ""
                                           , Ins [D.OKey "food"] "grass"
                                           , Del [D.OKey "type"] "zebra"
                                           , Ins [D.OKey "type"] "goat"
+                                          , Ins [D.OKey "value"] "one"
+                                          , Ins [D.OKey "value"] "two"
+                                          , Del [D.OKey "value"] "$$$"
                                           ]
 
     describe "rejectAll merge policy" $ do
