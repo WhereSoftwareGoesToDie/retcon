@@ -434,56 +434,69 @@ processDiff
     -> DiffID
     -> D.Patch
     -> m ()
-processDiff store cfg diff_id a_diff = do
+processDiff store cfg diffID resolveDiff = do
   res <- runExceptT act
   case res of
     Left e -> liftIO . errorM logName $ e
     Right () -> return ()
   where
     act = do
-      liftIO . infoM logName $ "Resolving errors in diff " <> show diff_id
+      liftIO . infoM logName $ "Resolving errors in diff " <> show diffID
       conflict <- getConflict
 
-      let en = EntityName . T.decodeUtf8 $ conflict ^. diffEntity
-          ik = InternalKey en $ conflict ^. diffKey
-          a_patch = Patch Unamed a_diff
+      let en           = EntityName . T.decodeUtf8 $ conflict ^. diffEntity
+          ik           = InternalKey en $ conflict ^. diffKey
+          resolvePatch = Patch Unamed resolveDiff
 
       (policy, srcs) <- getSources en
 
       -- 0. Load and update the initial document.
-      initial <- liftIO $ fromMaybe (emptyDocument en "<initial>") <$>
-        lookupInitialDocument store ik
-      let initial' = patch policy a_patch initial
+      initial <-  liftIO $ fromMaybe (emptyDocument en "<initial>")
+              <$> lookupInitialDocument store ik
+      let initial' = patch policy resolvePatch initial
 
       -- 1. Apply the patch to all sources.
-      mapM_ (\src -> liftIO $ do
-        doc <- either (const initial') id <$> getDocument store ik src
-        setDocument store ik (src, patch policy a_patch doc)
-        ) srcs
+      forM_ srcs $ \src -> liftIO $ do
+        doc <-  either (const initial') id
+            <$> getDocument store ik src
+        setDocument store ik (src, patch policy resolvePatch doc)
 
       -- 2. Record the updated initial document.
       liftIO $ recordInitialDocument store ik initial'
 
       -- 3. Mark the conflicted patch as resolved.
-      liftIO $ resolveDiffs store diff_id
-      return ()
+      let resolveKeys  = getKeys (D.patchOperations resolveDiff)
+          conflictKeys = getKeys $ conflict ^. diffConflicts
+      liftIO $
+        if   resolveKeys == conflictKeys
+        then do infoM logName $ "Mark as resolved diff " <> show diffID
+                resolveDiffs store diffID
+        else do infoM logName $ "Reduce diff " <> show diffID
+                reduceDiff   store diffID resolveKeys
+
+    getKeys = L.nub . L.sort . map D.changePath
 
     getConflict = do
-        conf <- liftIO $ lookupDiff store diff_id
+        conf <- liftIO $ lookupDiff store diffID
         case conf of
-          Nothing -> throwError $
-            "Cannot resolve diff " <> show diff_id <> " because it doesn't exist."
+          Nothing ->  throwError
+                   $  "Cannot resolve diff "
+                   <>  show diffID
+                   <> " because it doesn't exist."
           Just v -> return v
 
     getSources en = do
       let things = do
             e    <- M.lookup en (configEntities cfg)
-            return ( entityPolicy e
-                   , map snd . M.toList . entitySources $ e)
+            return (entityPolicy e, map snd . M.toList . entitySources $ e)
       case things of
-        Nothing -> throwError $
-            "Cannot resolve diff " <> show diff_id <> " because there are no "
-            <> "sources for " <> show en <> "."
+        Nothing ->  throwError
+                 $  "Cannot resolve diff "
+                 <> show diffID
+                 <> " because there are no "
+                 <> "sources for "
+                 <> show en
+                 <> "."
         Just x  -> return x
 
 --------------------------------------------------------------------------------
