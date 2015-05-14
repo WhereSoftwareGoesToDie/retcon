@@ -36,6 +36,13 @@ data PGStore = PGStore
 sqlConcat :: IsString x => [String] -> x
 sqlConcat = fromString . L.intercalate ";"
 
+onlySuccess :: FromJSON a => [Only Value] -> [a]
+onlySuccess = map fromSuccess . filter isSuccess . map (fromJSON . fromOnly)
+fromSuccess (Success a) = a
+fromSuccess _           = error "fromSuccess: Cannot unwrap not-a-success."
+isSuccess (Success _)   = True
+isSuccess   _           = False
+
 -- | Persistent PostgreSQL-backed data storage.
 instance Store PGStore where
   newtype StoreOpts PGStore = PGOpts { connstr :: ByteString }
@@ -149,51 +156,38 @@ instance Store PGStore where
       diffQ = "INSERT INTO retcon_diff (entity, id, is_conflict, content) VALUES (?, ?, ?, ?) RETURNING diff_id"
       opsQ = "INSERT INTO retcon_diff_conflicts (diff_id, content) VALUES (?, ?)"
 
-  resolveDiffs (PGStore conn _) did =
-      void $ execute conn sql (Only did)
-    where
-      sql = "UPDATE retcon_diff SET is_conflict = FALSE WHERE diff_id = ?"
+  resolveDiffs (PGStore conn _) did = do
+      execute conn "DELETE FROM retcon_diff_conflicts WHERE diff_id = ?" (Only did)
+      execute conn "UPDATE retcon_diff SET is_conflict = FALSE WHERE diff_id = ?" (Only did)
+      return ()
 
-  reduceDiff (PGStore conn _) did oids = do
-      let content = encode os
-
-      x <- map fromSuccess . filter isSuccess . map (fromJSON . fromOnly) <$> query conn foo (Only did)
-      putStrLn $ "BEFORE: " ++ show (x :: [D.Patch])
-
-      -- Change the diff
-      void $ execute conn "UPDATE retcon_diff SET content = ? WHERE diff_id = ?" (content, did)
+  reduceDiff (PGStore conn _) patchID resolved = do
       -- Change the corresponding conflicts
-      cons <- query conn "SELECT * FROM retcon_diff_conflicts WHERE diff_id = ?" (Only diff_id)
-
-      y <- map fromSuccess . filter isSuccess . map (fromJSON . fromOnly) <$> query conn foo (Only did)
-      putStrLn $ "AFTER: " ++ show (y :: [D.Patch])
+      conops <- getOps
+      forM_ (map Only $ filterOps conops)
+           $ execute conn "DELETE FROM retcon_diff_conflicts WHERE operation_id = ?"
 
     where
-      foo = "SELECT * FROM retcon_diff WHERE diff_id = ?"
-      fromSuccess (Success a) = a
-      fromSuccess _ = error "fromSuccess: Cannot unwrap not-a-success."
-      isSuccess (Success _) = True
+      getOps :: IO [(OpID, Value)]
+      getOps = query conn "SELECT operation_id, content FROM retcon_diff_conflicts WHERE diff_id = ?" (Only patchID)
+
+      filterOps = map fst
+                . filter (flip elem resolved . D.changePath . snd)
+                . map (fmap fromSuccess)
+                . filter (isSuccess . snd)
+                . map (fmap fromJSON)
 
   lookupDiff (PGStore conn _) diff_id = do
-      let query' sql = query conn sql (Only diff_id)
-
       -- Load the merged diff.
-      diff <- query' "SELECT entity, id, content FROM retcon_diff WHERE diff_id = ?"
+      diff <- query conn "SELECT entity, id, content FROM retcon_diff WHERE diff_id = ?" (Only diff_id)
       let diff' = fmap (\(entity, key, c) -> (entity,key,) <$> fromJSON c) diff
 
       -- Load the conflicting fragments.
       conflicts <- query conn "SELECT content FROM retcon_diff_conflicts WHERE diff_id = ?" (Only diff_id)
-      let conflicts' = map fromSuccess $ filter isSuccess $ map (fromJSON . fromOnly) conflicts
 
       return $ case diff' of
-          Success (entity,key,d):_ -> Just $ DiffResp entity key d conflicts'
-          _ -> Nothing
-    where
-      _3 (_,_,z) = z
-      fromSuccess (Success a) = a
-      fromSuccess _ = error "fromSuccess: Cannot unwrap not-a-success."
-      isSuccess (Success _) = True
-      isSuccess _ = False
+          Success (entity,key,d):_ -> Just $ DiffResp entity key d (onlySuccess conflicts)
+          _                        -> Nothing
 
   -- | Lookup the list of conflicted 'Diff's with related information.
   lookupConflicts (PGStore conn _) = do

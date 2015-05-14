@@ -134,7 +134,7 @@ class Store store where
   resolveDiffs        :: store -> DiffID -> IO ()
 
   -- | Partially resolve a 'Diff'.
-  reduceDiff          :: store -> DiffID -> [D.Operation] -> IO ()
+  reduceDiff          :: store -> DiffID -> [D.Path] -> IO ()
 
   -- | Lookup the list of 'Diff' IDs associated with an 'InternalKey'.
   lookupDiffIDs       :: store -> InternalKey -> IO [DiffID]

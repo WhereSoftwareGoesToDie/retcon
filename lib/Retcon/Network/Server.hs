@@ -447,11 +447,6 @@ processDiff store cfg diffID resolveDiff = do
       let en           = EntityName . T.decodeUtf8 $ conflict ^. diffEntity
           ik           = InternalKey en $ conflict ^. diffKey
           resolvePatch = Patch Unamed resolveDiff
-          resolveKeys  = getKeys (D.patchOperations resolveDiff)
-          conflictKeys = getKeys $ conflict ^. diffConflicts
-
-      liftIO . putStrLn $ "resolveKeys: " ++ show resolveKeys
-      liftIO . putStrLn $ "conflictKeys: " ++ show conflictKeys
 
       (policy, srcs) <- getSources en
 
@@ -470,10 +465,14 @@ processDiff store cfg diffID resolveDiff = do
       liftIO $ recordInitialDocument store ik initial'
 
       -- 3. Mark the conflicted patch as resolved.
+      let resolveKeys  = getKeys (D.patchOperations resolveDiff)
+          conflictKeys = getKeys $ conflict ^. diffConflicts
       liftIO $
         if   resolveKeys == conflictKeys
-        then resolveDiffs store diffID
-        else reduceDiff store diffID resolveKeys
+        then do infoM logName $ "Reducing diff " <> show diffID
+                resolveDiffs store diffID
+        else do infoM logName $ "Mark as resolved diff " <> show diffID
+                reduceDiff   store diffID resolveKeys
 
     getKeys = L.nub . L.sort . map D.changePath
 
