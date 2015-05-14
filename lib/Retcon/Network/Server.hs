@@ -469,9 +469,9 @@ processDiff store cfg diffID resolveDiff = do
           conflictKeys = getKeys $ conflict ^. diffConflicts
       liftIO $
         if   resolveKeys == conflictKeys
-        then do infoM logName $ "Reducing diff " <> show diffID
+        then do infoM logName $ "Mark as resolved diff " <> show diffID
                 resolveDiffs store diffID
-        else do infoM logName $ "Mark as resolved diff " <> show diffID
+        else do infoM logName $ "Reduce diff " <> show diffID
                 reduceDiff   store diffID resolveKeys
 
     getKeys = L.nub . L.sort . map D.changePath
