@@ -407,7 +407,8 @@ notifyUpdate store datasources ik policy = do
 
   -- Update and save the documents.
   let docs' = map (patch policy merged . either (const initial) id) docs
-  mapM_ (setDocument store ik) (L.zip datasources docs')
+  failures <- lefts <$> mapM (setDocument store ik) (L.zip datasources docs')
+  mapM_ (\e -> errorM logName $ "setDocument error: " <> e) failures
 
   -- Update initial document.
   let initial' = patch policy merged initial
@@ -459,7 +460,10 @@ processDiff store cfg diffID resolveDiff = do
       forM_ srcs $ \src -> liftIO $ do
         doc <-  either (const initial') id
             <$> getDocument store ik src
-        setDocument store ik (src, patch policy resolvePatch doc)
+        res <- setDocument store ik (src, patch policy resolvePatch doc)
+        case res of
+            Right _ -> return ()
+            Left  e -> errorM logName $ "setDocument error: " <> e
 
       -- 2. Record the updated initial document.
       liftIO $ recordInitialDocument store ik initial'
