@@ -395,7 +395,9 @@ notifyUpdate store datasources ik policy = do
       maybe (calculate valid) return
 
   -- Extract and merge patches.
-  let (merged, rejects) = mergeAll policy $ map (diff policy initial) valid
+  let diffs = map (diff policy initial) valid
+  let diffs' = filter (\d -> (d ^. patchDiff) /= mempty) diffs
+  let (merged, rejects) = mergeAll policy diffs'
 
   if   null rejects
   then debugM logName $ "No rejected changes processing " <> show ik
