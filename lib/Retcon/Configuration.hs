@@ -8,6 +8,8 @@
 module Retcon.Configuration where
 
 import           Control.Applicative
+import           Control.Concurrent
+import           Control.Monad
 import           Control.Monad.Error.Class
 import           Control.Monad.IO.Class
 import           Control.Monad.Trans.Except
@@ -22,11 +24,67 @@ import           Data.Monoid
 import           Data.String
 import           Data.Text                  (Text)
 import qualified Data.Text                  as T
-import           System.Log.Logger
-
 import           Retcon.Diff
 import           Retcon.Identifier
+import           System.IO.Unsafe
+import           System.Log.Logger
+import           System.Metrics             (Store, createCounter,
+                                             createGauge, newStore)
+import           System.Metrics.Counter     (Counter)
+import qualified System.Metrics.Counter     as Counter
+import           System.Metrics.Gauge       (Gauge)
 
+metersStore :: MVar Store
+metersStore = unsafePerformIO $ newStore >>= newMVar
+{-# NOINLINE metersStore #-}
+
+metersMVar :: MVar Meters
+metersMVar = unsafePerformIO newEmptyMVar
+{-# NOINLINE metersMVar #-}
+
+getDataSourceMeters :: Meters -> EntityName -> SourceName -> Either String DataSourceMeters
+getDataSourceMeters m en sn =
+    case M.lookup en m of
+        Nothing -> Left $ "No metrics for entity: " <> show en
+        Just em -> case M.lookup sn em of
+            Nothing -> Left $ "No metrics for entity and data source: "
+                <> n
+            Just dm -> Right dm
+  where
+    n = T.unpack $ ename en <> "/" <> sname sn
+
+incNotifications :: EntityName -> SourceName -> IO ()
+incNotifications en sn = do
+    meters <- readMVar metersMVar
+    case getDataSourceMeters meters en sn of
+        Left err -> Prelude.putStrLn $ "lulz" <> err
+        Right dm -> Counter.inc $ sourceNumNotifications dm
+
+initialiseMeters :: Configuration -> IO ()
+initialiseMeters (Configuration eMap _) = do
+    let entities = M.assocs eMap
+    meters <- forM entities $ \(eName, e) -> do
+        entityMeters <- initialiseEntity (eName, e)
+        return (eName, entityMeters)
+    putMVar metersMVar (M.fromList meters)
+  where
+    initialiseEntity :: (EntityName, Entity) -> IO EntityMeters
+    initialiseEntity (eName, e) = do
+        let sourceNames = M.keys $ entitySources e
+        entityMeters <- forM sourceNames $ \s -> do
+            sourceMeters <- initialiseSource eName s
+            return (s, sourceMeters)
+        return $ M.fromList entityMeters
+    initialiseSource :: EntityName -> SourceName -> IO DataSourceMeters
+    initialiseSource (EntityName e) (SourceName s) = do
+        let baseName = e <> "/" <> s
+        store <- readMVar metersStore
+        DataSourceMeters <$> createCounter (baseName <> "_count_notifications") store
+                         <*> createCounter (baseName <> "_count_creates")       store
+                         <*> createCounter (baseName <> "_count_reads")         store
+                         <*> createCounter (baseName <> "_count_updates")       store
+                         <*> createCounter (baseName <> "_count_deletes")       store
+                         <*> createGauge   (baseName <> "_gauge_foreign_keys")  store
 
 -- | Command template.
 newtype Command = Command { unCommand :: Text }
@@ -34,6 +92,20 @@ newtype Command = Command { unCommand :: Text }
 
 instance IsString Command where
     fromString = Command . T.pack
+
+-- | EKG metrics
+
+data DataSourceMeters = DataSourceMeters
+    { sourceNumNotifications :: Counter -- ^ Number of update notifications from the data source.
+    , sourceNumCreates       :: Counter -- ^ Number of create requests to the data source.
+    , sourceNumReads         :: Counter -- ^ Number of read   requests to the data source.
+    , sourceNumUpdates       :: Counter -- ^ Number of update requests to the data source.
+    , sourceNumDeletes       :: Counter -- ^ Number of delete requests to the data source.
+    , sourceNumKeys          :: Gauge   -- ^ Number of tracked foreign keys for this data source.
+    }
+
+type EntityMeters = Map SourceName DataSourceMeters
+type Meters = Map EntityName EntityMeters
 
 --------------------------------------------------------------------------------
 
