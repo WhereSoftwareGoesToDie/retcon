@@ -395,26 +395,26 @@ notifyUpdate store datasources ik policy = do
       maybe (calculate valid) return
 
   -- Extract and merge patches.
-  let diffs = map (diff policy initial) valid
-  let diffs' = filter ((/= mempty) . view patchDiff) diffs
-  let (merged, rejects) = mergeAll policy diffs'
+  let (merged, rejects) = mergeAll policy $ map (diff policy initial) valid
 
   if   null rejects
   then debugM logName $ "No rejected changes processing " <> show ik
   else infoM  logName $ "Rejected " <> show (length rejects) <> " changes in " <> show ik
+  if (null rejects) && (mempty == view patchDiff merged)
+  then debugM logName $ "Empty diff for " <> show ik <> ", skipping."
+  else do
+    -- Record changes in history.
+    did <- recordDiffs store ik (merged, rejects)
+    infoM logName $ "Recorded diff " <> show did <> " against " <> show ik
 
-  -- Record changes in history.
-  did <- recordDiffs store ik (merged, rejects)
-  infoM logName $ "Recorded diff " <> show did <> " against " <> show ik
+    -- Update and save the documents.
+    let docs' = map (patch policy merged . either (const initial) id) docs
+    failures <- lefts <$> mapM (setDocument store ik) (L.zip datasources docs')
+    mapM_ (\e -> errorM logName $ "setDocument error: " <> e) failures
 
-  -- Update and save the documents.
-  let docs' = map (patch policy merged . either (const initial) id) docs
-  failures <- lefts <$> mapM (setDocument store ik) (L.zip datasources docs')
-  mapM_ (\e -> errorM logName $ "setDocument error: " <> e) failures
-
-  -- Update initial document.
-  let initial' = patch policy merged initial
-  recordInitialDocument store ik initial'
+    -- Update initial document.
+    let initial' = patch policy merged initial
+    recordInitialDocument store ik initial'
 
   where
     calculate :: [Document] -> IO Document
