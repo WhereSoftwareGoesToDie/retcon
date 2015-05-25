@@ -136,7 +136,8 @@ createDocument src doc = do
     exit <- liftIO $ waitForProcess hproc
     liftIO . debugM logName $ "CREATE exit: " <> show exit
     case exit of
-        ExitFailure c -> throwError $ ForeignError c err
+        ExitFailure c -> let errorOutput = "stderr: " <> err <> "\nstdout: " <> output in
+            throwError $ ForeignError c errorOutput
         ExitSuccess   -> return ()
 
     -- 6. Close handles.
@@ -167,13 +168,14 @@ readDocument src fk = do
 
     -- 3. Read output.
     output <- liftIO $ BS.hGetContents hout
-    err <- T.decodeUtf8 <$> (liftIO $ BS.hGetContents herr)
+    err <- liftIO $ BS.hGetContents herr
 
     -- 4. Check return code, raising error if required.
     exit <- liftIO $ waitForProcess hproc
     liftIO . debugM logName $ "READ exit: " <> show exit
     case exit of
-        ExitFailure c -> throwError $ ForeignError c (T.decodeUtf8 output)
+        ExitFailure c -> let errorOutput = "stderr: " <> T.decodeUtf8 err <> "\nstdout: " <> T.decodeUtf8 output in
+            throwError $ ForeignError c errorOutput
         ExitSuccess   -> return ()
 
     -- 5. Close handles.
@@ -221,7 +223,8 @@ updateDocument src fk doc = do
     exit <- liftIO $ waitForProcess hproc
     liftIO . debugM logName $ "UPDATE exit: " <> show exit
     case exit of
-        ExitFailure c -> throwError $ ForeignError c err
+        ExitFailure c -> let errorOutput = "stderr: " <> err <> "\nstdout: " <> output in
+            throwError $ ForeignError c errorOutput
         ExitSuccess -> return ()
 
     -- 6. Close handles.
@@ -260,7 +263,8 @@ deleteDocument src fk = do
     exit <- liftIO $ waitForProcess hproc
     liftIO . debugM logName $ "DELETE exit: " <> show exit
     case exit of
-        ExitFailure c -> throwError $ ForeignError c (T.decodeUtf8 err)
+        ExitFailure c -> let errorOutput = "stderr: " <> T.decodeUtf8 err <> "\nstdout: " <> T.decodeUtf8 output in
+            throwError $ ForeignError c errorOutput
         ExitSuccess -> return ()
 
     -- 5. Close handles.
