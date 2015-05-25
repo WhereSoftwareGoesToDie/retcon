@@ -120,9 +120,9 @@ createDocument src doc = do
 
     -- 2. Spawn process.
     let cmd = prepareCommand src Nothing . commandCreate $ src
-        process = (shell cmd) { std_out = CreatePipe, std_in = CreatePipe }
+        process = (shell cmd) { std_out = CreatePipe, std_in = CreatePipe, std_err = CreatePipe }
     liftIO .debugM logName $ "CREATE command: " <> show cmd
-    (Just hin, Just hout, Nothing, hproc) <- liftIO $ createProcess process
+    (Just hin, Just hout, Just herr, hproc) <- liftIO $ createProcess process
 
     -- 3. Write input.
     liftIO . BSL.hPutStrLn hin . encode . _documentContent $ doc
@@ -130,12 +130,13 @@ createDocument src doc = do
 
     -- 4. Read handles
     output <- T.filter (not. isSpace) . T.decodeUtf8 <$> (liftIO . BS.hGetContents $ hout)
+    err <- T.decodeUtf8 <$> (liftIO . BS.hGetContents $ herr)
 
     -- 5. Check return code, raising error if required.
     exit <- liftIO $ waitForProcess hproc
     liftIO . debugM logName $ "CREATE exit: " <> show exit
     case exit of
-        ExitFailure c -> throwError $ ForeignError c output
+        ExitFailure c -> throwError $ ForeignError c err
         ExitSuccess   -> return ()
 
     -- 6. Close handles.
@@ -160,12 +161,13 @@ readDocument src fk = do
 
     -- 2. Spawn process.
     let cmd     = prepareCommand src (Just fk) . commandRead $ src
-        process = (shell cmd) { std_out = CreatePipe }
+        process = (shell cmd) { std_out = CreatePipe, std_err = CreatePipe }
     liftIO . debugM logName $ "READ command: " <> show cmd
-    (Nothing, Just hout, Nothing, hproc) <- liftIO $ createProcess process
+    (Nothing, Just hout, Just herr, hproc) <- liftIO $ createProcess process
 
     -- 3. Read output.
     output <- liftIO $ BS.hGetContents hout
+    err <- T.decodeUtf8 <$> (liftIO $ BS.hGetContents herr)
 
     -- 4. Check return code, raising error if required.
     exit <- liftIO $ waitForProcess hproc
@@ -175,7 +177,9 @@ readDocument src fk = do
         ExitSuccess   -> return ()
 
     -- 5. Close handles.
-    liftIO $ hClose hout
+    liftIO $ do
+        hClose hout
+        hClose herr
 
     -- 6. Parse input and return value.
     case eitherDecode' . BSL.fromStrict $ output of
@@ -201,9 +205,9 @@ updateDocument src fk doc = do
 
     -- 2. Spawn process.
     let cmd = prepareCommand src (Just fk) . commandUpdate $ src
-        process = (shell cmd) { std_out = CreatePipe, std_in = CreatePipe }
+        process = (shell cmd) { std_out = CreatePipe, std_in = CreatePipe, std_err = CreatePipe }
     liftIO . debugM logName $ "UPDATE command: " <> show cmd
-    (Just hin, Just hout, Nothing, hproc) <- liftIO $ createProcess process
+    (Just hin, Just hout, Just herr, hproc) <- liftIO $ createProcess process
 
     -- 3. Write input.
     liftIO . BSL.hPutStrLn hin . encode . _documentContent $ doc
@@ -211,16 +215,19 @@ updateDocument src fk doc = do
 
     -- 4. Read handles
     output <- T.filter (not. isSpace) . T.decodeUtf8 <$> (liftIO . BS.hGetContents $ hout)
+    err <- T.decodeUtf8 <$> (liftIO . BS.hGetContents $ herr)
 
     -- 5. Check return code, raising error if required.
     exit <- liftIO $ waitForProcess hproc
     liftIO . debugM logName $ "UPDATE exit: " <> show exit
     case exit of
-        ExitFailure c -> throwError $ ForeignError c output
+        ExitFailure c -> throwError $ ForeignError c err
         ExitSuccess -> return ()
 
     -- 6. Close handles.
-    liftIO $ hClose hout
+    liftIO $ do
+        hClose hout
+        hClose herr
 
     -- 7. Parse response.
     return $ ForeignKey (fkEntity fk) (fkSource fk) output
@@ -241,19 +248,22 @@ deleteDocument src fk = do
 
     -- 2. Spawn process.
     let cmd     = prepareCommand src (Just fk) . commandDelete $ src
-        process = (shell cmd) { std_out = CreatePipe }
+        process = (shell cmd) { std_out = CreatePipe, std_err = CreatePipe }
     liftIO . debugM logName $ "DELETE command: " <> show cmd
-    (Nothing, Just hout, Nothing, hproc) <- liftIO $ createProcess process
+    (Nothing, Just hout, Just herr, hproc) <- liftIO $ createProcess process
 
     -- 3. Read output
     output <- liftIO $ BS.hGetContents hout
+    err <- liftIO $ BS.hGetContents herr
 
     -- 4. Check return code, raising error if required.
     exit <- liftIO $ waitForProcess hproc
     liftIO . debugM logName $ "DELETE exit: " <> show exit
     case exit of
-        ExitFailure c -> throwError $ ForeignError c (T.decodeUtf8 output)
+        ExitFailure c -> throwError $ ForeignError c (T.decodeUtf8 err)
         ExitSuccess -> return ()
 
     -- 5. Close handles.
-    liftIO $ hClose hout
+    liftIO $ do
+        hClose hout
+        hClose herr
