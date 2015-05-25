@@ -364,7 +364,8 @@ notifyDelete store datasources ik = do
   where deleteDoc ds = do
           f <- lookupForeignKey store (sourceName ds) ik
           case f of
-            Nothing -> return ()
+            Nothing -> do
+                warningM $ "notifyDelete: unable to find foreign key for internal ID " <> ik <> "."
             Just fk -> do
               -- Delete the document
               hushBoth $ runDSMonad $ DS.deleteDocument ds fk
@@ -517,7 +518,7 @@ getDocument
 getDocument store ik ds = do
   f  <- lookupForeignKey store (sourceName ds) ik
   case f of
-    Nothing -> return (Left "getDocument: No foreign key found.")
+    Nothing -> return (Left "getDocument: No foreign key found for internal ID " <> show ik <> ".")
     Just fk -> fmap (over _Left show) . DS.runDSMonad $ DS.readDocument ds fk
 
 -- | Set the 'Document' in the given 'DataSource' corresponding to an 'InternalKey'.
@@ -530,7 +531,7 @@ setDocument
 setDocument store ik (ds, doc) = do
   f <- lookupForeignKey store (sourceName ds) ik
   case f of
-    Nothing -> return (Left "setDocument: No foreign key found.")
+    Nothing -> return (Left "setDocument: No foreign key found for internal ID " <> show ik <> ".")
     Just fk -> fmap (over _Left show) . DS.runDSMonad $ DS.updateDocument ds fk doc
 
 -- | Merge a sequence of 'Patch'es by applying a 'MergePolicy'.
