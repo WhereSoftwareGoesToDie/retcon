@@ -396,7 +396,7 @@ notifyUpdate store datasources ik policy = do
 
   -- Extract and merge patches.
   let diffs = map (diff policy initial) valid
-  let diffs' = filter (\d -> (d ^. patchDiff) /= mempty) diffs
+  let diffs' = filter ((/= mempty) . view patchDiff) diffs
   let (merged, rejects) = mergeAll policy diffs'
 
   if   null rejects
