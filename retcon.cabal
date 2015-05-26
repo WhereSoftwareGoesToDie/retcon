@@ -52,6 +52,7 @@ library
     , configurator
     , containers
     , errors < 2.0
+    , ekg
     , ekg-core
     , exceptions
     , hslogger

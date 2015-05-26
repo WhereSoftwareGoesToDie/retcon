@@ -15,6 +15,7 @@ import           Control.Concurrent.Async
 import           Control.Error.Util         ()
 import qualified Control.Exception          as E
 import           Control.Lens               hiding (Context, coerce)
+import           Control.Monad
 import           Control.Monad.Catch
 import           Control.Monad.Error.Class
 import           Control.Monad.Reader
@@ -27,8 +28,10 @@ import           Data.ByteString.Lazy       (fromStrict, toStrict)
 import qualified Data.ByteString.Lazy       as LBS
 import           Data.Coerce
 import           Data.Either
+import           Data.Int
 import qualified Data.List                  as L
 import           Data.List.NonEmpty         hiding (filter, length, map)
+import           Data.Map                   (Map)
 import qualified Data.Map                   as M
 import           Data.Maybe
 import           Data.Monoid
@@ -36,7 +39,15 @@ import           Data.String
 import qualified Data.Text                  as T
 import qualified Data.Text.Encoding         as T
 import           Data.Traversable           ()
+import           System.IO.Unsafe
 import           System.Log.Logger
+import           System.Metrics             (createCounter, createGauge)
+import qualified System.Metrics             as Ekg
+import           System.Metrics.Counter     (Counter)
+import qualified System.Metrics.Counter     as Counter
+import           System.Metrics.Gauge       (Gauge)
+import qualified System.Metrics.Gauge       as Gauge
+import qualified System.Remote.Monitoring   as Ekg
 import           System.ZMQ4
 
 import           Retcon.Configuration
@@ -53,21 +64,135 @@ import           Retcon.Store.PostgreSQL
 
 type ErrorMsg = String
 
+-- | Name of server component for logging.
+logName :: String
+logName = "Retcon.Server"
+
+--------------------------------------------------------------------------------
+
+-- | EKG metrics
+
+metersMVar :: MVar Meters
+metersMVar = unsafePerformIO newEmptyMVar
+{-# NOINLINE metersMVar #-}
+
+data DataSourceMeters = DataSourceMeters
+    { sourceNumNotifications :: Counter -- ^ Number of update notifications from the data source.
+    , sourceNumKeys          :: Gauge   -- ^ Number of tracked foreign keys for the data source.
+    }
+
+data EntityMeters = EntityMeters
+    { entityNumNotifications :: Counter -- ^ Number of update notifications for the entity.
+    , entityNumCreates       :: Counter -- ^ Number of inferred creates for the entity.
+    , entityNumUpdates       :: Counter -- ^ Number of inferred updates for the entity.
+    , entityNumDeletes       :: Counter -- ^ Number of inferred deletes for the entity.
+    , entityNumConflicts     :: Counter -- ^ Number of unresolvable conflicts for the entity.
+    , entityNumKeys          :: Gauge   -- ^ Number of tracked internal keys for the entity.
+    , entityDataSourceMeters :: Map SourceName DataSourceMeters
+    }
+
+data Meters = Meters
+    { entityMeters      :: Map EntityName EntityMeters
+    , serverQueueLength :: Gauge -- ^ Number of notifications in the queue
+    }
+
+getDataSourceMeters :: Meters -> EntityName -> SourceName -> Either String DataSourceMeters
+getDataSourceMeters m en sn =
+    case getEntityMeters m en of
+        Left err -> Left err
+        Right em -> case M.lookup sn (entityDataSourceMeters em) of
+            Nothing -> Left $ "No metrics for entity and data source: " <> n
+            Just dm -> Right dm
+  where
+    n = T.unpack $ ename en <> "/" <> sname sn
+
+getEntityMeters :: Meters -> EntityName -> Either String EntityMeters
+getEntityMeters (Meters m _) en =
+    case M.lookup en m of
+        Nothing -> Left $ "No metrics for entity: " <> show en
+        Just em -> Right em
+
+updateEntityMeter :: (EntityMeters -> IO ()) -> EntityName -> IO ()
+updateEntityMeter f en = do
+    meters <- readMVar metersMVar
+    case getEntityMeters meters en of
+        Left err -> warningM logName err
+        Right em -> f em
+
+updateDSMeter :: (DataSourceMeters -> IO ()) -> EntityName -> SourceName -> IO ()
+updateDSMeter f en sn = do
+    meters <- readMVar metersMVar
+    case getDataSourceMeters meters en sn of
+        Left err -> warningM logName err
+        Right dm -> f dm
+
+updateServerMeter :: (Meters -> IO ()) -> IO ()
+updateServerMeter f = readMVar metersMVar >>= f
+
+incDSNotifications    
+    ::          EntityName -> SourceName -> IO ()
+incEntityNotifications, incCreates, incUpdates, incDeletes, incConflicts
+    ::          EntityName               -> IO ()
+setGaugeDSKeys
+    :: Int64 -> EntityName -> SourceName -> IO ()
+setGaugeEntityKeys
+    :: Int64 -> EntityName               -> IO ()
+setGaugeServerQueueLength
+    :: Int64                             -> IO ()
+
+incDSNotifications          = updateDSMeter (Counter.inc . sourceNumNotifications)
+setGaugeDSKeys n            = updateDSMeter (flip Gauge.set n . sourceNumKeys)
+incEntityNotifications      = updateEntityMeter (Counter.inc . entityNumNotifications)
+incCreates                  = updateEntityMeter (Counter.inc . entityNumCreates)
+incUpdates                  = updateEntityMeter (Counter.inc . entityNumUpdates)
+incDeletes                  = updateEntityMeter (Counter.inc . entityNumDeletes)
+incConflicts                = updateEntityMeter (Counter.inc . entityNumConflicts)
+setGaugeEntityKeys n        = updateEntityMeter (flip Gauge.set n . entityNumKeys)
+setGaugeServerQueueLength n = updateServerMeter (flip Gauge.set n . serverQueueLength)
+
+initialiseMeters :: Configuration -> IO Ekg.Store
+initialiseMeters (Configuration eMap _) = do
+    store <- Ekg.newStore
+    let entities = M.assocs eMap
+    meters <- forM entities $ \(eName, e) -> do
+        entityMeters <- initialiseEntity (eName, e) store
+        return (eName, entityMeters)
+    ql <- createGauge "queue_length" store
+    putMVar metersMVar $ Meters (M.fromList meters) ql
+    return store
+  where
+    initialiseEntity :: (EntityName, Entity) -> Ekg.Store -> IO EntityMeters
+    initialiseEntity (EntityName eName, e) store = do
+        let sourceNames = M.keys $ entitySources e
+        entityMeters <- forM sourceNames $ \s -> do
+            sourceMeters <- initialiseSource (EntityName eName) s store
+            return (s, sourceMeters)
+        EntityMeters <$> createCounter (eName <> "/count_notifications") store
+                     <*> createCounter (eName <> "/count_creates")       store
+                     <*> createCounter (eName <> "/count_updates")       store
+                     <*> createCounter (eName <> "/count_deletes")       store
+                     <*> createCounter (eName <> "/count_conflicts")       store
+                     <*> createGauge   (eName <> "/gauge_internal_keys") store
+                     <*> pure (M.fromList entityMeters)
+
+    initialiseSource :: EntityName -> SourceName -> Ekg.Store -> IO DataSourceMeters
+    initialiseSource (EntityName e) (SourceName s) store = let baseName = e <> "/" <> s in
+        DataSourceMeters <$> createCounter (baseName <> "/count_notifications") store
+                         <*> createGauge   (baseName <> "/gauge_foreign_keys")  store
+
 --------------------------------------------------------------------------------
 
 -- * Server
 
 data ServerState = ServerState
-    { _serverContext :: Context       -- ^ ZMQ context
-    , _serverSocket  :: Socket Rep    -- ^ ZMQ socket
-    , _serverConfig  :: Configuration -- ^ retcond config
-    , _serverStore   :: PGStore       -- ^ Internal data store, shared between all server threads
+    { _serverContext   :: Context       -- ^ ZMQ context
+    , _serverSocket    :: Socket Rep    -- ^ ZMQ socket
+    , _serverConfig    :: Configuration -- ^ retcond config
+    , _serverStore     :: PGStore       -- ^ Internal data store, shared between all server threads
+    , _serverEkgServer :: Ekg.Server    -- ^ Ekg server
     }
 makeLenses ''ServerState
 
--- | Name of server component for logging.
-logName :: String
-logName = "Retcon.Server"
 
 -- | Spawn a thread serving the retcon API and a number of worker threads
 --   to process requests accepted by that server.
@@ -102,14 +227,19 @@ spawnServer cfg n = do
         sock   <- socket ctx Rep
         bind sock zmq_conn
         db     <- initBackend (PGOpts pg_conn)
-        return $  ServerState ctx sock cfg db
+        -- Setup ekg
+        ekgStore  <- initialiseMeters cfg
+        ekgServer <- Ekg.forkServerWith ekgStore "localhost" 8888
+        return $  ServerState ctx sock cfg db ekgServer
 
     stop :: ServerState -> IO ()
     stop state = do
         closeBackend $ state ^. serverStore
         close        $ state ^. serverSocket
         term         $ state ^. serverContext
+        killThread   $ Ekg.serverThreadId $ state ^. serverEkgServer
         noticeM logName "Stopped Server"
+
 
 --------------------------------------------------------------------------------
 
