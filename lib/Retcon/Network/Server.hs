@@ -56,10 +56,6 @@ import           Retcon.Store.PostgreSQL
 
 type ErrorMsg = String
 
--- | Name of server component for logging.
-logName :: String
-logName = "Retcon.Server"
-
 --------------------------------------------------------------------------------
 
 -- * Server
@@ -73,6 +69,9 @@ data ServerState = ServerState
     }
 makeLenses ''ServerState
 
+-- | Name of server component for logging.
+logName :: String
+logName = "Retcon.Server"
 
 -- | Spawn a thread serving the retcon API and a number of worker threads
 --   to process requests accepted by that server.
@@ -119,7 +118,6 @@ spawnServer cfg n = do
         term         $ state ^. serverContext
         killThread   $ Ekg.serverThreadId $ state ^. serverEkgServer
         noticeM logName "Stopped Server"
-
 
 --------------------------------------------------------------------------------
 
