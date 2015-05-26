@@ -76,24 +76,26 @@ metersMVar :: MVar Meters
 metersMVar = unsafePerformIO newEmptyMVar
 {-# NOINLINE metersMVar #-}
 
+-- | All counter values are from startup
+
 data DataSourceMeters = DataSourceMeters
-    { sourceNumNotifications :: Counter -- ^ Number of update notifications from the data source.
-    , sourceNumKeys          :: Gauge   -- ^ Number of tracked foreign keys for the data source.
+    { sourceNumNotifications :: Gauge -- ^ Number of pending notifications from the data source.
+    , sourceNumKeys          :: Gauge -- ^ Number of tracked foreign keys for the data source.
     }
 
 data EntityMeters = EntityMeters
-    { entityNumNotifications :: Counter -- ^ Number of update notifications for the entity.
+    { entityNumNotifications :: Gauge   -- ^ Number of pending notifications for the entity.
     , entityNumCreates       :: Counter -- ^ Number of inferred creates for the entity.
     , entityNumUpdates       :: Counter -- ^ Number of inferred updates for the entity.
     , entityNumDeletes       :: Counter -- ^ Number of inferred deletes for the entity.
-    , entityNumConflicts     :: Counter -- ^ Number of unresolvable conflicts for the entity.
+    , entityNumConflicts     :: Counter -- ^ Number of unresolved conflicts for the entity.
     , entityNumKeys          :: Gauge   -- ^ Number of tracked internal keys for the entity.
     , entityDataSourceMeters :: Map SourceName DataSourceMeters
     }
 
 data Meters = Meters
-    { entityMeters      :: Map EntityName EntityMeters
-    , serverQueueLength :: Gauge -- ^ Number of notifications in the queue
+    { entityMeters           :: Map EntityName EntityMeters
+    , serverNumNotifications :: Gauge -- ^ Number of pending notifications for the server
     }
 
 getDataSourceMeters :: Meters -> EntityName -> SourceName -> Either String DataSourceMeters
@@ -129,26 +131,24 @@ updateDSMeter f en sn = do
 updateServerMeter :: (Meters -> IO ()) -> IO ()
 updateServerMeter f = readMVar metersMVar >>= f
 
-incDSNotifications    
-    ::          EntityName -> SourceName -> IO ()
-incEntityNotifications, incCreates, incUpdates, incDeletes, incConflicts
-    ::          EntityName               -> IO ()
-setGaugeDSKeys
+setGaugeDSNotifications, setGaugeDSKeys
     :: Int64 -> EntityName -> SourceName -> IO ()
-setGaugeEntityKeys
+incCreates, incUpdates, incDeletes, incConflicts
+    ::          EntityName               -> IO ()
+setGaugeEntityNotifications, setGaugeEntityKeys
     :: Int64 -> EntityName               -> IO ()
-setGaugeServerQueueLength
+setGaugeServerNotifications
     :: Int64                             -> IO ()
 
-incDSNotifications          = updateDSMeter (Counter.inc . sourceNumNotifications)
-setGaugeDSKeys n            = updateDSMeter (flip Gauge.set n . sourceNumKeys)
-incEntityNotifications      = updateEntityMeter (Counter.inc . entityNumNotifications)
-incCreates                  = updateEntityMeter (Counter.inc . entityNumCreates)
-incUpdates                  = updateEntityMeter (Counter.inc . entityNumUpdates)
-incDeletes                  = updateEntityMeter (Counter.inc . entityNumDeletes)
-incConflicts                = updateEntityMeter (Counter.inc . entityNumConflicts)
-setGaugeEntityKeys n        = updateEntityMeter (flip Gauge.set n . entityNumKeys)
-setGaugeServerQueueLength n = updateServerMeter (flip Gauge.set n . serverQueueLength)
+setGaugeDSNotifications n     = updateDSMeter (flip Gauge.set n . sourceNumNotifications)
+setGaugeDSKeys n              = updateDSMeter (flip Gauge.set n . sourceNumKeys)
+incCreates                    = updateEntityMeter (Counter.inc . entityNumCreates)
+incUpdates                    = updateEntityMeter (Counter.inc . entityNumUpdates)
+incDeletes                    = updateEntityMeter (Counter.inc . entityNumDeletes)
+incConflicts                  = updateEntityMeter (Counter.inc . entityNumConflicts)
+setGaugeEntityNotifications n = updateEntityMeter (flip Gauge.set n . entityNumNotifications)
+setGaugeEntityKeys n          = updateEntityMeter (flip Gauge.set n . entityNumKeys)
+setGaugeServerNotifications n = updateServerMeter (flip Gauge.set n . serverNumNotifications)
 
 initialiseMeters :: Configuration -> IO Ekg.Store
 initialiseMeters (Configuration eMap _) = do
@@ -157,7 +157,7 @@ initialiseMeters (Configuration eMap _) = do
     meters <- forM entities $ \(eName, e) -> do
         entityMeters <- initialiseEntity (eName, e) store
         return (eName, entityMeters)
-    ql <- createGauge "queue_length" store
+    ql <- createGauge "gauge_notifications" store
     putMVar metersMVar $ Meters (M.fromList meters) ql
     return store
   where
@@ -167,7 +167,7 @@ initialiseMeters (Configuration eMap _) = do
         entityMeters <- forM sourceNames $ \s -> do
             sourceMeters <- initialiseSource (EntityName eName) s store
             return (s, sourceMeters)
-        EntityMeters <$> createCounter (eName <> "/count_notifications") store
+        EntityMeters <$> createGauge   (eName <> "/gauge_notifications") store
                      <*> createCounter (eName <> "/count_creates")       store
                      <*> createCounter (eName <> "/count_updates")       store
                      <*> createCounter (eName <> "/count_deletes")       store
@@ -177,8 +177,8 @@ initialiseMeters (Configuration eMap _) = do
 
     initialiseSource :: EntityName -> SourceName -> Ekg.Store -> IO DataSourceMeters
     initialiseSource (EntityName e) (SourceName s) store = let baseName = e <> "/" <> s in
-        DataSourceMeters <$> createCounter (baseName <> "/count_notifications") store
-                         <*> createGauge   (baseName <> "/gauge_foreign_keys")  store
+        DataSourceMeters <$> createGauge (baseName <> "/gauge_notifications") store
+                         <*> createGauge (baseName <> "/gauge_foreign_keys")  store
 
 --------------------------------------------------------------------------------
 
