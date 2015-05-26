@@ -102,15 +102,16 @@ spawnServer cfg n = do
     start :: IO ServerState
     start = do
         noticeM logName "Starting Server"
+        -- Setup ekg
+        ekgStore  <- Ekg.newStore
+        initialiseMeters ekgStore cfg
+        ekgServer <- Ekg.forkServerWith ekgStore "localhost" 8888
+
         let (zmq_conn, _, pg_conn) = configServer cfg
         ctx    <- context
         sock   <- socket ctx Rep
         bind sock zmq_conn
         db     <- initBackend (PGOpts pg_conn)
-        -- Setup ekg
-        ekgStore  <- Ekg.newStore
-        initialiseMeters ekgStore cfg
-        ekgServer <- Ekg.forkServerWith ekgStore "localhost" 8888
         return $  ServerState ctx sock cfg db ekgServer
 
     stop :: ServerState -> IO ()

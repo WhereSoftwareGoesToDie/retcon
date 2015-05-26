@@ -12,6 +12,7 @@ module Retcon.Store.PostgreSQL
      ) where
 
 import           Control.Applicative
+import           Control.Arrow
 import           Control.Lens               hiding (op)
 import           Control.Monad
 import           Data.Aeson
@@ -26,6 +27,7 @@ import           Database.PostgreSQL.Simple
 
 import           Retcon.Diff                hiding (diff)
 import           Retcon.Identifier
+import           Retcon.Network.Ekg
 import           Retcon.Store.Base          hiding (ops)
 
 data PGStore = PGStore
@@ -43,12 +45,31 @@ fromSuccess _           = error "fromSuccess: Cannot unwrap not-a-success."
 isSuccess (Success _)   = True
 isSuccess   _           = False
 
+-- | Update ekg values for everything
+updateEkg :: Connection -> IO ()
+updateEkg conn = do
+    updateIKCounts conn
+    updateFKCounts conn
+
+-- | Update ekg values for internal keys
+updateIKCounts :: Connection -> IO ()
+updateIKCounts conn = do
+    res <- query_ conn "SELECT COUNT(DISTINCT id), entity FROM retcon_fk GROUP BY entity"
+    forM_ res $ uncurry setGaugeEntityKeys . second EntityName
+
+-- | Update ekg values for foreign keys
+updateFKCounts :: Connection -> IO ()
+updateFKCounts conn = do
+    res <- query_ conn "SELECT COUNT(DISTINCT id), entity, source FROM retcon_fk GROUP BY source, entity"
+    forM_ res $ \(c, e, s) -> setGaugeSourceKeys c (EntityName e) (SourceName s)
+
 -- | Persistent PostgreSQL-backed data storage.
 instance Store PGStore where
   newtype StoreOpts PGStore = PGOpts { connstr :: ByteString }
 
   initBackend (connstr -> str) = do
       conn <- connectPostgreSQL str
+      updateEkg conn
       return $ PGStore conn str
 
   closeBackend = close . pgconn

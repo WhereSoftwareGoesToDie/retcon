@@ -44,7 +44,7 @@ data EntityMeters = EntityMeters
     , entityNumCreates       :: Counter -- ^ Number of inferred creates for the entity.
     , entityNumUpdates       :: Counter -- ^ Number of inferred updates for the entity.
     , entityNumDeletes       :: Counter -- ^ Number of inferred deletes for the entity.
-    , entityNumConflicts     :: Counter -- ^ Number of unresolved conflicts for the entity.
+    , entityNumConflicts     :: Gauge   -- ^ Number of unresolved conflicts for the entity.
     , entityNumKeys          :: Gauge   -- ^ Number of tracked internal keys for the entity.
     , entityDataSourceMeters :: Map SourceName DataSourceMeters
     }
@@ -91,9 +91,9 @@ incNotifications, decNotifications
     ::          EntityName -> SourceName -> IO ()
 setGaugeSourceNotifications, setGaugeSourceKeys
     :: Int64 -> EntityName -> SourceName -> IO ()
-incCreates, incUpdates, incDeletes, incConflicts
+incCreates, incUpdates, incDeletes
     ::          EntityName               -> IO ()
-setGaugeEntityNotifications, setGaugeEntityKeys
+setGaugeEntityNotifications, setGaugeEntityKeys, setGaugeConflicts
     :: Int64 -> EntityName               -> IO ()
 setGaugeServerNotifications
     :: Int64                             -> IO ()
@@ -112,7 +112,7 @@ setGaugeSourceKeys n          = updateSourceMeter (flip Gauge.set n . sourceNumK
 incCreates                    = updateEntityMeter (Counter.inc . entityNumCreates)
 incUpdates                    = updateEntityMeter (Counter.inc . entityNumUpdates)
 incDeletes                    = updateEntityMeter (Counter.inc . entityNumDeletes)
-incConflicts                  = updateEntityMeter (Counter.inc . entityNumConflicts)
+setGaugeConflicts n           = updateEntityMeter (flip Gauge.set n . entityNumConflicts)
 setGaugeEntityNotifications n = updateEntityMeter (flip Gauge.set n . entityNumNotifications)
 setGaugeEntityKeys n          = updateEntityMeter (flip Gauge.set n . entityNumKeys)
 setGaugeServerNotifications n = updateServerMeter (flip Gauge.set n . serverNumNotifications)
@@ -136,7 +136,7 @@ initialiseMeters store (Configuration eMap _) = do
                      <*> createCounter (eName <> ".count_creates")       store
                      <*> createCounter (eName <> ".count_updates")       store
                      <*> createCounter (eName <> ".count_deletes")       store
-                     <*> createCounter (eName <> ".count_conflicts")       store
+                     <*> createGauge   (eName <> ".count_conflicts")       store
                      <*> createGauge   (eName <> ".gauge_internal_keys") store
                      <*> pure (M.fromList em)
 
