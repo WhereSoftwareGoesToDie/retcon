@@ -37,6 +37,7 @@ import           Data.String
 import qualified Data.Text                  as T
 import qualified Data.Text.Encoding         as T
 import           Data.Traversable           ()
+import qualified System.Metrics         as Ekg
 import           System.Log.Logger
 import qualified System.Remote.Monitoring   as Ekg
 import           System.ZMQ4
@@ -107,7 +108,8 @@ spawnServer cfg n = do
         bind sock zmq_conn
         db     <- initBackend (PGOpts pg_conn)
         -- Setup ekg
-        ekgStore  <- initialiseMeters cfg
+        ekgStore  <- Ekg.newStore
+        initialiseMeters ekgStore cfg
         ekgServer <- Ekg.forkServerWith ekgStore "localhost" 8888
         return $  ServerState ctx sock cfg db ekgServer
 

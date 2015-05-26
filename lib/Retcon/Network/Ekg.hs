@@ -117,22 +117,20 @@ setGaugeEntityNotifications n = updateEntityMeter (flip Gauge.set n . entityNumN
 setGaugeEntityKeys n          = updateEntityMeter (flip Gauge.set n . entityNumKeys)
 setGaugeServerNotifications n = updateServerMeter (flip Gauge.set n . serverNumNotifications)
 
-initialiseMeters :: Configuration -> IO Ekg.Store
-initialiseMeters (Configuration eMap _) = do
-    store <- Ekg.newStore
+initialiseMeters :: Ekg.Store -> Configuration -> IO ()
+initialiseMeters store (Configuration eMap _) = do
     let entities = M.assocs eMap
     meters <- forM entities $ \(eName, e) -> do
-        em <- initialiseEntity (eName, e) store
+        em <- initialiseEntity (eName, e)
         return (eName, em)
     ql <- createGauge "gauge_notifications" store
     putMVar metersMVar $ Meters (M.fromList meters) ql
-    return store
   where
-    initialiseEntity :: (EntityName, Entity) -> Ekg.Store -> IO EntityMeters
-    initialiseEntity (EntityName eName, e) store = do
+    initialiseEntity :: (EntityName, Entity) -> IO EntityMeters
+    initialiseEntity (EntityName eName, e) = do
         let sourceNames = M.keys $ entitySources e
         em <- forM sourceNames $ \s -> do
-            sourceMeters <- initialiseSource (EntityName eName) s store
+            sourceMeters <- initialiseSource (EntityName eName) s
             return (s, sourceMeters)
         EntityMeters <$> createGauge   (eName <> "/gauge_notifications") store
                      <*> createCounter (eName <> "/count_creates")       store
@@ -142,8 +140,7 @@ initialiseMeters (Configuration eMap _) = do
                      <*> createGauge   (eName <> "/gauge_internal_keys") store
                      <*> pure (M.fromList em)
 
-    initialiseSource :: EntityName -> SourceName -> Ekg.Store -> IO DataSourceMeters
-    initialiseSource (EntityName e) (SourceName s) store = let baseName = e <> "/" <> s in
+    initialiseSource :: EntityName -> SourceName -> IO DataSourceMeters
+    initialiseSource (EntityName e) (SourceName s) = let baseName = e <> "/" <> s in
         DataSourceMeters <$> createGauge (baseName <> "/gauge_notifications") store
                          <*> createGauge (baseName <> "/gauge_foreign_keys")  store
-
