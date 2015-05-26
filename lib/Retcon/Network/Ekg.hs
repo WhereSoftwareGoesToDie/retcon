@@ -132,15 +132,15 @@ initialiseMeters store (Configuration eMap _) = do
         em <- forM sourceNames $ \s -> do
             sourceMeters <- initialiseSource (EntityName eName) s
             return (s, sourceMeters)
-        EntityMeters <$> createGauge   (eName <> "/gauge_notifications") store
-                     <*> createCounter (eName <> "/count_creates")       store
-                     <*> createCounter (eName <> "/count_updates")       store
-                     <*> createCounter (eName <> "/count_deletes")       store
-                     <*> createCounter (eName <> "/count_conflicts")       store
-                     <*> createGauge   (eName <> "/gauge_internal_keys") store
+        EntityMeters <$> createGauge   (eName <> ".gauge_notifications") store
+                     <*> createCounter (eName <> ".count_creates")       store
+                     <*> createCounter (eName <> ".count_updates")       store
+                     <*> createCounter (eName <> ".count_deletes")       store
+                     <*> createCounter (eName <> ".count_conflicts")       store
+                     <*> createGauge   (eName <> ".gauge_internal_keys") store
                      <*> pure (M.fromList em)
 
     initialiseSource :: EntityName -> SourceName -> IO DataSourceMeters
-    initialiseSource (EntityName e) (SourceName s) = let baseName = e <> "/" <> s in
-        DataSourceMeters <$> createGauge (baseName <> "/gauge_notifications") store
-                         <*> createGauge (baseName <> "/gauge_foreign_keys")  store
+    initialiseSource (EntityName e) (SourceName s) = let baseName = e <> "." <> s in
+        DataSourceMeters <$> createGauge (baseName <> ".gauge_notifications") store
+                         <*> createGauge (baseName <> ".gauge_foreign_keys")  store
