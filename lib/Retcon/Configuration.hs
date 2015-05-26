@@ -22,9 +22,10 @@ import           Data.Monoid
 import           Data.String
 import           Data.Text                  (Text)
 import qualified Data.Text                  as T
+import           System.Log.Logger
+
 import           Retcon.Diff
 import           Retcon.Identifier
-import           System.Log.Logger
 
 
 -- | Command template.
@@ -34,6 +35,7 @@ newtype Command = Command { unCommand :: Text }
 instance IsString Command where
     fromString = Command . T.pack
 
+--------------------------------------------------------------------------------
 
 -- | Record describing an external data source and how we interact with it.
 data DataSource = DataSource
