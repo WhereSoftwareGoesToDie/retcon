@@ -121,8 +121,8 @@ updateEntityMeter f en = do
         Left err -> warningM logName err
         Right em -> f em
 
-updateDSMeter :: (DataSourceMeters -> IO ()) -> EntityName -> SourceName -> IO ()
-updateDSMeter f en sn = do
+updateSourceMeter :: (DataSourceMeters -> IO ()) -> EntityName -> SourceName -> IO ()
+updateSourceMeter f en sn = do
     meters <- readMVar metersMVar
     case getDataSourceMeters meters en sn of
         Left err -> warningM logName err
@@ -131,7 +131,9 @@ updateDSMeter f en sn = do
 updateServerMeter :: (Meters -> IO ()) -> IO ()
 updateServerMeter f = readMVar metersMVar >>= f
 
-setGaugeDSNotifications, setGaugeDSKeys
+incNotifications, decNotifications
+    ::          EntityName -> SourceName -> IO ()
+setGaugeSourceNotifications, setGaugeSourceKeys
     :: Int64 -> EntityName -> SourceName -> IO ()
 incCreates, incUpdates, incDeletes, incConflicts
     ::          EntityName               -> IO ()
@@ -139,9 +141,18 @@ setGaugeEntityNotifications, setGaugeEntityKeys
     :: Int64 -> EntityName               -> IO ()
 setGaugeServerNotifications
     :: Int64                             -> IO ()
+incNotifications en sn = do
+    updateSourceMeter (Gauge.inc . sourceNumNotifications) en sn
+    updateEntityMeter (Gauge.inc . entityNumNotifications) en
+    updateServerMeter (Gauge.inc . serverNumNotifications)
 
-setGaugeDSNotifications n     = updateDSMeter (flip Gauge.set n . sourceNumNotifications)
-setGaugeDSKeys n              = updateDSMeter (flip Gauge.set n . sourceNumKeys)
+decNotifications en sn = do
+    updateSourceMeter (Gauge.dec . sourceNumNotifications) en sn
+    updateEntityMeter (Gauge.dec . entityNumNotifications) en
+    updateServerMeter (Gauge.dec . serverNumNotifications)
+
+setGaugeSourceNotifications n = updateSourceMeter (flip Gauge.set n . sourceNumNotifications)
+setGaugeSourceKeys n          = updateSourceMeter (flip Gauge.set n . sourceNumKeys)
 incCreates                    = updateEntityMeter (Counter.inc . entityNumCreates)
 incUpdates                    = updateEntityMeter (Counter.inc . entityNumUpdates)
 incDeletes                    = updateEntityMeter (Counter.inc . entityNumDeletes)
