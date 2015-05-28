@@ -48,13 +48,15 @@ isSuccess   _           = False
 -- | Update ekg values for everything
 updateEkg :: Connection -> IO ()
 updateEkg conn = do
-    updateIKCounts  conn
-    updateFKCounts  conn
+    updateIKCounts      conn
+    updateFKCounts      conn
+    updateConflicts     conn
+    updateNotifications conn
 
 -- | Update ekg values for internal keys
 updateIKCounts :: Connection -> IO ()
 updateIKCounts conn = do
-    res <- query_ conn "SELECT COUNT(DISTINCT id), entity FROM retcon_fk GROUP BY entity"
+    res <- query_ conn "SELECT COUNT(DISTINCT id), entity FROM retcon GROUP BY entity"
     forM_ res $ uncurry setEntityKeys . second EntityName
 
 -- | Update ekg values for foreign keys
@@ -62,6 +64,20 @@ updateFKCounts :: Connection -> IO ()
 updateFKCounts conn = do
     res <- query_ conn "SELECT COUNT(DISTINCT id), entity, source FROM retcon_fk GROUP BY source, entity"
     forM_ res $ \(c, e, s) -> setSourceKeys c (EntityName e) (SourceName s)
+
+-- | Update ekg values for conflicts
+updateConflicts :: Connection -> IO ()
+updateConflicts conn = do
+    res <- query_ conn "SELECT COUNT(DISTINCT diff_id), entity FROM retcon_diff WHERE is_conflict GROUP BY entity"
+    forM_ res $ \(c, e) -> setConflicts c (EntityName e)
+
+-- | Update ekg values for notifications
+updateNotifications :: Connection -> IO ()
+updateNotifications conn = do
+    res <- query_ conn "SELECT COUNT(DISTINCT id), entity FROM retcon_notifications GROUP BY entity"
+    let total = sum $ map fst res
+    forM_ res $ \(c, e) -> setEntityNotifications c (EntityName e)
+    setServerNotifications total
 
 -- | Persistent PostgreSQL-backed data storage.
 instance Store PGStore where
@@ -76,6 +92,7 @@ instance Store PGStore where
 
   cloneStore (PGStore _ str) = do
       conn <- connectPostgreSQL str
+      updateEkg conn
       return $ PGStore conn str
 
   -- | Create a new 'InternalKey' by inserting a row in the database and
@@ -84,7 +101,9 @@ instance Store PGStore where
       res <- query conn "INSERT INTO retcon (entity) VALUES (?) RETURNING id" (Only entity)
       case res of
           [] -> error "Could not create new internal key"
-          (Only key:_) -> return $ InternalKey entity key
+          (Only key:_) -> do
+              updateIKCounts conn
+              return $ InternalKey entity key
 
   lookupInternalKey (PGStore conn _) fk = do
       results <- query conn "SELECT id FROM retcon_fk WHERE entity = ? AND source = ? AND fk = ? LIMIT 1" fk
@@ -98,6 +117,8 @@ instance Store PGStore where
       d2 <- execute' "DELETE FROM retcon_diff WHERE entity = ? AND id = ?"
       d3 <- execute' "DELETE FROM retcon_fk WHERE entity = ? AND id = ?"
       d4 <- execute' "DELETE FROM retcon WHERE entity = ? AND id = ?"
+      updateFKCounts conn
+      updateIKCounts conn
       return . sum . fmap fromIntegral $ [d1, d2, d3, d4]
 
   recordForeignKey (PGStore conn _) ik fk = do
@@ -109,16 +130,19 @@ instance Store PGStore where
 
       -- TODO: This should be a real transaction or UPSERT or something.
       let sql = "DELETE FROM retcon_fk WHERE entity = ? AND id = ? AND source = ?; INSERT INTO retcon_fk (entity, id, source, fk) VALUES (?, ?, ?, ?)"
+      updateFKCounts conn
       void $ execute conn sql values
 
   deleteForeignKey (PGStore conn _) fk = do
       let sql = "DELETE FROM retcon_fk WHERE entity = ? AND source = ? AND fk = ?"
       d <- execute conn sql fk
+      updateFKCounts conn
       return $ fromIntegral  d
 
   deleteForeignKeysWithInternal (PGStore conn _) ik = do
       let sql = "DELETE FROM retcon_fk WHERE entity = ? AND id = ?"
       d <- execute conn sql ik
+      updateFKCounts conn
       return $ fromIntegral d
 
   lookupForeignKey (PGStore conn _) source ik = do
@@ -172,6 +196,7 @@ instance Store PGStore where
 
       -- Record conflicts in the database.
       void . executeMany conn opsQ . fmap (did,) $ ops
+      updateConflicts conn
       return did
     where
       diffQ = "INSERT INTO retcon_diff (entity, id, is_conflict, content) VALUES (?, ?, ?, ?) RETURNING diff_id"
@@ -180,14 +205,14 @@ instance Store PGStore where
   resolveDiffs (PGStore conn _) did = do
       execute conn "DELETE FROM retcon_diff_conflicts WHERE diff_id = ?" (Only did)
       execute conn "UPDATE retcon_diff SET is_conflict = FALSE WHERE diff_id = ?" (Only did)
-      return ()
+      updateConflicts conn
 
   reduceDiff (PGStore conn _) patchID resolved = do
       -- Change the corresponding conflicts
       conops <- getOps
       forM_ (map Only $ filterOps conops)
            $ execute conn "DELETE FROM retcon_diff_conflicts WHERE operation_id = ?"
-
+      updateConflicts conn
     where
       getOps :: IO [(OpID, Value)]
       getOps = query conn "SELECT operation_id, content FROM retcon_diff_conflicts WHERE diff_id = ?" (Only patchID)
@@ -254,6 +279,7 @@ instance Store PGStore where
       let execute' sql = execute conn sql (Only diff_id)
       ops <- execute' "DELETE FROM retcon_diff_conflicts WHERE diff_id = ?"
       d <- execute' "DELETE FROM retcon_diff WHERE diff_id = ?"
+      updateConflicts conn
       return . sum . fmap fromIntegral $ [ops, d]
 
   deleteDiffsWithKey (PGStore conn _) ik = do
@@ -261,6 +287,8 @@ instance Store PGStore where
       d1 <- execute' "DELETE FROM retcon_diff_conflicts WHERE diff_id IN (SELECT diff_id FROM retcon_diff WHERE entity = ? AND id = ?)"
       d2 <- execute' "DELETE FROM retcon_notifications WHERE entity = ? AND id = ?"
       d3 <- execute' "DELETE FROM retcon_diff WHERE entity = ? AND id = ?"
+      updateNotifications conn
+      updateConflicts conn
       return . sum . fmap fromIntegral $ [d1, d2, d3]
 
   addWork (PGStore conn _) work = do
