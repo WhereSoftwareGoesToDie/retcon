@@ -85,6 +85,7 @@ instance Store PGStore where
 
   initBackend (connstr -> str) = do
       conn <- connectPostgreSQL str
+      -- Upon new connection initialise all metrics
       updateEkg conn
       return $ PGStore conn str
 
@@ -92,7 +93,6 @@ instance Store PGStore where
 
   cloneStore (PGStore _ str) = do
       conn <- connectPostgreSQL str
-      updateEkg conn
       return $ PGStore conn str
 
   -- | Create a new 'InternalKey' by inserting a row in the database and

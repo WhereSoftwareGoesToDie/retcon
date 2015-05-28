@@ -87,8 +87,6 @@ updateSourceMeter f en sn = do
 updateServerMeter :: (Meters -> IO ()) -> IO ()
 updateServerMeter f = readMVar metersMVar >>= f
 
-incNotifications, decNotifications
-    ::          EntityName -> SourceName -> IO ()
 setSourceNotifications, setSourceKeys
     :: Int64 -> EntityName -> SourceName -> IO ()
 incCreates, incUpdates, incDeletes
@@ -97,15 +95,6 @@ setEntityNotifications, setEntityKeys, setConflicts
     :: Int64 -> EntityName               -> IO ()
 setServerNotifications
     :: Int64                             -> IO ()
-incNotifications en sn = do
-    updateSourceMeter (Gauge.inc . sourceNumNotifications) en sn
-    updateEntityMeter (Gauge.inc . entityNumNotifications) en
-    updateServerMeter (Gauge.inc . serverNumNotifications)
-
-decNotifications en sn = do
-    updateSourceMeter (Gauge.dec . sourceNumNotifications) en sn
-    updateEntityMeter (Gauge.dec . entityNumNotifications) en
-    updateServerMeter (Gauge.dec . serverNumNotifications)
 
 setSourceNotifications n = updateSourceMeter (flip Gauge.set n . sourceNumNotifications)
 setSourceKeys n          = updateSourceMeter (flip Gauge.set n . sourceNumKeys)
