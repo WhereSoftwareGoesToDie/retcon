@@ -123,7 +123,7 @@ initialiseMeters store (Configuration eMap _) = do
     meters <- forM entities $ \(eName, e) -> do
         em <- initialiseEntity (eName, e)
         return (eName, em)
-    ql <- createGauge "gauge_notifications" store
+    ql <- createGauge "notifications" store
     putMVar metersMVar $ Meters (M.fromList meters) ql
   where
     initialiseEntity :: (EntityName, Entity) -> IO EntityMeters
@@ -132,15 +132,15 @@ initialiseMeters store (Configuration eMap _) = do
         em <- forM sourceNames $ \s -> do
             sourceMeters <- initialiseSource (EntityName eName) s
             return (s, sourceMeters)
-        EntityMeters <$> createGauge   (eName <> ".gauge_notifications") store
-                     <*> createCounter (eName <> ".count_creates")       store
-                     <*> createCounter (eName <> ".count_updates")       store
-                     <*> createCounter (eName <> ".count_deletes")       store
-                     <*> createGauge   (eName <> ".count_conflicts")       store
-                     <*> createGauge   (eName <> ".gauge_internal_keys") store
+        EntityMeters <$> createGauge   (eName <> ".notifications") store
+                     <*> createCounter (eName <> ".creates")       store
+                     <*> createCounter (eName <> ".updates")       store
+                     <*> createCounter (eName <> ".deletes")       store
+                     <*> createGauge   (eName <> ".conflicts")       store
+                     <*> createGauge   (eName <> ".internal_keys") store
                      <*> pure (M.fromList em)
 
     initialiseSource :: EntityName -> SourceName -> IO DataSourceMeters
     initialiseSource (EntityName e) (SourceName s) = let baseName = e <> "." <> s in
-        DataSourceMeters <$> createGauge (baseName <> ".gauge_notifications") store
-                         <*> createGauge (baseName <> ".gauge_foreign_keys")  store
+        DataSourceMeters <$> createGauge (baseName <> ".notifications") store
+                         <*> createGauge (baseName <> ".foreign_keys")  store
