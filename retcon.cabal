@@ -60,7 +60,7 @@ library
     , process
     , regex-compat
     , semigroups
-    , text
+    , text < 1.2.1.0
     , transformers >= 0.3
     , transformers-compat >= 0.4
     , zeromq4-haskell
