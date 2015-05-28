@@ -89,6 +89,9 @@ onepluszero conn = query_ conn "SELECT 1 + 0;"
 
 main :: IO ()
 main = do
+    -- We use a global MVar to track ekg meters, since this test suite does not
+    -- initialise a server in the standard way, we manually plug in a dummy
+    -- value into the MVar.
     dummyGauge <- Gauge.new
     putMVar metersMVar (Meters mempty dummyGauge)
     hspec postgresqlSuite
