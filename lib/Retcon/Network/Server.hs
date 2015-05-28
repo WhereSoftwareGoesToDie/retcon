@@ -431,7 +431,7 @@ notifyUpdate store datasources ik policy = do
   recordInitialDocument store ik initial'
 
   -- Update ekg
-  incUpdates ikEntity
+  incUpdates $ ikEntity ik
 
   where
     calculate :: [Document] -> IO Document
