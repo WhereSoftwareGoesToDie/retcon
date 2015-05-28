@@ -37,8 +37,8 @@ import           Data.String
 import qualified Data.Text                  as T
 import qualified Data.Text.Encoding         as T
 import           Data.Traversable           ()
-import qualified System.Metrics         as Ekg
 import           System.Log.Logger
+import qualified System.Metrics             as Ekg
 import qualified System.Remote.Monitoring   as Ekg
 import           System.ZMQ4
 
