@@ -8,6 +8,7 @@
 module Main where
 
 import           Control.Applicative
+import           Control.Concurrent
 import           Control.Exception
 import           Control.Monad
 import           Control.Monad.IO.Class
@@ -17,6 +18,7 @@ import           Data.Monoid
 import           Data.Text                  ()
 import qualified Data.Vector                as V
 import           Database.PostgreSQL.Simple
+import qualified System.Metrics.Gauge       as Gauge
 import           System.Process
 import           Test.Hspec
 
@@ -25,6 +27,7 @@ import           Retcon.Diff
 import           Retcon.Document
 import           Retcon.Identifier
 import           Retcon.Monad
+import           Retcon.Network.Ekg
 import           Retcon.Store
 import           Retcon.Store.PostgreSQL
 
@@ -85,7 +88,10 @@ onepluszero conn = query_ conn "SELECT 1 + 0;"
 --------------------------------------------------------------------------------
 
 main :: IO ()
-main = hspec postgresqlSuite
+main = do
+    dummyGauge <- Gauge.new
+    putMVar metersMVar (Meters mempty dummyGauge)
+    hspec postgresqlSuite
 
 prepareDatabase :: IO () -> IO ()
 prepareDatabase action = bracket setupSuite teardownSuite (const action)
