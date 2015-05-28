@@ -15,6 +15,7 @@ import           Control.Concurrent.Async
 import           Control.Error.Util         ()
 import qualified Control.Exception          as E
 import           Control.Lens               hiding (Context, coerce)
+import           Control.Monad
 import           Control.Monad.Catch
 import           Control.Monad.Error.Class
 import           Control.Monad.Reader
@@ -37,6 +38,8 @@ import qualified Data.Text                  as T
 import qualified Data.Text.Encoding         as T
 import           Data.Traversable           ()
 import           System.Log.Logger
+import qualified System.Metrics             as Ekg
+import qualified System.Remote.Monitoring   as Ekg
 import           System.ZMQ4
 
 import           Retcon.Configuration
@@ -46,6 +49,7 @@ import           Retcon.Diff
 import           Retcon.Document
 import           Retcon.Identifier
 import           Retcon.Monad
+import           Retcon.Network.Ekg
 import           Retcon.Network.Protocol
 import           Retcon.Store
 import           Retcon.Store.PostgreSQL
@@ -58,10 +62,11 @@ type ErrorMsg = String
 -- * Server
 
 data ServerState = ServerState
-    { _serverContext :: Context       -- ^ ZMQ context
-    , _serverSocket  :: Socket Rep    -- ^ ZMQ socket
-    , _serverConfig  :: Configuration -- ^ retcond config
-    , _serverStore   :: PGStore       -- ^ Internal data store, shared between all server threads
+    { _serverContext   :: Context       -- ^ ZMQ context
+    , _serverSocket    :: Socket Rep    -- ^ ZMQ socket
+    , _serverConfig    :: Configuration -- ^ retcond config
+    , _serverStore     :: PGStore       -- ^ Internal data store, shared between all server threads
+    , _serverEkgServer :: Ekg.Server    -- ^ Ekg server
     }
 makeLenses ''ServerState
 
@@ -97,18 +102,24 @@ spawnServer cfg n = do
     start :: IO ServerState
     start = do
         noticeM logName "Starting Server"
+        -- Setup ekg
+        ekgStore  <- Ekg.newStore
+        initialiseMeters ekgStore cfg
+        ekgServer <- Ekg.forkServerWith ekgStore "localhost" 8888
+
         let (zmq_conn, _, pg_conn) = configServer cfg
         ctx    <- context
         sock   <- socket ctx Rep
         bind sock zmq_conn
         db     <- initBackend (PGOpts pg_conn)
-        return $  ServerState ctx sock cfg db
+        return $  ServerState ctx sock cfg db ekgServer
 
     stop :: ServerState -> IO ()
     stop state = do
         closeBackend $ state ^. serverStore
         close        $ state ^. serverSocket
         term         $ state ^. serverContext
+        killThread   $ Ekg.serverThreadId $ state ^. serverEkgServer
         noticeM logName "Stopped Server"
 
 --------------------------------------------------------------------------------
@@ -335,6 +346,9 @@ notifyCreate store datasources fk@(ForeignKey{..}) doc@(Document{..}) = do
   -- Update other sources in the entity
   forM_ datasources (createDoc ik)
 
+  -- Update ekg
+  incCreates fkEntity
+
   where createDoc ik ds = do
           x <- runDSMonad
              $ DS.createDocument ds
@@ -360,6 +374,8 @@ notifyDelete
 notifyDelete store datasources ik = do
   infoM logName $ "DELETE: " <> show ik
   forM_ datasources deleteDoc
+  -- Update ekg
+  incDeletes $ ikEntity ik
 
   where deleteDoc ds = do
           f <- lookupForeignKey store (sourceName ds) ik
@@ -416,6 +432,9 @@ notifyUpdate store datasources ik policy = do
     -- Update initial document.
     let initial' = patch policy merged initial
     recordInitialDocument store ik initial'
+
+  -- Update ekg
+  incUpdates ikEntity
 
   where
     calculate :: [Document] -> IO Document

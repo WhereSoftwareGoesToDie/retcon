@@ -8,6 +8,7 @@
 module Main where
 
 import           Control.Applicative
+import           Control.Concurrent
 import           Control.Concurrent.Async
 import           Control.Monad
 import           Control.Monad.Trans.Except
@@ -94,7 +95,7 @@ main = do
     resetTestDB db dbfile
     updateGlobalLogger rootLoggerName (setLevel DEBUG)
     server <- async (spawnServer cfg 1)
-
+    threadDelay 1000000 --1 second sleep to let MVar be initialised
     hspec (suite dbconn)
 
     cancel server
