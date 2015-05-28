@@ -48,20 +48,20 @@ isSuccess   _           = False
 -- | Update ekg values for everything
 updateEkg :: Connection -> IO ()
 updateEkg conn = do
-    updateIKCounts conn
-    updateFKCounts conn
+    updateIKCounts  conn
+    updateFKCounts  conn
 
 -- | Update ekg values for internal keys
 updateIKCounts :: Connection -> IO ()
 updateIKCounts conn = do
     res <- query_ conn "SELECT COUNT(DISTINCT id), entity FROM retcon_fk GROUP BY entity"
-    forM_ res $ uncurry setGaugeEntityKeys . second EntityName
+    forM_ res $ uncurry setEntityKeys . second EntityName
 
 -- | Update ekg values for foreign keys
 updateFKCounts :: Connection -> IO ()
 updateFKCounts conn = do
     res <- query_ conn "SELECT COUNT(DISTINCT id), entity, source FROM retcon_fk GROUP BY source, entity"
-    forM_ res $ \(c, e, s) -> setGaugeSourceKeys c (EntityName e) (SourceName s)
+    forM_ res $ \(c, e, s) -> setSourceKeys c (EntityName e) (SourceName s)
 
 -- | Persistent PostgreSQL-backed data storage.
 instance Store PGStore where

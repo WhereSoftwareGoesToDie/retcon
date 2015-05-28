@@ -89,13 +89,13 @@ updateServerMeter f = readMVar metersMVar >>= f
 
 incNotifications, decNotifications
     ::          EntityName -> SourceName -> IO ()
-setGaugeSourceNotifications, setGaugeSourceKeys
+setSourceNotifications, setSourceKeys
     :: Int64 -> EntityName -> SourceName -> IO ()
 incCreates, incUpdates, incDeletes
     ::          EntityName               -> IO ()
-setGaugeEntityNotifications, setGaugeEntityKeys, setGaugeConflicts
+setEntityNotifications, setEntityKeys, setConflicts
     :: Int64 -> EntityName               -> IO ()
-setGaugeServerNotifications
+setServerNotifications
     :: Int64                             -> IO ()
 incNotifications en sn = do
     updateSourceMeter (Gauge.inc . sourceNumNotifications) en sn
@@ -107,15 +107,15 @@ decNotifications en sn = do
     updateEntityMeter (Gauge.dec . entityNumNotifications) en
     updateServerMeter (Gauge.dec . serverNumNotifications)
 
-setGaugeSourceNotifications n = updateSourceMeter (flip Gauge.set n . sourceNumNotifications)
-setGaugeSourceKeys n          = updateSourceMeter (flip Gauge.set n . sourceNumKeys)
-incCreates                    = updateEntityMeter (Counter.inc . entityNumCreates)
-incUpdates                    = updateEntityMeter (Counter.inc . entityNumUpdates)
-incDeletes                    = updateEntityMeter (Counter.inc . entityNumDeletes)
-setGaugeConflicts n           = updateEntityMeter (flip Gauge.set n . entityNumConflicts)
-setGaugeEntityNotifications n = updateEntityMeter (flip Gauge.set n . entityNumNotifications)
-setGaugeEntityKeys n          = updateEntityMeter (flip Gauge.set n . entityNumKeys)
-setGaugeServerNotifications n = updateServerMeter (flip Gauge.set n . serverNumNotifications)
+setSourceNotifications n = updateSourceMeter (flip Gauge.set n . sourceNumNotifications)
+setSourceKeys n          = updateSourceMeter (flip Gauge.set n . sourceNumKeys)
+incCreates               = updateEntityMeter (Counter.inc      . entityNumCreates)
+incUpdates               = updateEntityMeter (Counter.inc      . entityNumUpdates)
+incDeletes               = updateEntityMeter (Counter.inc      . entityNumDeletes)
+setConflicts n           = updateEntityMeter (flip Gauge.set n . entityNumConflicts)
+setEntityNotifications n = updateEntityMeter (flip Gauge.set n . entityNumNotifications)
+setEntityKeys n          = updateEntityMeter (flip Gauge.set n . entityNumKeys)
+setServerNotifications n = updateServerMeter (flip Gauge.set n . serverNumNotifications)
 
 initialiseMeters :: Ekg.Store -> Configuration -> IO ()
 initialiseMeters store (Configuration eMap _) = do
