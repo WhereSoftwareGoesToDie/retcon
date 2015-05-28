@@ -57,7 +57,7 @@ DEBUG log level.
 
 All operations must exit with status 1 when they failed because they could not
 communicate with the external system. They must print a useful error message to
-their stderr stream. These messages will be logged by Retcon at the EMERG log
+their stderr stream. These messages will be logged by Retcon at the ALERT log
 level.
 
 All operations which operate on an existing document must exit with status
