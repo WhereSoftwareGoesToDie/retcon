@@ -11,12 +11,16 @@ A *data source* is a program which Retcon can invoke when it needs to interact
 with an external system. Each invocation of a data source processes a single
 operation and they can be implemented in any language.
 
-Data sources must implement the four CRUD operations:
+Data sources should implement the four CRUD operations:
 
 - Create a new document;
 - Read an existing document;
 - Update an existing document; and
 - Delete an existing document.
+
+While you can leave out some of the CRUD operations for a data source, this is
+not safe in general and you should implement all four unless you know (and can
+show to your colleagues) that the omitted operation/s will never be needed.
 
 Formats
 -------
