@@ -43,7 +43,7 @@ There are four key components in a Retcon deployment:
 
 1. Retcon itself runs as a daemon.
 
-1. Retcon stores it's own data in a PostgreSQL database.
+1. Retcon stores its own data in a PostgreSQL database.
 
 1. Data sources are external programs which Retcon invokes each time it wants
 to communicate with an external system.
