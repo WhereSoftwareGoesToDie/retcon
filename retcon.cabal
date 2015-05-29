@@ -162,6 +162,7 @@ test-suite store-psql-test
       base
     , aeson
     , bytestring
+    , ekg-core
     , hspec
     , postgresql-simple
     , process
