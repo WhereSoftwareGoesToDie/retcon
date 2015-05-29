@@ -128,7 +128,7 @@ createDocument src doc = do
                               , std_in = CreatePipe
                               , std_err = CreatePipe
                               }
-    liftIO . debugM logName $ "CREATE command: " <> show cmd
+    debug src $ "CREATE: " <> show cmd
     (Just hin, Just hout, Just herr, hproc) <- liftIO $ createProcess process
 
     -- 3. Write input.
@@ -167,7 +167,7 @@ readDocument src fk = do
         process = (shell cmd) { std_out = CreatePipe
                               , std_err = CreatePipe
                               }
-    liftIO . debugM logName $ "READ command: " <> show cmd
+    debug src $ "READ: " <> show cmd
     (Nothing, Just hout, Just herr, hproc) <- liftIO $ createProcess process
 
     -- 3. Read output.
@@ -208,7 +208,7 @@ updateDocument src fk doc = do
                               , std_in = CreatePipe
                               , std_err = CreatePipe
                               }
-    liftIO . debugM logName $ "UPDATE command: " <> show cmd
+    debug src $ "UPDATE: " <> show cmd
     (Just hin, Just hout, Just herr, hproc) <- liftIO $ createProcess process
 
     -- 3. Write input.
@@ -248,7 +248,7 @@ deleteDocument src fk = do
         process = (shell cmd) { std_out = CreatePipe
                               , std_err = CreatePipe
                               }
-    liftIO . debugM logName $ "DELETE command: " <> show cmd
+    debug src $ "DELETE: " <> show cmd
     (Nothing, Just hout, Just herr, hproc) <- liftIO $ createProcess process
 
     -- 3. Read output
@@ -259,7 +259,7 @@ deleteDocument src fk = do
     logDSMessage src "DELETE" (exit, err)
     case exit of
         ExitFailure 1 -> throwError $ CommunicationError err'
-        ExitFailure 2 -> return () -- The error means throwError $ NotFoundError err'
+        ExitFailure 2 -> return () -- So we didn't need to do anything.
         ExitFailure c -> throwError $ ForeignError c err'
         ExitSuccess   -> return ()
 
@@ -311,3 +311,16 @@ logDSMessage src cmd (ec, err) =
         ExitFailure 2 -> errorM name msg
         ExitFailure 3 -> errorM name msg
         ExitFailure _ -> errorM name msg
+
+-- | Log a debugging message.
+debug
+    :: MonadIO m
+    => DataSource
+    -> String
+    -> m ()
+debug src msg =
+    let name = intercalate "." [logName
+                               , show (sourceEntity src)
+                               , show (sourceName src)
+                               ]
+    in liftIO . debugM name $ msg
