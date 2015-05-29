@@ -28,8 +28,11 @@ ekgLogName = "Retcon.Ekg"
 
 -- | EKG metrics
 
+-- Global MVar to track ekg meters
 metersMVar :: MVar Meters
-metersMVar = unsafePerformIO newEmptyMVar
+metersMVar = unsafePerformIO $ do
+    dummyGauge <- Gauge.new
+    newMVar (Meters mempty dummyGauge)
 {-# NOINLINE metersMVar #-}
 
 -- | All counter values are from startup
@@ -113,7 +116,8 @@ initialiseMeters store (Configuration eMap _) = do
         em <- initialiseEntity (eName, e)
         return (eName, em)
     ql <- createGauge "notifications" store
-    putMVar metersMVar $ Meters (M.fromList meters) ql
+    _ <- swapMVar metersMVar $ Meters (M.fromList meters) ql
+    return ()
   where
     initialiseEntity :: (EntityName, Entity) -> IO EntityMeters
     initialiseEntity (EntityName eName, e) = do
