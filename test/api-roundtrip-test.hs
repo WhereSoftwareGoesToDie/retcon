@@ -95,7 +95,6 @@ main = do
     resetTestDB db dbfile
     updateGlobalLogger rootLoggerName (setLevel DEBUG)
     server <- async (spawnServer cfg 1)
-    threadDelay 1000000 --1 second sleep to let MVar be initialised
     hspec (suite dbconn)
 
     cancel server
